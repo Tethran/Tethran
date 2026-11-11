@@ -100,3 +100,56 @@ idempotency key (no second send) -> `approve` by the client -> `release` by the 
 Hardhat chain: escrow state Released and the vault stand-in received 5,000,000 base units. The vault stand-in is
 the provider's own address, because the vault contract is not built yet. **Not yet run on a public test
 network** (no test ETH).
+
+---
+
+## 2026-11-12 — Session 003: interfaces v0.3, decide, Sepolia deployment
+
+### 1. Lead decisions on the five open questions
+1. Refund goes to the funder: confirmed, no change.
+2. `decide(false)` refunds in the same transaction; a milestone is decided once: confirmed.
+3. Attestation nonce removed. The EIP-712 domain plus the once-only rule is enough.
+4. Disputes only while Funded (replaces the earlier rule that allowed them while Approved). Client approval is
+   final for the client. A dispute extends the timeout to at least now + `DISPUTE_WINDOW` (constant, 7 days).
+5. New reason code `HOLD_ACTIVE` (rejected) for a proposal made during the card hold. The orchestrator must not
+   call the agent until release is eligible.
+
+### 2. INTERFACES.md v0.2 -> v0.3
+| Change | Why |
+|---|---|
+| `Attestation(bytes32 milestoneId, uint8 kind, bool releaseToProvider)`: nonce removed | Decision 3 |
+| `dispute` only while Funded; extends the timeout; `Disputed` event carries the resulting timeout | Decision 4; the event lets the reconciliation store follow the new timeout |
+| `decide` only before the timeout; exactly two signatures from two different parties | Avoids a race between a late decision and the default refund; "two of three" made exact |
+| `HOLD_ACTIVE` added to the rejected codes and to the rule order (after duplicate, before payee) | Decision 5 |
+| Chain config gains `confirmations` (default 1) | See the Sepolia error below |
+
+Two details are mine, not decided by the lead: `decide` is closed after the timeout, and `decide` takes exactly
+two signatures (not two or three). Both are in the memory file for confirmation.
+
+### 3. MilestoneEscrow
+- `dispute`: Funded only; `timeout = max(timeout, now + 7 days)`. Tests: approval is final, near timeout is
+  pushed out, far timeout is not shortened.
+- `decide`: OpenZeppelin `EIP712` and `ECDSA`. The attestation kind is derived from which party the signer is, so
+  a signer cannot claim another role. Anyone may submit; the signatures are the authority. 17 tests, including
+  forged signer, opposite outcome, wrong kind, swapped signatures, replay from another milestone, another chain,
+  another contract, non-party signers, and the closed window.
+- Signatures are checked with ECDSA only, so the three parties must be ordinary key wallets, not smart accounts.
+- Contract tests: 38 passing (18 escrow, 17 decide, 3 token).
+
+### 4. ChainClient
+- `decide` implemented; `attestationTypedData` helper returns the exact EIP-712 payload a wallet signs.
+- `waitConfirmed` now waits `confirmations` blocks. 9 unit tests passing.
+
+### 5. Sepolia (primary chain)
+- The lead funded the treasury with 0.05 test ETH, so **Sepolia is the primary chain**; Base Sepolia is the second.
+- Deployed: TestUSDT (test token) `0xf71881cb70FAeDa9106576f6DaE6B74676164f2b`, MilestoneEscrow
+  `0x55CCC2eC0eC0E031c155865230A41b4bA40EA513` (addresses in `config/chains.json`).
+- New `contracts/scripts/fund-gas.ts`: tops the client and provider wallets up to 0.004 test ETH from the treasury.
+- Proof script passed on Sepolia: createAndFund `0x62525ab7…`, approve `0x8f7ed3a9…`, release `0x7e1e370e…`;
+  escrow Released, vault stand-in received 5,000,000 base units.
+- First Sepolia run failed: `release` reverted at gas estimation with `WrongState(Funded)` although `approve` was
+  already mined. The public RPC is load-balanced and one node was a block behind. Fix: `confirmations: 2` for the
+  public test networks. The first run left one test milestone Approved and unreleased on Sepolia; harmless.
+
+### 6. Git
+- Repo-local git identity set from the name and email the lead gave. First commits made after 00:00 as asked.

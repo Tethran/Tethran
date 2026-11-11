@@ -21,6 +21,7 @@ export function loadChain(key?: string, path: string = DEFAULT_PATH): ChainConfi
     chainId: entry.chainId,
     rpcUrl: process.env[`RPC_URL_${entry.chainId}`] || entry.rpcUrl,
     testnet: true,
+    confirmations: entry.confirmations ?? 1,
     usdt: entry.usdt,
     escrow: entry.escrow,
     receiptNft: entry.receiptNft,

@@ -16,7 +16,7 @@ import {
 import type { ChainConfig, IdempotencyStore } from "../src";
 
 const CONFIG: ChainConfig = {
-  key: "test", name: "Test", chainId: 31337, rpcUrl: "http://127.0.0.1:1", testnet: true,
+  key: "test", name: "Test", chainId: 31337, rpcUrl: "http://127.0.0.1:1", testnet: true, confirmations: 1,
   usdt: "0x0000000000000000000000000000000000000001",
   escrow: "0x0000000000000000000000000000000000000002",
   receiptNft: "",

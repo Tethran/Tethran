@@ -68,6 +68,8 @@ export type ChainConfig = {
   chainId: number;
   rpcUrl: string;
   testnet: boolean;
+  /** Blocks to wait before treating a transaction as settled. */
+  confirmations: number;
   usdt: string;
   escrow: string;
   receiptNft: string;

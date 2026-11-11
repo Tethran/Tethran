@@ -429,6 +429,208 @@
         "Wire a WDK account as the TxSender for the treasury"
       ],
       "notes": "No commits were made in this session: the lead asked for none before 00:00, and the git identity is missing. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
+    },
+    {
+      "session_id": "session_003",
+      "timestamp": "2026-11-11T23:55:55Z",
+      "ai_agent": "Executing engineer (Person A workstream)",
+      "current_phase": "Phase 1 - Wallets and chain core",
+      "progress": {
+        "completed": [
+          "First commits made (repo-local git identity set from the details the lead gave)",
+          "INTERFACES.md v0.3: nonce removed, disputes only while Funded, dispute window, HOLD_ACTIVE, confirmations in chain config",
+          "MilestoneEscrow: dispute rule change and decide (2-of-3 EIP-712) with tests; 38 contract tests passing",
+          "ChainClient: decide, attestationTypedData, confirmation depth; 9 unit tests passing",
+          "Deployed TestUSDT and MilestoneEscrow to Sepolia; fund -> approve -> release proof passed there"
+        ],
+        "in_progress": [
+          "Helper agents during the lead review: Policy Service (rule engine, reason codes, audit log) and a read-only contract reviewer"
+        ],
+        "blocked": [
+          "Vault and SpendingGuard wait for the line-by-line review of MilestoneEscrow (including decide)"
+        ]
+      },
+      "last_session_summary": "Session 002 applied the co-architect decisions as INTERFACES v0.2, ran the Phase 0 checks, scaffolded the repo, built TestUSDT, the MilestoneEscrow skeleton and ChainClient, and proved fund -> release on the local chain. It ended blocked on test ETH and the git identity.",
+      "changes_made": [
+        "docs/INTERFACES.md v0.3",
+        "contracts/contracts/MilestoneEscrow.sol: dispute only while Funded with timeout extension; decide added",
+        "contracts/test/MilestoneEscrow.test.ts updated; contracts/test/MilestoneEscrow.decide.test.ts added",
+        "contracts/scripts/fund-gas.ts added",
+        "services/chain: decide, attestationTypedData, confirmations",
+        "config/chains.json: Sepolia addresses and confirmations",
+        "Development.md: session 003 entry"
+      ],
+      "file_module_map": [
+        {
+          "file": "docs/INTERFACES.md",
+          "purpose": "Workstream contract, v0.3",
+          "last_modified": "2026-11-11T23:55:55Z"
+        },
+        {
+          "file": "contracts/contracts/MilestoneEscrow.sol",
+          "purpose": "Milestone escrow, complete for the interface. Needs line-by-line review",
+          "last_modified": "2026-11-11T23:55:55Z"
+        },
+        {
+          "file": "contracts/test/MilestoneEscrow.test.ts",
+          "purpose": "Escrow state machine tests",
+          "last_modified": "2026-11-11T23:55:55Z"
+        },
+        {
+          "file": "contracts/test/MilestoneEscrow.decide.test.ts",
+          "purpose": "Attestation and decide tests",
+          "last_modified": "2026-11-11T23:55:55Z"
+        },
+        {
+          "file": "contracts/scripts/fund-gas.ts",
+          "purpose": "Tops up test gas for client and provider from the treasury",
+          "last_modified": "2026-11-11T23:55:55Z"
+        },
+        {
+          "file": "services/chain/src/evmChainClient.ts",
+          "purpose": "EVM ChainClient: decide and confirmation depth added",
+          "last_modified": "2026-11-11T23:55:55Z"
+        },
+        {
+          "file": "services/chain/src/types.ts",
+          "purpose": "ChainConfig gains confirmations",
+          "last_modified": "2026-11-11T23:55:55Z"
+        },
+        {
+          "file": "services/chain/src/config.ts",
+          "purpose": "Reads confirmations (default 1)",
+          "last_modified": "2026-11-11T23:55:55Z"
+        },
+        {
+          "file": "services/chain/test/chainClient.test.ts",
+          "purpose": "Unit tests; decide encoding and typed data",
+          "last_modified": "2026-11-11T23:55:55Z"
+        },
+        {
+          "file": "config/chains.json",
+          "purpose": "Sepolia addresses; confirmations per chain",
+          "last_modified": "2026-11-11T23:55:55Z"
+        },
+        {
+          "file": "Development.md",
+          "purpose": "Change log",
+          "last_modified": "2026-11-11T23:55:55Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Decisions: lead answers 1 to 5 applied (refund to funder; decide(false) refunds at once; nonce removed; disputes only while Funded with a 7-day dispute window; HOLD_ACTIVE rejected code)",
+          "reason": "Relayed by the lead developer",
+          "alternatives_considered": "Disputes while Approved (dropped); nonce fixed at 0 (dropped)"
+        },
+        {
+          "decision": "Sepolia is the primary chain; Base Sepolia is the second chain for the wrong-network scenario",
+          "reason": "The lead obtained 0.05 Sepolia test ETH; co-architect decision 17",
+          "alternatives_considered": "Base Sepolia as primary"
+        },
+        {
+          "decision": "decide is closed once the timeout has passed",
+          "reason": "After the timeout anyone can trigger the default refund; allowing a late decision would be a race",
+          "alternatives_considered": "Allow decide until someone refunds"
+        },
+        {
+          "decision": "decide takes exactly two attestations; the kind is derived from the role of the signer in the milestone",
+          "reason": "Smallest check that proves two different parties agreed; a signer cannot claim another role",
+          "alternatives_considered": "Accept two or three; pass kinds as an argument"
+        },
+        {
+          "decision": "Disputed event carries the resulting timeout",
+          "reason": "The reconciliation store can follow the extension without a second read",
+          "alternatives_considered": "A separate TimeoutExtended event"
+        },
+        {
+          "decision": "Chain config gains confirmations: 1 locally, 2 on public test networks",
+          "reason": "A load-balanced public RPC served stale state right after a transaction was mined",
+          "alternatives_considered": "Retrying reverted gas estimates"
+        },
+        {
+          "decision": "Set a repo-local git identity (not global) from the details the lead gave",
+          "reason": "No identity was configured and the lead supplied the name and email",
+          "alternatives_considered": "Global git config"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "No test ETH on any wallet (from session 002)",
+          "severity": "high",
+          "status": "resolved"
+        },
+        {
+          "issue": "git identity not set (from session 002)",
+          "severity": "high",
+          "status": "resolved"
+        },
+        {
+          "issue": "Dispute after approval could claw back funds (from session 002)",
+          "severity": "medium",
+          "status": "resolved"
+        },
+        {
+          "issue": "Attestations are checked with ECDSA only: client, provider and arbiter must be key wallets, not smart accounts (no ERC-1271)",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Two details in v0.3 were not decided by the lead: decide closed after the timeout, and exactly two signatures. Confirm at review",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "One test milestone on Sepolia is Approved and unreleased, left by the failed first proof run",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "ChainClient vaultExecute, setPolicy and mintReceipt still throw NotBuiltYetError",
+          "severity": "medium",
+          "status": "in-progress"
+        },
+        {
+          "issue": "Treasury key is deployer, admin and RELEASER at once in the demo deployment",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "docs/03 and PRD FR-4.5, FR-14.5 still describe the pre-v0.2 design",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Base Sepolia wallets hold no test ETH yet; needed for the second-chain deployment",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "ISpendingGuard in INTERFACES is still a draft until the vault and guard review",
+          "severity": "low",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "Ten decide tests failed with TimeoutInPast",
+          "context": "Test setup used a fixed far-future timeout; an earlier test moved the chain clock past it",
+          "resolution": "Timeout in the test setup is now relative to the current block time"
+        },
+        {
+          "error": "release reverted at gas estimation with WrongState(Funded) on Sepolia",
+          "context": "First proof run on Sepolia; approve was already mined but a load-balanced RPC node was one block behind",
+          "resolution": "waitConfirmed now waits config.confirmations blocks; 2 on public test networks. Rerun passed"
+        }
+      ],
+      "next_steps": [
+        "Lead: line-by-line review of MilestoneEscrow.sol (dispute and decide included)",
+        "Merge and log the Policy Service helper agent work and the contract reviewer findings when they finish",
+        "After review: 2-of-2 vault and SpendingGuard with tests, then stop for review",
+        "Then ReceiptNFT, treasury service, identity-matched release, WDK account as the TxSender",
+        "Get Base Sepolia test ETH and deploy the same contracts there"
+      ],
+      "notes": "Stopped for the lead review after decide, as instructed. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
     }
   ]
 }

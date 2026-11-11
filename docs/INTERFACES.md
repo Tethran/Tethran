@@ -252,7 +252,8 @@ interface ChainClient {
 - Every state-changing call takes an `idempotencyKey`. Repeating a key returns the first `TxRef` and never
   sends a second transaction.
 
-Per-chain config (`config/chains.json`): `{ name, chainId, rpcUrl, testnet, usdt, escrow, receiptNft }`.
+Per-chain config (`config/chains.json`): `{ name, chainId, rpcUrl, testnet, confirmations, usdt, escrow, receiptNft }`.
+`confirmations` (default 1) is how many blocks deep a transaction must be before the next step relies on it.
 Vault and guard addresses are per provider, so they live in the `vaults` table, not in chain config.
 Everything outside `ChainClient` stays chain-agnostic.
 

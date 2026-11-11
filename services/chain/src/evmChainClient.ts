@@ -197,12 +197,20 @@ export class EvmChainClient implements ChainClient {
     return this.send(this.config.usdt, this.erc20.encodeFunctionData("mint", [to, BigInt(amount)]), idempotencyKey);
   }
 
-  /** Polls txStatus for the same hash until it leaves "pending"/"unknown". Never resubmits. */
+  /**
+   * Polls the same hash until it is mined and `config.confirmations` blocks deep. Never resubmits.
+   * More than one confirmation matters on public RPC endpoints: they are load-balanced, and a node that
+   * is one block behind would make the next call see the old state.
+   */
   async waitConfirmed(txHash: string, timeoutMs = 180_000, pollMs = 1_500): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const status = await this.txStatus(txHash);
-      if (status === "confirmed") return;
+      const receipt = await this.provider.getTransactionReceipt(txHash);
+      const status = receipt ? (receipt.status === 1 ? "confirmed" : "failed") : "pending";
+      if (receipt && status === "confirmed") {
+        const depth = (await this.provider.getBlockNumber()) - receipt.blockNumber + 1;
+        if (depth >= this.config.confirmations) return;
+      }
       if (status === "failed") throw new Error(`transaction failed: ${txHash}`);
       if (Date.now() > deadline) throw new Error(`timed out waiting for ${txHash} (last status: ${status})`);
       await new Promise((r) => setTimeout(r, pollMs));

@@ -6,6 +6,7 @@
       "chainId": 31337,
       "rpcUrl": "http://127.0.0.1:8545",
       "testnet": true,
+      "confirmations": 1,
       "usdt": "0xf71881cb70FAeDa9106576f6DaE6B74676164f2b",
       "escrow": "0x55CCC2eC0eC0E031c155865230A41b4bA40EA513",
       "receiptNft": ""
@@ -15,8 +16,9 @@
       "chainId": 11155111,
       "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
       "testnet": true,
-      "usdt": "",
-      "escrow": "",
+      "confirmations": 2,
+      "usdt": "0xf71881cb70FAeDa9106576f6DaE6B74676164f2b",
+      "escrow": "0x55CCC2eC0eC0E031c155865230A41b4bA40EA513",
       "receiptNft": ""
     },
     "baseSepolia": {
@@ -24,6 +26,7 @@
       "chainId": 84532,
       "rpcUrl": "https://sepolia.base.org",
       "testnet": true,
+      "confirmations": 2,
       "usdt": "",
       "escrow": "",
       "receiptNft": ""
