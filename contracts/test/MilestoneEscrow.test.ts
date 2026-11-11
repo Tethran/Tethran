@@ -4,6 +4,7 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 const AMOUNT = 5_000_000n; // 5 USDT
 const HOLD = 3600;
+const WINDOW = 7 * 24 * 3600; // DISPUTE_WINDOW
 const State = { None: 0n, Funded: 1n, Approved: 2n, Disputed: 3n, Released: 4n, Refunded: 5n };
 
 describe("MilestoneEscrow", () => {
@@ -136,21 +137,47 @@ describe("MilestoneEscrow", () => {
       await fund();
       await expect(escrow.connect(arbiter).dispute(id)).to.be.revertedWithCustomError(escrow, "NotParty");
       await expect(escrow.connect(stranger).dispute(id)).to.be.revertedWithCustomError(escrow, "NotParty");
+      const at = (await time.latest()) + 10;
+      await time.setNextBlockTimestamp(at);
       await expect(escrow.connect(provider).dispute(id))
-        .to.emit(escrow, "Disputed").withArgs(id, provider.address);
+        .to.emit(escrow, "Disputed").withArgs(id, provider.address, at + WINDOW);
       expect(await escrow.state(id)).to.equal(State.Disputed);
       await expect(escrow.connect(client).approve(id)).to.be.revertedWithCustomError(escrow, "WrongState");
       await expect(escrow.connect(treasury).release(id)).to.be.revertedWithCustomError(escrow, "WrongState");
       await expect(escrow.connect(client).dispute(id)).to.be.revertedWithCustomError(escrow, "WrongState");
     });
 
-    it("client can dispute after approving, before release", async () => {
-      const { treasury, client, escrow, id, fund } = await setup();
+    it("approval is final: nobody can dispute once Approved, even during the card hold", async () => {
+      const { treasury, client, provider, escrow, id, fund } = await setup();
       await fund({ cardFunded: true });
       await escrow.connect(client).approve(id);
-      await escrow.connect(client).dispute(id);
+      await expect(escrow.connect(client).dispute(id)).to.be.revertedWithCustomError(escrow, "WrongState");
+      await expect(escrow.connect(provider).dispute(id)).to.be.revertedWithCustomError(escrow, "WrongState");
       await time.increase(HOLD);
-      await expect(escrow.connect(treasury).release(id)).to.be.revertedWithCustomError(escrow, "WrongState");
+      await escrow.connect(treasury).release(id);
+    });
+
+    it("a dispute pushes a near timeout out to now + 7 days", async () => {
+      const { client, escrow, id, timeout, fund } = await setup();
+      await fund();
+      const at = timeout - 60; // one minute before the original timeout
+      await time.setNextBlockTimestamp(at);
+      await escrow.connect(client).dispute(id);
+      expect((await escrow.milestone(id)).timeout).to.equal(BigInt(at + WINDOW));
+
+      await time.increaseTo(timeout);
+      await expect(escrow.refund(id)).to.be.revertedWithCustomError(escrow, "TimeoutNotReached");
+      await time.increaseTo(at + WINDOW);
+      await escrow.refund(id);
+      expect(await escrow.state(id)).to.equal(State.Refunded);
+    });
+
+    it("a dispute never shortens a later timeout", async () => {
+      const { provider, escrow, id, fund } = await setup();
+      const far = (await time.latest()) + 30 * 24 * 3600;
+      await fund({ timeout: far });
+      await escrow.connect(provider).dispute(id);
+      expect((await escrow.milestone(id)).timeout).to.equal(BigInt(far));
     });
 
     it("cannot dispute after release", async () => {
@@ -176,12 +203,12 @@ describe("MilestoneEscrow", () => {
       await expect(escrow.connect(stranger).refund(id)).to.be.revertedWithCustomError(escrow, "WrongState");
     });
 
-    it("an undecided dispute refunds at the timeout", async () => {
-      const { treasury, client, usdt, escrow, id, timeout, fund } = await setup();
+    it("an undecided dispute refunds at the (extended) timeout", async () => {
+      const { treasury, client, usdt, escrow, id, fund } = await setup();
       await fund();
       await escrow.connect(client).dispute(id);
       await expect(escrow.refund(id)).to.be.revertedWithCustomError(escrow, "TimeoutNotReached");
-      await time.increaseTo(timeout);
+      await time.increaseTo((await escrow.milestone(id)).timeout);
       await escrow.refund(id);
       expect(await usdt.balanceOf(await escrow.getAddress())).to.equal(0n);
       expect(await usdt.balanceOf(treasury.address)).to.equal(100_000_000n);

@@ -1,9 +1,10 @@
-# Interfaces (v0.2)
+# Interfaces (v0.3)
 
 The contract between the two workstreams. Change only by agreement, and log the change in Development.md.
 Amounts are strings in base units (USDT: 6 decimals). IDs are UUIDs unless stated.
 
-v0.2 (12 Nov 2026) applies the co-architect decisions 1 to 14. Where the architecture document
+v0.2 (12 Nov 2026) applies the co-architect decisions 1 to 14. v0.3 (12 Nov 2026) removes the attestation
+nonce, allows disputes only while Funded, adds the dispute window and adds the `HOLD_ACTIVE` reason code. Where the architecture document
 (`docs/03-system-design-architecture.md`, sections 3.2, 3.3 and 5.2) differs, this file wins.
 
 ## 0. State model
@@ -119,15 +120,16 @@ Reason codes:
 
 | Decision | Codes |
 |---|---|
-| `rejected` | `SCHEMA_INVALID`, `PAYEE_NOT_ALLOWED`, `OVER_PER_TX_CAP`, `OVER_DAILY_CAP`, `TAX_RESERVE_TOO_LOW`, `DUPLICATE_PROPOSAL` |
+| `rejected` | `SCHEMA_INVALID`, `DUPLICATE_PROPOSAL`, `HOLD_ACTIVE`, `PAYEE_NOT_ALLOWED`, `OVER_PER_TX_CAP`, `OVER_DAILY_CAP`, `TAX_RESERVE_TOO_LOW` |
 | `escalated` | `LOW_CONFIDENCE`, `NEEDS_HUMAN`, `IDENTITY_MISMATCH`, `OVER_SOFT_LIMIT` |
 
-Rule order: schema valid → duplicate proposal → payee allowed → per-tx cap → daily cap → minimum tax reserve
+Rule order: schema valid → duplicate proposal → hold active → payee allowed → per-tx cap → daily cap → minimum tax reserve
 (any failure so far is `rejected`) → soft limit → confidence threshold → `needs_human` → identity match
 (any failure here is `escalated`). All failing codes of the deciding class are returned; nothing is silently dropped.
 
-Open (not decided yet): the reason code and decision for a proposal on a milestone still inside its
-chargeback hold. The escrow already blocks `release` until the hold ends, so the funds are not in the vault.
+`HOLD_ACTIVE`: the proposal is for a card-funded milestone that is not yet eligible for release (still inside
+its chargeback hold, or not released). The orchestrator must not call the agent until release is eligible;
+this code is the backstop if it does.
 
 ## 3. Contracts (Solidity signatures)
 
@@ -137,7 +139,7 @@ interface IMilestoneEscrow {
 
   event Funded(bytes32 indexed milestoneId, address indexed funder, uint256 amount, uint64 timeout, bool cardFunded);
   event Approved(bytes32 indexed milestoneId);
-  event Disputed(bytes32 indexed milestoneId, address indexed by);
+  event Disputed(bytes32 indexed milestoneId, address indexed by, uint64 timeout);   // timeout after any extension
   event Released(bytes32 indexed milestoneId, address indexed vault, uint256 amount);
   event Refunded(bytes32 indexed milestoneId, address indexed to, uint256 amount);
 
@@ -147,9 +149,9 @@ interface IMilestoneEscrow {
                          uint256 amount, uint64 timeout, bool cardFunded, uint32 holdSeconds) external;
   // clean path: client only, Funded -> Approved
   function approve(bytes32 milestoneId) external;
-  // client or provider, while Funded or Approved (not yet released) -> Disputed; blocks release
+  // client or provider, only while Funded -> Disputed; extends timeout to at least now + DISPUTE_WINDOW (7 days)
   function dispute(bytes32 milestoneId) external;
-  // Disputed only: two of three EIP-712 attestations (client, provider, arbiter).
+  // Disputed only, before the timeout: two of three EIP-712 attestations (client, provider, arbiter).
   // releaseToProvider = true -> Approved; false -> refund to the funder.
   function decide(bytes32 milestoneId, bool releaseToProvider, bytes[] calldata sigs, address[] calldata signers) external;
   // RELEASER role only. Requires Approved and, if cardFunded, block.timestamp >= approvedAt + holdSeconds.
@@ -162,10 +164,12 @@ interface IMilestoneEscrow {
 
 Rules:
 - All parties, the vault, the amount, the timeout and the hold are stored per milestone at `createAndFund`.
-- **Clean path:** the client alone approves. The provider cannot object to being paid.
-- **Dispute:** `decide` is used only for `Disputed` milestones. A dispute that reaches `timeout` without a
-  decision defaults to a refund. A dispute does not extend the timeout. A milestone can be decided once;
-  after a decision it cannot be disputed again.
+- **Clean path:** the client alone approves. The provider cannot object to being paid. Approval is final for
+  the client: an Approved milestone cannot be disputed.
+- **Dispute:** only while `Funded`. A dispute moves the timeout to at least `now + DISPUTE_WINDOW` (a constant,
+  7 days) and never shortens it. `decide` is used only for `Disputed` milestones and only before the timeout.
+  A dispute that reaches the timeout without a decision defaults to a refund. A milestone is decided at most
+  once: `decide(true)` gives Approved (which cannot be disputed), `decide(false)` refunds in the same transaction.
 - **Refund destination:** the on-chain refund goes to the funder (`msg.sender` of `createAndFund`). For a
   card-funded milestone that is the treasury, which then starts the off-chain refund to the client.
 - **Identity hold:** `release` is restricted to the RELEASER role (treasury/backend). The backend runs the
@@ -173,9 +177,10 @@ Rules:
   **not on-chain**; identity verification is simulated and labelled as such.
 - One vault per provider (deployed per provider by the seed script). No pooled vault.
 
-Attestation typed data (EIP-712): `Attestation(bytes32 milestoneId, uint8 kind, bool releaseToProvider, uint256 nonce)`
+Attestation typed data (EIP-712): `Attestation(bytes32 milestoneId, uint8 kind, bool releaseToProvider)`
 with `kind` 0 = client, 1 = provider, 2 = arbiter. Domain: name `TethranEscrow`, version `1`, the chain ID and
-the escrow address. `nonce` is `0` in this version (a milestone is decided at most once).
+the escrow address. There is no nonce: the domain binds the chain and contract, and a milestone is decided at
+most once. `decide` takes exactly two signatures from two different parties; `signers[i]` signed `sigs[i]`.
 
 ```solidity
 // Draft: finalised at the vault and guard review.

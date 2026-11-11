@@ -24,7 +24,7 @@ contract MilestoneEscrow is AccessControl {
         address arbiter;    // third attestation signer in a dispute
         address vault;      // vault of the provider; receives the release
         uint256 amount;     // USDT base units (6 decimals)
-        uint64 timeout;     // unix time after which a refund is allowed
+        uint64 timeout;     // unix time after which a refund is allowed; a dispute may push it out
         uint64 approvedAt;  // unix time of approval; start of the card hold
         uint32 holdSeconds; // chargeback hold, applied only when cardFunded
         bool cardFunded;
@@ -32,6 +32,8 @@ contract MilestoneEscrow is AccessControl {
     }
 
     bytes32 public constant RELEASER_ROLE = keccak256("RELEASER_ROLE");
+    /// @dev A dispute leaves at least this long before the refund-by-timeout applies.
+    uint64 public constant DISPUTE_WINDOW = 7 days;
 
     IERC20 public immutable usdt;
 
@@ -39,7 +41,7 @@ contract MilestoneEscrow is AccessControl {
 
     event Funded(bytes32 indexed milestoneId, address indexed funder, uint256 amount, uint64 timeout, bool cardFunded);
     event Approved(bytes32 indexed milestoneId);
-    event Disputed(bytes32 indexed milestoneId, address indexed by);
+    event Disputed(bytes32 indexed milestoneId, address indexed by, uint64 timeout);
     event Released(bytes32 indexed milestoneId, address indexed vault, uint256 amount);
     event Refunded(bytes32 indexed milestoneId, address indexed to, uint256 amount);
 
@@ -111,14 +113,18 @@ contract MilestoneEscrow is AccessControl {
         emit Approved(milestoneId);
     }
 
-    /// @notice Client or provider; Funded or Approved (not yet released) -> Disputed. Blocks release.
+    /// @notice Client or provider; Funded -> Disputed. Not possible after approval: the client's
+    ///         approval is final. The timeout is pushed out to at least now + DISPUTE_WINDOW so the
+    ///         parties have time to decide; it is never shortened.
     function dispute(bytes32 milestoneId) external {
         Milestone storage m = _milestones[milestoneId];
-        if (m.state != State.Funded && m.state != State.Approved) revert WrongState(m.state);
+        if (m.state != State.Funded) revert WrongState(m.state);
         if (msg.sender != m.client && msg.sender != m.provider) revert NotParty();
 
         m.state = State.Disputed;
-        emit Disputed(milestoneId, msg.sender);
+        uint64 windowEnd = uint64(block.timestamp) + DISPUTE_WINDOW;
+        if (m.timeout < windowEnd) m.timeout = windowEnd;
+        emit Disputed(milestoneId, msg.sender, m.timeout);
     }
 
     /// @notice RELEASER only (treasury/backend, after its identity check). Approved -> Released.
