@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+contracts/coverage/
+contracts/coverage.json
+dist/
+*.sqlite
+*.sqlite-journal
+*.log
+.DS_Store

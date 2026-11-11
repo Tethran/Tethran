@@ -1,0 +1,22 @@
+{
+  "name": "tethran-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tethran contracts: TestUSDT (test token), MilestoneEscrow, vault, spending guard, ReceiptNFT. Test networks only.",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "wallets": "hardhat run scripts/gen-wallets.ts",
+    "balances": "hardhat run scripts/balances.ts"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "dotenv": "^18.0.10",
+    "hardhat": "^2.29.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.6.1"
+  }
+}
