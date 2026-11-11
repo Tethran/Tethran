@@ -25,6 +25,7 @@ const ESCROW_ABI = [
   "function createAndFund(bytes32 milestoneId, address client, address provider, address arbiter, address vault, uint256 amount, uint64 timeout, bool cardFunded, uint32 holdSeconds)",
   "function approve(bytes32 milestoneId)",
   "function dispute(bytes32 milestoneId)",
+  "function decide(bytes32 milestoneId, bool releaseToProvider, bytes[] sigs, address[] signers)",
   "function release(bytes32 milestoneId)",
   "function refund(bytes32 milestoneId)",
   "function state(bytes32 milestoneId) view returns (uint8)",
@@ -120,8 +121,33 @@ export class EvmChainClient implements ChainClient {
     return this.escrowCall("dispute", milestoneId, idempotencyKey);
   }
 
-  async decide(): Promise<TxRef> {
-    throw new NotBuiltYetError("decide", "MilestoneEscrow.decide (EIP-712 attestations)");
+  decide(
+    milestoneId: string,
+    releaseToProvider: boolean,
+    sigs: string[],
+    signers: string[],
+    idempotencyKey: string,
+  ): Promise<TxRef> {
+    return this.send(
+      this.config.escrow,
+      this.escrow.encodeFunctionData("decide", [milestoneIdToBytes32(milestoneId), releaseToProvider, sigs, signers]),
+      idempotencyKey,
+    );
+  }
+
+  /** EIP-712 payload a party signs to settle a dispute. kind: 0 = client, 1 = provider, 2 = arbiter. */
+  attestationTypedData(milestoneId: string, kind: 0 | 1 | 2, releaseToProvider: boolean) {
+    return {
+      domain: { name: "TethranEscrow", version: "1", chainId: this.chainId, verifyingContract: this.config.escrow },
+      types: {
+        Attestation: [
+          { name: "milestoneId", type: "bytes32" },
+          { name: "kind", type: "uint8" },
+          { name: "releaseToProvider", type: "bool" },
+        ],
+      },
+      message: { milestoneId: milestoneIdToBytes32(milestoneId), kind, releaseToProvider },
+    };
   }
 
   release(milestoneId: string, idempotencyKey: string): Promise<TxRef> {

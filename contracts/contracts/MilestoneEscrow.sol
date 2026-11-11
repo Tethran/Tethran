@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /// @title MilestoneEscrow
 /// @notice Holds USDT per milestone, keyed by milestoneId. See docs/INTERFACES.md section 3.
@@ -11,8 +13,9 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 ///         Timeout:     refund to the funder once `timeout` has passed, while Funded or Disputed.
 ///         The identity-match hold is enforced by the backend before it calls `release`; it is
 ///         simulated and is NOT enforced on-chain.
-///         `decide` (two of three EIP-712 attestations) is added in the next commit.
-contract MilestoneEscrow is AccessControl {
+///         Dispute:     dispute (client or provider, only while Funded) -> decide with two of three
+///                      EIP-712 attestations -> Approved or refunded. Undecided at the timeout: refund.
+contract MilestoneEscrow is AccessControl, EIP712 {
     using SafeERC20 for IERC20;
 
     enum State { None, Funded, Approved, Disputed, Released, Refunded }
@@ -32,6 +35,10 @@ contract MilestoneEscrow is AccessControl {
     }
 
     bytes32 public constant RELEASER_ROLE = keccak256("RELEASER_ROLE");
+    /// @dev EIP-712 type signed by a party to settle a dispute. kind: 0 = client, 1 = provider, 2 = arbiter.
+    ///      No nonce: the domain binds chain and contract, and a milestone is decided at most once.
+    bytes32 public constant ATTESTATION_TYPEHASH =
+        keccak256("Attestation(bytes32 milestoneId,uint8 kind,bool releaseToProvider)");
     /// @dev A dispute leaves at least this long before the refund-by-timeout applies.
     uint64 public constant DISPUTE_WINDOW = 7 days;
 
@@ -55,8 +62,12 @@ contract MilestoneEscrow is AccessControl {
     error NotParty();
     error HoldActive(uint256 releasableAt);
     error TimeoutNotReached(uint256 timeout);
+    error DisputeWindowOver(uint256 timeout);
+    error NeedTwoAttestations();
+    error DuplicateSigner();
+    error InvalidAttestation(address signer);
 
-    constructor(IERC20 usdt_, address admin, address releaser) {
+    constructor(IERC20 usdt_, address admin, address releaser) EIP712("TethranEscrow", "1") {
         if (address(usdt_) == address(0) || admin == address(0) || releaser == address(0)) revert ZeroAddress();
         usdt = usdt_;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
@@ -125,6 +136,53 @@ contract MilestoneEscrow is AccessControl {
         uint64 windowEnd = uint64(block.timestamp) + DISPUTE_WINDOW;
         if (m.timeout < windowEnd) m.timeout = windowEnd;
         emit Disputed(milestoneId, msg.sender, m.timeout);
+    }
+
+    /// @notice Settle a dispute with two of three EIP-712 attestations (client, provider, arbiter).
+    ///         Anyone may submit them; the signatures are the authority. Only while Disputed and
+    ///         before the timeout (after it, the default refund applies).
+    ///         releaseToProvider = true  -> Approved (the card hold, if any, starts now).
+    ///         releaseToProvider = false -> refund to the funder in this transaction.
+    /// @param sigs    exactly two signatures; sigs[i] was made by signers[i]
+    /// @param signers exactly two different parties of this milestone
+    function decide(
+        bytes32 milestoneId,
+        bool releaseToProvider,
+        bytes[] calldata sigs,
+        address[] calldata signers
+    ) external {
+        Milestone storage m = _milestones[milestoneId];
+        if (m.state != State.Disputed) revert WrongState(m.state);
+        if (block.timestamp >= m.timeout) revert DisputeWindowOver(m.timeout);
+        if (sigs.length != 2 || signers.length != 2) revert NeedTwoAttestations();
+        // Parties are distinct (checked at creation), so two different signers are two different parties.
+        if (signers[0] == signers[1]) revert DuplicateSigner();
+
+        for (uint256 i = 0; i < 2; i++) {
+            uint8 kind = _kindOf(m, signers[i]);
+            bytes32 digest = _hashTypedDataV4(
+                keccak256(abi.encode(ATTESTATION_TYPEHASH, milestoneId, kind, releaseToProvider))
+            );
+            if (ECDSA.recover(digest, sigs[i]) != signers[i]) revert InvalidAttestation(signers[i]);
+        }
+
+        if (releaseToProvider) {
+            m.state = State.Approved;
+            m.approvedAt = uint64(block.timestamp);
+            emit Approved(milestoneId);
+        } else {
+            m.state = State.Refunded;
+            usdt.safeTransfer(m.funder, m.amount);
+            emit Refunded(milestoneId, m.funder, m.amount);
+        }
+    }
+
+    /// @dev Attestation kind of a party: 0 = client, 1 = provider, 2 = arbiter. Reverts for anyone else.
+    function _kindOf(Milestone storage m, address signer) private view returns (uint8) {
+        if (signer == m.client) return 0;
+        if (signer == m.provider) return 1;
+        if (signer == m.arbiter) return 2;
+        revert NotParty();
     }
 
     /// @notice RELEASER only (treasury/backend, after its identity check). Approved -> Released.

@@ -93,9 +93,20 @@ test("a key used on another chain is refused", async () => {
   await assert.rejects(client.approve("m-1", "key-x"), /was used on chain 84532/);
 });
 
+test("decide encodes the attestations; attestationTypedData matches INTERFACES.md", async () => {
+  const sender = fakeSender();
+  const client = new EvmChainClient(CONFIG, sender, new InMemoryIdempotencyStore());
+  await client.decide("m-1", true, ["0x12", "0x34"], [CONFIG.usdt, CONFIG.escrow], "key-d");
+  assert.equal(sender.sent.length, 1);
+  assert.ok(sender.sent[0].data.includes(milestoneIdToBytes32("m-1").slice(2)));
+  const td = client.attestationTypedData("m-1", 2, false);
+  assert.deepEqual(td.domain, { name: "TethranEscrow", version: "1", chainId: 31337, verifyingContract: CONFIG.escrow });
+  assert.deepEqual(td.types.Attestation.map((f) => f.name), ["milestoneId", "kind", "releaseToProvider"]);
+  assert.deepEqual(td.message, { milestoneId: milestoneIdToBytes32("m-1"), kind: 2, releaseToProvider: false });
+});
+
 test("calls whose contracts are not built yet fail loudly", async () => {
   const client = new EvmChainClient(CONFIG, fakeSender(), new InMemoryIdempotencyStore());
-  await assert.rejects(client.decide(), NotBuiltYetError);
   await assert.rejects(
     client.vaultExecute({ vault: "", to: "", amount: "1", agentSig: "", policySig: "" }, "k"), NotBuiltYetError);
 });
