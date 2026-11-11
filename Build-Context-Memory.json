@@ -1,0 +1,434 @@
+{
+  "project_identity": {
+    "name": "Tethran",
+    "description": "Enforceable, traceable, deliverable payments for Africa's freelancers and agencies: milestone escrow in USDT, an untrusted AI Settlement Agent, a Policy Service with an on-chain spending guard, mobile-money style payouts and NFT receipts. Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer track (Tether).",
+    "version": "0.1.0",
+    "stack": [
+      "TypeScript (Node.js)",
+      "Solidity (Hardhat or Foundry)",
+      "React (mobile-first)",
+      "Tether WDK",
+      "EVM test network (Sepolia first)",
+      "Stripe sandbox",
+      "Opik",
+      "x402"
+    ],
+    "architecture_summary": "Three-way separation: the Settlement Agent (LLM) proposes, a deterministic Policy Service authorises and co-signs, and contracts enforce (USDT milestone escrow, 2-of-2 vault with spending guard, soulbound receipt NFT). All chain access goes through a ChainClient interface with per-chain config. Fiat-to-USDT conversion, identity checks and payout rails are simulated and labelled.",
+    "repo_url": "",
+    "created_at": "2026-11-11T00:00:00Z"
+  },
+  "sessions": [
+    {
+      "session_id": "session_001",
+      "timestamp": "2026-11-11T20:54:00Z",
+      "ai_agent": "Planning session (lead and co-architect)",
+      "current_phase": "Phase 0 - Foundations and verification",
+      "progress": {
+        "completed": [
+          "Chose Mobile Money & Peer-to-Peer track (Tether) and product name Tethran",
+          "Authored whitepaper, PRD, system design, development plan",
+          "Authored the project rules file, INTERFACES.md, TASKS.md",
+          "Added multi-chain design (ChainClient) and NFT receipts to all docs",
+          "Drafted BuilderBase project concept and team status answers"
+        ],
+        "in_progress": [
+          "Phase 0 verification checks V1 to V8 (see docs/TASKS.md)"
+        ],
+        "blocked": []
+      },
+      "last_session_summary": "First session. No previous session; this file was initialised after the planning documents were completed.",
+      "changes_made": [
+        "Created docs: 01-whitepaper (.md, .docx), 02-prd, 03-system-design-architecture, 04-development-plan",
+        "Created kickoff pack: the project rules file, INTERFACES.md, TASKS.md",
+        "Created the working guide (adapted for Tethran) and this memory file"
+      ],
+      "file_module_map": [
+        {
+          "file": "the project rules file",
+          "purpose": "Non-negotiable project rules and trust boundaries",
+          "last_modified": "2026-11-11T20:54:00Z"
+        },
+        {
+          "file": "the working guide",
+          "purpose": "Co-pilot behaviour contract for every AI session",
+          "last_modified": "2026-11-11T20:54:00Z"
+        },
+        {
+          "file": "Build-Context-Memory.json",
+          "purpose": "Append-only session memory",
+          "last_modified": "2026-11-11T20:54:00Z"
+        },
+        {
+          "file": "docs/02-prd.md",
+          "purpose": "Requirements, modules M1 to M14",
+          "last_modified": "2026-11-11T20:54:00Z"
+        },
+        {
+          "file": "docs/03-system-design-architecture.md",
+          "purpose": "Architecture, chain design, flows, agent, guardrails",
+          "last_modified": "2026-11-11T20:54:00Z"
+        },
+        {
+          "file": "docs/04-development-plan.md",
+          "purpose": "Phases 0 to 8 with exit criteria",
+          "last_modified": "2026-11-11T20:54:00Z"
+        },
+        {
+          "file": "docs/INTERFACES.md",
+          "purpose": "Contract between workstreams: schemas, APIs, contract signatures, tables",
+          "last_modified": "2026-11-11T20:54:00Z"
+        },
+        {
+          "file": "docs/TASKS.md",
+          "purpose": "Verification checks and ordered tasks per workstream",
+          "last_modified": "2026-11-11T20:54:00Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Enter the Mobile Money & Peer-to-Peer track and keep the AI agent",
+          "reason": "Agentic Finance track is saturated; Tether's track descriptions were examples, so the agent core can stay",
+          "alternatives_considered": "Stay on Agentic Finance (Ripple/XRPL)"
+        },
+        {
+          "decision": "Build on an EVM test network with Tether WDK",
+          "reason": "USDT and WDK fit the Tether track; escrow, vault and guard are Solidity",
+          "alternatives_considered": "XRPL, Tron"
+        },
+        {
+          "decision": "Three-way separation: agent proposes, Policy Service authorises, contracts enforce",
+          "reason": "Spending limits must live outside the model",
+          "alternatives_considered": "Limits in the system prompt"
+        },
+        {
+          "decision": "All chain access through a ChainClient interface with per-chain config",
+          "reason": "Make adding further EVM chains configuration-only",
+          "alternatives_considered": "Hard-coded single chain"
+        },
+        {
+          "decision": "Add soulbound receipt NFTs storing hashes only",
+          "reason": "Verifiable receipts without exposing personal data",
+          "alternatives_considered": "Off-chain receipts only"
+        },
+        {
+          "decision": "Product name Tethran",
+          "reason": "Chosen by the team (Tether Transfer)",
+          "alternatives_considered": "Amana"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "Key assumptions unverified: test USDT, WDK smart-account/gasless, WDK on-ramp, x402 on EVM, Stripe wallets, per-chain USDT addresses",
+          "severity": "high",
+          "status": "open"
+        },
+        {
+          "issue": "Organiser has not confirmed that an agent-based product fits the Mobile Money & P2P track, or the multi-track rules",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Receipt NFT holder undecided (payer, provider or both)",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "TASKS.md splits work between two developers; the team has a designer too and no design workstream yet",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Market statistics in the whitepaper come from press coverage and need primary-source checks before external use",
+          "severity": "medium",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "First pandoc .docx had an empty table of contents and merged header lines",
+          "context": "Whitepaper conversion",
+          "resolution": "Removed the --toc flag and added blank lines between header lines"
+        }
+      ],
+      "next_steps": [
+        "Create the repository with README, Development.md, and place docs in docs/",
+        "Run Phase 0 verification checks V1 to V8 and record each answer and fallback",
+        "Implement ChainClient and config/chains.json, then the test token and escrow contract with tests",
+        "Ask the organiser about track fit and multi-track entry",
+        "Add a design workstream to docs/TASKS.md and assign owners by name"
+      ],
+      "notes": "Everything in the PRD is in scope; stub and label anything unfinished. Final submission is Fri 13 Nov 2026 at 23:59 SAST."
+    },
+    {
+      "session_id": "session_002",
+      "timestamp": "2026-11-11T23:30:00Z",
+      "ai_agent": "Executing engineer (Person A workstream)",
+      "current_phase": "Phase 0 - Foundations and verification, moving into Phase 1 - Wallets and chain core",
+      "progress": {
+        "completed": [
+          "Moved the project rules file, the working guide and Build-Context-Memory.json to the repo root",
+          "INTERFACES.md v0.2 (co-architect decisions 1 to 14)",
+          "Phase 0 checks V1 to V8 recorded in Development.md with fallbacks",
+          "Repo scaffold: contracts (Hardhat 2, ethers v6), services/chain, config/chains.json, README, .env.example, .gitignore",
+          "TestUSDT (6 decimals, open mint, EIP-3009) with tests",
+          "MilestoneEscrow skeleton (createAndFund, approve, dispute, release, refund) with tests",
+          "ChainClient (EvmChainClient) for the escrow calls with idempotency keys, with tests",
+          "Scripted proof fund -> approve -> release through ChainClient on the local Hardhat chain"
+        ],
+        "in_progress": [
+          "MilestoneEscrow.decide (2-of-3 EIP-712 attestations)"
+        ],
+        "blocked": [
+          "Deploy and proof on a public test network: all test wallets hold 0 test ETH; a person must use a faucet",
+          "Commits: git user.name and user.email are not configured on this machine"
+        ]
+      },
+      "last_session_summary": "Planning session: chose the track and name, authored the whitepaper, PRD, architecture, development plan, the project rules file, INTERFACES.md, TASKS.md and this memory file. Phase 0 checks were listed but not run.",
+      "changes_made": [
+        "docs/INTERFACES.md rewritten as v0.2; every change is listed in Development.md",
+        "Created Development.md",
+        "Created contracts/ (TestUSDT.sol, MilestoneEscrow.sol, tests, gen-wallets, balances and deploy scripts)",
+        "Created services/chain/ (types, config loader, idempotency stores, EvmChainClient, tests, proof script)",
+        "Created config/chains.json, .env.example, .gitignore; rewrote README.md",
+        "Filled the Commands section of the project rules file"
+      ],
+      "file_module_map": [
+        {
+          "file": "docs/INTERFACES.md",
+          "purpose": "Workstream contract, v0.2",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "Development.md",
+          "purpose": "Change log with reasons; Phase 0 answers and fallbacks",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "README.md",
+          "purpose": "Project overview, status and run steps",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "the project rules file",
+          "purpose": "Project rules; Commands section filled",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "config/chains.json",
+          "purpose": "Per-chain config; test networks only",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": ".env.example",
+          "purpose": "Names of the test-key environment variables",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "contracts/hardhat.config.ts",
+          "purpose": "Hardhat config; networks read from config/chains.json",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "contracts/contracts/TestUSDT.sol",
+          "purpose": "Test token: 6 decimals, open mint, EIP-3009",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "contracts/contracts/MilestoneEscrow.sol",
+          "purpose": "Milestone escrow skeleton (no decide yet). Needs line-by-line review",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "contracts/test/MilestoneEscrow.test.ts",
+          "purpose": "Escrow state machine tests",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "contracts/test/TestUSDT.test.ts",
+          "purpose": "Token and EIP-3009 tests",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "contracts/scripts/gen-wallets.ts",
+          "purpose": "Generates test keys into .env. Key handling: needs review",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "contracts/scripts/balances.ts",
+          "purpose": "Prints test ETH balances per role and chain",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "contracts/scripts/deploy.ts",
+          "purpose": "Deploys TestUSDT and MilestoneEscrow; writes addresses to chains.json",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "services/chain/src/types.ts",
+          "purpose": "ChainClient interface, mirrors INTERFACES.md 3a",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "services/chain/src/config.ts",
+          "purpose": "Loads one chain from chains.json; refuses non-test networks",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "services/chain/src/idempotency.ts",
+          "purpose": "Idempotency stores: in-memory and SQLite",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "services/chain/src/evmChainClient.ts",
+          "purpose": "EVM implementation of ChainClient",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "services/chain/test/chainClient.test.ts",
+          "purpose": "ChainClient and store unit tests",
+          "last_modified": "2026-11-11T23:30:00Z"
+        },
+        {
+          "file": "services/chain/scripts/prove-fund-release.ts",
+          "purpose": "Scripted proof: fund -> approve -> release",
+          "last_modified": "2026-11-11T23:30:00Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Decisions: co-architect decisions 1 to 19 applied (contracts 1-9, ChainClient 10, agent and policy 11-13, state model 14, project 15-19)",
+          "reason": "Relayed by the lead developer; they close the gaps found in the first read of the docs",
+          "alternatives_considered": "Merkle-root allowlist, pooled vault and 2-of-3 for every release were dropped"
+        },
+        {
+          "decision": "Hardhat 2 (hh2 line, 2.29) rather than Hardhat 3",
+          "reason": "Decision 16 says Hardhat + ethers v6; the Hardhat 2 toolbox and helpers are the well-known ones, lower risk under the deadline",
+          "alternatives_considered": "Hardhat 3 (current major, different config and plugin model)"
+        },
+        {
+          "decision": "decide(false) refunds in the same transaction; decide(true) moves to Approved; a milestone can be decided once and not disputed again",
+          "reason": "Keeps the six agreed states and stops a dispute loop after a decision",
+          "alternatives_considered": "A separate RefundDue state; allowing repeated disputes"
+        },
+        {
+          "decision": "On-chain refund goes to the funder (msg.sender of createAndFund)",
+          "reason": "Decision 1 makes msg.sender the funder; for card-funded milestones the treasury gets the USDT back and refunds the client off-chain",
+          "alternatives_considered": "Refund to the client address"
+        },
+        {
+          "decision": "OpenZeppelin AccessControl for RELEASER and SafeERC20 for transfers",
+          "reason": "Audited, familiar to a reviewer, few custom lines",
+          "alternatives_considered": "A single immutable releaser address"
+        },
+        {
+          "decision": "Fallbacks: own TestUSDT with EIP-3009 (V1), minimal custom 2-of-2 vault (V2), simulated treasury on-ramp (V3), Policy Service plus guard only (V6)",
+          "reason": "The WDK ERC-4337 Safe account is single-owner; no WDK policy hooks found; the on-ramp needs a MoonPay account",
+          "alternatives_considered": "WDK Safe account as the vault; WDK on-ramp module"
+        },
+        {
+          "decision": "Idempotency: claim key, send, record hash; free the key only on a revert or insufficient funds; otherwise refuse to resend",
+          "reason": "Never send a payment-creating transaction twice, even after an ambiguous network failure",
+          "alternatives_considered": "Retry on any error"
+        },
+        {
+          "decision": "SQLite through node:sqlite (built into Node)",
+          "reason": "No native module build on Windows",
+          "alternatives_considered": "better-sqlite3"
+        },
+        {
+          "decision": "ChainClient takes a TxSender ({getAddress, sendTransaction}); ethers Signer now, WDK account later",
+          "reason": "The WDK spike showed its account has the same shape, so WDK can be plugged in without changing the client",
+          "alternatives_considered": "Binding ChainClient to ethers Wallet"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "No test ETH: all seven test wallets hold 0 on Sepolia and Base Sepolia, so nothing is deployed on a public test network and the primary chain is not chosen",
+          "severity": "high",
+          "status": "open"
+        },
+        {
+          "issue": "git user.name and user.email are not set, so no commit has been made yet",
+          "severity": "high",
+          "status": "open"
+        },
+        {
+          "issue": "A dispute does not extend the timeout: a client can approve, dispute before release (for example during a long card hold) and be refunded at the timeout unless provider and arbiter decide first",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "MilestoneEscrow has no decide yet; ChainClient decide, vaultExecute, setPolicy and mintReceipt throw NotBuiltYetError",
+          "severity": "medium",
+          "status": "in-progress"
+        },
+        {
+          "issue": "Policy reason code and decision for a proposal made during the chargeback hold are not decided",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Attestation nonce is fixed at 0 in INTERFACES v0.2; confirm or remove the field",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "docs/03 sections 3.2, 3.3 and 5.2 and PRD FR-4.5 and FR-14.5 still describe the pre-v0.2 design",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "In the demo deployment the treasury key is deployer, admin and RELEASER at once",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Public RPC endpoints are slow from this machine (ethers network detection timed out twice); may need RPC_URL_<chainId> overrides",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "V4 (x402), V5 (Stripe) and V7 (LLM, Opik) were recorded from package and decision information only; they need accounts and keys and belong to the Person B spikes",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "ISpendingGuard in INTERFACES v0.2 is a draft (setPayee shape, replay protection for operator signatures) until the vault and guard review",
+          "severity": "low",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "TypeError: Cannot read properties of undefined (reading 'fileExists') from ts-node",
+          "context": "First hardhat run; the toolbox had pulled TypeScript 7.0.2",
+          "resolution": "Pinned typescript@5.8.3 and ts-node@10.9.2 in contracts/"
+        },
+        {
+          "error": "HH502: Couldn't download compiler version list",
+          "context": "First compile; slow network",
+          "resolution": "Retried; the download succeeded"
+        },
+        {
+          "error": "JsonRpcProvider failed to detect network / TIMEOUT against the public Sepolia RPC",
+          "context": "balances script and the WDK spike; curl to the same endpoint works but takes several seconds",
+          "resolution": "Not resolved; ChainClient uses a static network to skip detection. Logged as a known issue"
+        },
+        {
+          "error": "npm error network on the first WDK install",
+          "context": "WDK spike in a scratch directory",
+          "resolution": "Retried with more fetch retries; succeeded"
+        }
+      ],
+      "next_steps": [
+        "Lead: fund the treasury address with test ETH on Sepolia or Base Sepolia, and set the git identity so the work can be committed",
+        "Lead: line-by-line review of MilestoneEscrow.sol, gen-wallets.ts and the idempotency logic in evmChainClient.ts",
+        "Then: MilestoneEscrow.decide with EIP-712 attestations and tests; stop for review",
+        "Then, after review: 2-of-2 vault and SpendingGuard, ReceiptNFT, Policy Service",
+        "Deploy to the chosen public test network and rerun the proof script there",
+        "Wire a WDK account as the TxSender for the treasury"
+      ],
+      "notes": "No commits were made in this session: the lead asked for none before 00:00, and the git identity is missing. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
+    }
+  ]
+}
