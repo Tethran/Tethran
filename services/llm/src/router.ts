@@ -137,6 +137,7 @@ export function createLlmProvider(config: LlmConfig, deps: LlmDeps): RoutedProvi
                 await safeTrace(tracer, {
                   provider: p.name, model: p.model, latencyMs: raw.latencyMs, attempt: total,
                   ok: true, inputChars, outputChars,
+                  inputTokens: raw.usage?.inputTokens, outputTokens: raw.usage?.outputTokens,
                 });
                 return { ...raw, parsed: value, provider: p.name, model: p.model, attempts: total };
               }

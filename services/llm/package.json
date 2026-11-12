@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "eval:agent": "tsx eval/run.ts",
-    "smoke": "tsx eval/smoke.ts"
+    "smoke": "tsx eval/smoke.ts",
+    "opik:check": "tsx eval/opik-check.ts",
+    "opik:count": "tsx eval/opik-count.ts"
   },
   "dependencies": {
     "ajv": "^8.17.1",

@@ -1,3 +1,4 @@
+import { noopTracer, MemoryTracer as _MT, traceTool } from "../src/tracing.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createLlmProvider, configFromEnv, type LlmConfig } from "../src/router.js";
@@ -162,6 +163,29 @@ test("tracer is called once per attempt with attempt numbers 1..n and no secrets
 
 test("a throwing tracer does not change the outcome", async () => {
   const { fetch } = fakeFetch([openAiOk(GOOD)]);
-  const llm = createLlmProvider(cfg(), { fetch, tracer: { traceCall() { throw new Error("boom"); } } });
+  const llm = createLlmProvider(cfg(), { fetch, tracer: { ...noopTracer, traceCall() { throw new Error("boom"); } } });
   assert.deepEqual((await llm.complete(req)).parsed, { ok: true });
+});
+
+test("each run is one trace; attempts and tool calls inside it become its spans", async () => {
+  const tracer = new _MT();
+  const { fetch } = fakeFetch([openAiOk("not json"), openAiOk(GOOD)]);
+  const llm = createLlmProvider(cfg(), { fetch, tracer });
+  const { traceId, result } = await tracer.run({ name: "settle" }, async () => {
+    await traceTool("get_milestone", { input: { id: "m-1" }, output: () => ({ found: true }) }, async () => 1);
+    return llm.complete(req);
+  });
+  assert.deepEqual(result.parsed, { ok: true });
+  assert.equal(tracer.runs.length, 1);
+  assert.equal(tracer.runs[0].traceId, traceId);
+  assert.deepEqual(tracer.runs[0].spans.map((s) => [s.type, s.name]), [
+    ["tool", "get_milestone"], ["llm", "groq.complete#1"], ["llm", "groq.complete#2"],
+  ]);
+  assert.equal(tracer.runs[0].spans[1].error, "invalid_json");
+});
+
+test("a tool call that throws is recorded as an error span and still throws", async () => {
+  const tracer = new _MT();
+  await assert.rejects(tracer.run({ name: "x" }, () => traceTool("buy_fx_quote", {}, async () => { throw new TypeError("no"); })));
+  assert.equal(tracer.runs[0].spans[0].error, "TypeError");
 });
