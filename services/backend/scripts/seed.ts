@@ -203,12 +203,28 @@ async function main() {
     await new Promise(() => {});
   }
 
+  // --retry-failed: keep the seeded state and run only the scenarios that failed, on fresh milestones under a new
+  // signed contract (public test networks time out now and then). The summary is updated in place.
+  const RETRY = process.argv.includes("--retry-failed");
+  type Row = { scenario: string; milestone: string; outcome: string; detail: string; attempt?: number };
+  const prior: { chain: string; contract: string; scenarios: Row[]; retry_contracts?: string[] } | undefined = RETRY
+    ? JSON.parse(readFileSync(join(DATA, "seed-summary.json"), "utf8"))
+    : undefined;
+  const isFailure = (r: Row) => /FAILED|unexpected|NOT BLOCKED|RELEASED \(unexpected\)|WAS SENT/.test(r.outcome + " " + r.detail);
+
   // ---- 0. from nothing: this directory only ----
-  if (!/^\.demo-data[A-Za-z0-9_-]*$/.test(basename(DATA)) || resolve(DATA, "..") !== ROOT) throw new Error("refusing to wipe an unexpected directory");
-  rmSync(DATA, { recursive: true, force: true });
-  mkdirSync(DATA, { recursive: true });
-  const internalToken = randomBytes(24).toString("hex");
-  writeFileSync(join(DATA, "demo.json"), JSON.stringify({ chain: chain.key, internal_token: internalToken, seeded_at: new Date().toISOString() }, null, 2));
+  let internalToken: string;
+  if (RETRY) {
+    const meta = JSON.parse(readFileSync(join(DATA, "demo.json"), "utf8"));
+    if (meta.chain !== chain.key) throw new Error(`${basename(DATA)} was seeded on "${meta.chain}", not "${chain.key}"`);
+    internalToken = meta.internal_token;
+  } else {
+    if (!/^\.demo-data[A-Za-z0-9_-]*$/.test(basename(DATA)) || resolve(DATA, "..") !== ROOT) throw new Error("refusing to wipe an unexpected directory");
+    rmSync(DATA, { recursive: true, force: true });
+    mkdirSync(DATA, { recursive: true });
+    internalToken = randomBytes(24).toString("hex");
+    writeFileSync(join(DATA, "demo.json"), JSON.stringify({ chain: chain.key, internal_token: internalToken, seeded_at: new Date().toISOString() }, null, 2));
+  }
 
   const provider = newProvider(chain);
   const treasury = wallet("TREASURY").connect(provider);
@@ -228,6 +244,7 @@ async function main() {
   }
 
   // ---- 1. provider vault and payees ----
+  if (!RETRY) {
   const db = openDb(join(DATA, "backend.sqlite"));
   const vs = await relay.vaultState(vault);
   db.prepare("INSERT INTO vaults VALUES ('prov-demo', ?, ?, ?, ?)").run(chain.chainId, vault, vs.operator, vs.providerPayout);
@@ -235,6 +252,7 @@ async function main() {
   db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-demo', 'Kofi Print Works (demo, simulated M-Pesa)', ?, 'mpesa', 1, 'Kofi Print Works')").run(kofiRail);
   db.close();
   say("seeded", "provider vault and two payees (one on a simulated M-Pesa rail)");
+  }
 
   // ---- 2. services, each with only its own key ----
   const se = serviceEnv(chain.key, internalToken);
@@ -244,6 +262,7 @@ async function main() {
   await waitHealthy(`${BACKEND}/health`, "backend");
 
   // ---- 3. the operator signs the policy (off-chain rules and on-chain vault limits) ----
+  if (!RETRY) {
   const domain = relay.vaultDomain(vault);
   const onChain = await relay.vaultState(vault);
   const current = await call(POLICY, "GET", "/v1/policy");
@@ -267,6 +286,7 @@ async function main() {
   const operator_signature = await operator.signTypedData(policyDomain as never, policyDocumentTypes as never, policyDocumentValue(doc.version, doc as never) as never);
   await call(POLICY, "POST", "/v1/policy", { policy: doc, version: doc.version, operator_signature, vault, vault_actions: actions });
   say("policy", `v${doc.version} signed by the operator: per-tx cap 1000, soft limit 800, tax reserve 10% (${actions.length} vault change(s) relayed)`);
+  }
 
   // ---- 4. one signed contract with a country profile; one escrow milestone per scenario ----
   const SCEN: { scenario: string; title: string; cents: number; evidence?: string }[] = [
@@ -280,11 +300,16 @@ async function main() {
     { scenario: "wrong_network", title: "Product photos", cents: 5_000 },
     { scenario: "identity_mismatch", title: "Pitch deck redesign", cents: 5_000, evidence: "Delivered. Invoice issued by Bola Trading Co, bank details attached." },
   ];
+  const RUN = RETRY ? SCEN.filter((s) => prior!.scenarios.some((r) => r.scenario === s.scenario && isFailure(r))) : SCEN;
+  if (RETRY) {
+    say("retry", RUN.length ? `running again: ${RUN.map((s) => s.scenario).join(", ")}` : "nothing failed; nothing to retry");
+    if (RUN.length === 0) { stop(); return; }
+  }
   const due = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10);
   const contract = await call(BACKEND, "POST", "/contracts", {
     provider_id: "prov-demo", provider_name: "Amara Studio", provider_address: providerKey.address, client_address: clientAddr,
     client_name: "Demo Client Ltd", currency: "USD", country: "KE",
-    milestones: SCEN.map((s) => ({ id: randomUUID(), title: s.title, amount_usd_cents: s.cents, due_date: due, acceptance_criteria: `${s.title}: delivered as agreed and confirmed by the client.` })),
+    milestones: RUN.map((s) => ({ id: randomUUID(), title: s.title, amount_usd_cents: s.cents, due_date: due, acceptance_criteria: `${s.title}: delivered as agreed and confirmed by the client.` })),
   });
   const cid = contract.id ?? contract.contract?.id;
   for (const party of ["provider", "client"] as const) {
@@ -298,7 +323,7 @@ async function main() {
   say("contract", `${cid} signed by the provider and the WDK client wallet; country profile KE; ${terms.length} milestones`);
 
   // The test faucet: the client wallet gets test USDT for every deposit, the agent's x402 budget wallet 1 test USDT.
-  const totalDeposit = SCEN.reduce((n, s) => n + BigInt(s.cents) * 10_000n, 0n);
+  const totalDeposit = RUN.reduce((n, s) => n + BigInt(s.cents) * 10_000n, 0n);
   await relay.waitConfirmed((await relay.mintTestUsdt(clientAddr, totalDeposit.toString(), `seed:faucet:client:${cid}`)).txHash);
   await relay.waitConfirmed((await relay.mintTestUsdt(budgetAddr, usdt(1), `seed:faucet:budget:${cid}`)).txHash);
   say("faucet", `client wallet ${Number(totalDeposit) / 1e6} test USDT; agent x402 budget wallet 1 test USDT`);
@@ -337,7 +362,7 @@ async function main() {
   const decision = (r: Awaited<ReturnType<typeof attempt>>) =>
     r.ok ? `${r.body.decision}${r.body.reasons?.length ? " (" + r.body.reasons.join(", ") + ")" : ""}, agent ${r.body.agent_mode}, trace ${r.body.trace_id ?? "-"}` : `refused ${r.status} ${r.code}`;
 
-  for (const [i, s] of SCEN.entries()) {
+  for (const [i, s] of RUN.entries()) {
     let id = terms[i].id;
     try {
       const body = await call(BACKEND, "POST", `/contracts/${cid}/milestones/${terms[i].id}/activate`);
@@ -395,9 +420,19 @@ async function main() {
 
   const rec = await call(BACKEND, "GET", "/reconciliation");
   const queue = await attempt(BACKEND, "GET", "/operator/queue");
-  writeFileSync(join(DATA, "seed-summary.json"), JSON.stringify({ chain: chain.key, contract: cid, scenarios: summary }, null, 2));
+  const finalRows: Row[] = RETRY
+    ? prior!.scenarios.map((r) => {
+        const again = summary.find((x) => x.scenario === r.scenario);
+        return again ? { ...again, attempt: (r.attempt ?? 1) + 1 } : r;
+      })
+    : summary;
+  writeFileSync(join(DATA, "seed-summary.json"), JSON.stringify({
+    chain: chain.key, contract: RETRY ? prior!.contract : cid,
+    ...(RETRY ? { retry_contracts: [...(prior!.retry_contracts ?? []), cid] } : {}),
+    scenarios: finalRows,
+  }, null, 2));
   console.log("\nSummary");
-  console.log(`  chain ${chain.name}; contract ${cid}; ${summary.length} scenarios seeded; ${summary.filter((x) => /FAILED|unexpected/.test(x.outcome)).length} problems`);
+  console.log(`  chain ${chain.name}; contract ${cid}; ${finalRows.length} scenarios seeded; ${finalRows.filter(isFailure).length} problems${RETRY ? ` (after retrying ${RUN.length})` : ""}`);
   console.log(`  reconciliation: ${rec.count} milestones in the ledger, ${rec.complete} complete`);
   if (queue.ok) console.log(`  operator queue: ${JSON.stringify(queue.body).length > 2 ? "has items (identity hold, escalations, dispute)" : "empty"}`);
   console.log(`  details: .demo-data/seed-summary.json`);
