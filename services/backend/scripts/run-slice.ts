@@ -102,21 +102,23 @@ async function main() {
   db.close();
   say("seeded", "provider vault and two payees (one on a simulated M-Pesa rail)");
 
-  // 2. operator (the provider's wallet) signs the vault limits and payees; the treasury only relays them
+  // 2. the operator is the provider's own wallet. It signs every change; services only relay.
   const domain = relay.vaultDomain(vault);
-  let version = vs.policyVersion;
-  if (vs.perTxCap !== usdt(1000)) {
-    version++;
-    const p = { version, perTxCap: usdt(1000), dailyCap: usdt(1_000_000), minReserve: "0" };
-    const tx = await relay.setPolicy({ vault, ...p, operatorSig: await operator.signTypedData(domain, { SetPolicy: [...VAULT_TYPES.SetPolicy] }, p) }, `slice:policy:${vault}:${version}`);
-    await relay.waitConfirmed(tx.txHash);
-    say("vault policy", `per-tx 1000, daily 1,000,000 (operator-signed, v${version})`);
-  }
-  version++;
-  const payees = { version, payees: [amara, kofiRail], allowed: true };
-  const ptx = await relay.setPayees({ vault, ...payees, operatorSig: await operator.signTypedData(domain, { SetPayees: [...VAULT_TYPES.SetPayees] }, payees) }, `slice:payees:${vault}:${version}`);
-  await relay.waitConfirmed(ptx.txHash);
-  say("vault payees", `2 payees allowed (operator-signed, v${version})`);
+  const signPolicyChange = async (doc: Record<string, any>, onChain: { policyVersion: number; perTxCap: string; dailyCap: string; minReserve: string }, addPayees: string[]) => {
+    // Vault actions in the vault's own typed-data format, for whatever on-chain values change.
+    const actions: Record<string, unknown>[] = [];
+    let v = onChain.policyVersion;
+    if (onChain.perTxCap !== doc.per_tx_cap || onChain.dailyCap !== doc.daily_cap || onChain.minReserve !== doc.vault_min_reserve) {
+      const a = { version: ++v, perTxCap: doc.per_tx_cap, dailyCap: doc.daily_cap, minReserve: doc.vault_min_reserve };
+      actions.push({ type: "setPolicy", ...a, operator_signature: await operator.signTypedData(domain, { SetPolicy: [...VAULT_TYPES.SetPolicy] }, a) });
+    }
+    if (addPayees.length > 0) {
+      const a = { version: ++v, payees: addPayees, allowed: true };
+      actions.push({ type: "setPayees", ...a, operator_signature: await operator.signTypedData(domain, { SetPayees: [...VAULT_TYPES.SetPayees] }, a) });
+    }
+    const operator_signature = await operator.signTypedData(policyDomain as never, policyDocumentTypes as never, policyDocumentValue(doc.version, doc as never) as never);
+    return { policy: doc, version: doc.version, operator_signature, vault, vault_actions: actions };
+  };
 
   // 3. start the two services, each with only its own key
   const children: ChildProcess[] = [];
@@ -136,16 +138,17 @@ async function main() {
     await waitHealthy(`${POLICY}/v1/policy`, "Policy Service");
     await waitHealthy(`${BACKEND}/health`, "backend");
 
-    // 4. the operator signs the Policy Service policy (off-chain rules plus the same caps and payees)
+    // 4. the operator sets the policy through the Policy Service: off-chain rules signed with the policy typed
+    //    data, on-chain limits and payees signed in the vault's format and relayed to the vault
     const current = await call(POLICY, "GET", "/v1/policy");
     const doc = {
       version: current.version + 1, per_tx_cap: usdt(1000), per_tx_soft_limit: usdt(800), daily_cap: usdt(1_000_000),
       vault_min_reserve: "0", payee_allowlist: ["payee_amara", "payee_kofi"], min_tax_reserve_bps: 1000,
       confidence_threshold: 0.7, chargeback_hold_seconds: 600,
     };
-    const operator_signature = await operator.signTypedData(policyDomain as never, policyDocumentTypes as never, policyDocumentValue(doc.version, doc as never) as never);
-    await call(POLICY, "POST", "/v1/policy", { policy: doc, version: doc.version, operator_signature });
-    say("policy service", `policy v${doc.version} accepted (operator-signed): tax reserve 10%, soft limit 800`);
+    const set = await call(POLICY, "POST", "/v1/policy", await signPolicyChange(doc, await relay.vaultState(vault), [amara, kofiRail]));
+    say("policy service", `policy v${doc.version} accepted: per-tx 1000, tax reserve 10%, soft limit 800`);
+    for (const t of set.vault_transactions) say(`  vault ${t.type}`, `v${t.version} relayed on-chain ${t.tx}`);
 
     // 5. milestone: create, client deposits, backend funds the escrow
     const id = randomUUID();
@@ -168,8 +171,8 @@ async function main() {
     say("released", `${rel.release_tx} (identity check simulated: match)`);
 
     // 7. settlement through the agent, the Policy Service and the vault
-    const s = await call(BACKEND, "POST", `/milestones/${id}/settle`);
-    say("settlement", `${s.decision}${s.reasons?.length ? " " + s.reasons.join(",") : ""}  trace ${s.trace_id}`);
+    const s = await call(BACKEND, "POST", `/milestones/${id}/settle`, { agent_mode: env("AGENT_MODE") || "live+replay" });
+    say("settlement", `${s.decision}${s.reasons?.length ? " " + s.reasons.join(",") : ""}  agent ${s.agent_mode}  trace ${s.trace_id}`);
     if (s.decision !== "approved") {
       if (s.agent_attempts) for (const a of s.agent_attempts) say("  agent attempt", `#${a.attempt} ${a.provider}/${a.model}: ${a.reason}`);
       console.log(`STOPPED: ${s.rejected_by ?? "the Policy Service"} decided ${s.decision}. Nothing was paid. Timeline: GET ${BACKEND}/milestones/${id}/timeline`);
@@ -179,7 +182,19 @@ async function main() {
     for (const p of s.payouts) say(`  payout ${p.action_index}`, `${p.amount} to ${p.payee_id} (${p.rail}${p.simulated ? ", rail simulated" : ""}) ${p.tx}`);
     const receipt = await call(BACKEND, "GET", `/receipts/${id}`);
     say("receipt", `token #${receipt.tokenId} held by ${receipt.holder} (read from the chain)`);
-    console.log(`PASS: milestone ${id} funded, released, settled through the Policy Service and paid out; receipt minted. Trace ${s.trace_id}`);
+    // 8. the operator lowers the per-transaction cap; the on-chain guard obeys at once
+    // 6 USDT fits the vault balance (the 10 USDT tax reserve stays there), so only the cap can block it
+    const before = await relay.vaultCheck(vault, amara, usdt(6));
+    const lower = { ...doc, version: doc.version + 1, per_tx_cap: usdt(5), per_tx_soft_limit: usdt(4) };
+    const lowered = await call(POLICY, "POST", "/v1/policy", await signPolicyChange(lower, await relay.vaultState(vault), []));
+    for (const t of lowered.vault_transactions) say(`  vault ${t.type}`, `v${t.version} relayed on-chain ${t.tx}`);
+    const after = await relay.vaultCheck(vault, amara, usdt(6));
+    say("limit change", `per-tx cap 1000 -> 5: a 6 USDT payout was ${before.ok ? "allowed" : "blocked (" + before.reason + ")"}, now ${after.ok ? "allowed" : "blocked (" + after.reason + ")"} by the vault`);
+    if (!before.ok || after.ok) throw new Error("the vault did not follow the operator's limit change");
+    // restore the demo limits for the next run
+    await call(POLICY, "POST", "/v1/policy", await signPolicyChange({ ...doc, version: lower.version + 1 }, await relay.vaultState(vault), []));
+    say("limit restored", "per-tx cap back to 1000");
+    console.log(`PASS: milestone ${id} funded, released, settled through the Policy Service and paid out; receipt minted; the operator's limit change was enforced on-chain. Trace ${s.trace_id}`);
   } finally {
     stop();
   }
