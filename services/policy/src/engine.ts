@@ -75,6 +75,13 @@ function isPayout(a: Action): a is PayoutAction {
 // Assumption: `conversion` actions move no funds out of the vault, so they count towards no cap.
 export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): EvaluationResult {
   validatePolicy(ctx.policy);
+  for (const [name, value] of [
+    ["spentTodayBaseUnits", ctx.spentTodayBaseUnits],
+    ["vaultBalance", ctx.vaultBalance],
+    ["milestone.grossAmount", ctx.milestone.grossAmount],
+  ]) {
+    if (typeof value !== "string" || !AMOUNT.test(value)) throw new Error("invalid context: " + name + " must be a numeric string");
+  }
   const proposal_hash = hashProposal(proposal);
 
   // Nothing else can be evaluated safely on a malformed proposal.
@@ -111,10 +118,14 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
 
   if (BigInt(ctx.spentTodayBaseUnits) + payoutTotal > BigInt(policy.daily_cap)) rejected.push("OVER_DAILY_CAP");
 
-  // Assumption: the percentage base is (all payout amounts + all tax_reserve amounts) of this proposal.
-  // Rule: taxTotal / base >= bps / 10000, done as integers.
-  const taxBase = payoutTotal + taxTotal;
-  if (taxTotal * 10000n < BigInt(policy.min_tax_reserve_bps) * taxBase) rejected.push("TAX_RESERVE_TOO_LOW");
+  // The payouts leave the vault; tax_reserve and conversion amounts stay in it.
+  // After this proposal the vault must still hold at least vault_min_reserve (the guard enforces the same on-chain).
+  if (BigInt(ctx.vaultBalance) - payoutTotal < BigInt(policy.vault_min_reserve)) rejected.push("BELOW_VAULT_RESERVE");
+
+  // The tax reserve is a share of the gross milestone payout amount (what the escrow released).
+  // Rule: taxTotal / grossAmount >= bps / 10000, done as integers.
+  const gross = BigInt(ctx.milestone.grossAmount);
+  if (taxTotal * 10000n < BigInt(policy.min_tax_reserve_bps) * gross) rejected.push("TAX_RESERVE_TOO_LOW");
 
   // Escalating rules.
   const softLimit = BigInt(policy.per_tx_soft_limit);

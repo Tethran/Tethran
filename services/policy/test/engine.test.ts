@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { canonicalise, evaluateProposal, hashProposal, utcDay, validatePolicy } from "../src/index";
 import type { Policy } from "../src/index";
-import { goodProposal, makeCtx, policy, withActions } from "./helpers";
+import { goodProposal, makeCtx, milestoneOf, policy, withActions } from "./helpers";
 
 const payout = (amount: string, payee_id = "payee-1") => ({ type: "payout", payee_id, amount, asset: "USDT" });
 const tax = (amount: string) => ({ type: "tax_reserve", amount, reason: "tax" });
@@ -85,13 +85,13 @@ test("DUPLICATE_PROPOSAL", () => {
 });
 
 test("HOLD_ACTIVE: card-funded and not release-eligible", () => {
-  const ctx = makeCtx({ milestone: { cardFunded: true, releaseEligible: false, identityMatch: true } });
+  const ctx = makeCtx({ milestone: { cardFunded: true, releaseEligible: false, identityMatch: true, grossAmount: "0" } });
   const r = evaluateProposal(goodProposal(), ctx);
   assert.deepEqual([r.decision, r.reasons], ["rejected", ["HOLD_ACTIVE"]]);
 });
 
 test("HOLD_ACTIVE does not fire for card-funded and release-eligible", () => {
-  const ctx = makeCtx({ milestone: { cardFunded: true, releaseEligible: true, identityMatch: true } });
+  const ctx = makeCtx({ milestone: { cardFunded: true, releaseEligible: true, identityMatch: true, grossAmount: "0" } });
   assert.equal(evaluateProposal(goodProposal(), ctx).decision, "approved");
 });
 
@@ -163,36 +163,71 @@ test("utcDay matches floor(t / 86400)", () => {
   assert.equal(utcDay(1_800_000_000), 20833);
 });
 
+// The tax reserve is a share of the gross milestone payout amount (ctx.milestone.grossAmount),
+// not of whatever the proposal happens to add up to.
 test("TAX_RESERVE_TOO_LOW: no tax_reserve at all", () => {
-  const r = evaluateProposal(withActions([payout("100000000")]), makeCtx());
+  const ctx = makeCtx({ milestone: milestoneOf("100000000") });
+  const r = evaluateProposal(withActions([payout("100000000")]), ctx);
   assert.deepEqual([r.decision, r.reasons], ["rejected", ["TAX_RESERVE_TOO_LOW"]]);
 });
 
 test("tax reserve maths: exactly the minimum passes, one base unit less fails", () => {
-  // 10%: payout 900 + tax 100 -> 100/1000 = 10% exactly.
+  // gross 1000 USDT at 10% needs 100 USDT of tax reserve.
+  const ctx = makeCtx({ milestone: milestoneOf("1000000000") });
   const p = (taxAmt: string) => withActions([payout("450000000"), payout("450000000", "payee-2"), tax(taxAmt)]);
-  assert.equal(evaluateProposal(p("100000000"), makeCtx()).decision, "approved");
-  assert.deepEqual(evaluateProposal(p("99999999"), makeCtx()).reasons, ["TAX_RESERVE_TOO_LOW"]);
+  assert.equal(evaluateProposal(p("100000000"), ctx).decision, "approved");
+  assert.deepEqual(evaluateProposal(p("99999999"), ctx).reasons, ["TAX_RESERVE_TOO_LOW"]);
+});
+
+test("tax reserve is measured against the gross amount, not the proposal total", () => {
+  // The proposal pays out only 90 + 10 tax (10% of itself), but the milestone released 1000: 10 is 1% of gross.
+  const p = withActions([payout("90000000"), tax("10000000")]);
+  assert.deepEqual(evaluateProposal(p, makeCtx({ milestone: milestoneOf("1000000000") })).reasons, ["TAX_RESERVE_TOO_LOW"]);
+  assert.equal(evaluateProposal(p, makeCtx({ milestone: milestoneOf("100000000") })).decision, "approved");
 });
 
 test("tax reserve maths with awkward numbers (no rounding)", () => {
-  // bps 3333, payout 7, tax needed: tax*10000 >= 3333*(7+tax) -> tax >= 23331/6667 = 3.499..., so 4 passes, 3 fails.
-  const pol = { ...policy, min_tax_reserve_bps: 3333 };
-  const ctx = makeCtx({ policy: pol });
-  assert.equal(evaluateProposal(withActions([payout("7"), tax("4")]), ctx).decision, "approved");
-  assert.deepEqual(evaluateProposal(withActions([payout("7"), tax("3")]), ctx).reasons, ["TAX_RESERVE_TOO_LOW"]);
+  // bps 3333 of gross 7: tax*10000 >= 3333*7 = 23331 -> tax >= 2.3331, so 3 passes and 2 fails.
+  const ctx = makeCtx({ policy: { ...policy, min_tax_reserve_bps: 3333 }, milestone: milestoneOf("7") });
+  assert.equal(evaluateProposal(withActions([payout("4"), tax("3")]), ctx).decision, "approved");
+  assert.deepEqual(evaluateProposal(withActions([payout("5"), tax("2")]), ctx).reasons, ["TAX_RESERVE_TOO_LOW"]);
 });
 
-test("tax reserve: 0 bps never fails, and a proposal with no payouts and no tax passes", () => {
-  const ctx = makeCtx({ policy: { ...policy, min_tax_reserve_bps: 0 } });
+test("tax reserve: 0 bps never fails, and a proposal with no payouts and no tax passes when nothing is due", () => {
+  const ctx = makeCtx({ policy: { ...policy, min_tax_reserve_bps: 0 }, milestone: milestoneOf("100") });
   assert.equal(evaluateProposal(withActions([payout("100")]), ctx).decision, "approved");
   assert.equal(evaluateProposal(withActions([]), makeCtx()).decision, "approved");
+  // an empty proposal on a milestone that owes a reserve is rejected
+  assert.deepEqual(evaluateProposal(withActions([]), makeCtx({ milestone: milestoneOf("100") })).reasons, ["TAX_RESERVE_TOO_LOW"]);
 });
 
-test("tax reserve: 10000 bps requires everything to be tax", () => {
-  const ctx = makeCtx({ policy: { ...policy, min_tax_reserve_bps: 10000 } });
-  assert.deepEqual(evaluateProposal(withActions([payout("1"), tax("100")]), ctx).reasons, ["TAX_RESERVE_TOO_LOW"]);
+test("tax reserve: 10000 bps requires the whole gross amount to be reserved", () => {
+  const ctx = makeCtx({ policy: { ...policy, min_tax_reserve_bps: 10000 }, milestone: milestoneOf("100") });
+  assert.deepEqual(evaluateProposal(withActions([payout("1"), tax("99")]), ctx).reasons, ["TAX_RESERVE_TOO_LOW"]);
   assert.equal(evaluateProposal(withActions([tax("100")]), ctx).decision, "approved");
+});
+
+test("BELOW_VAULT_RESERVE: payouts may not take the vault under vault_min_reserve (exact boundary)", () => {
+  const pol = { ...policy, vault_min_reserve: "200000000" }; // keep 200 USDT in the vault
+  const ctx = makeCtx({ policy: pol, vaultBalance: "600000000" });
+  // 400 out leaves exactly 200: allowed. One base unit more is not.
+  assert.equal(evaluateProposal(withActions([payout("400000000")]), ctx).decision, "approved");
+  const r = evaluateProposal(withActions([payout("400000000"), payout("1", "payee-2")]), ctx);
+  assert.deepEqual([r.decision, r.reasons], ["rejected", ["BELOW_VAULT_RESERVE"]]);
+});
+
+test("BELOW_VAULT_RESERVE: tax_reserve and conversion stay in the vault; an empty vault cannot pay", () => {
+  const pol = { ...policy, vault_min_reserve: "200000000" };
+  const stays = withActions([payout("400000000"), tax("150000000"), { type: "conversion", amount: "150000000", target: "NGN", condition: "x" }]);
+  assert.equal(evaluateProposal(stays, makeCtx({ policy: pol, vaultBalance: "600000000" })).decision, "approved");
+  const r = evaluateProposal(withActions([payout("1")]), makeCtx({ vaultBalance: "0" }));
+  assert.deepEqual(r.reasons, ["BELOW_VAULT_RESERVE"]); // even with a zero floor, the vault cannot go negative
+});
+
+test("a context with a non-numeric amount is refused outright", () => {
+  assert.throws(() => evaluateProposal(goodProposal(), makeCtx({ vaultBalance: "12.5" })), /invalid context/);
+  assert.throws(() => evaluateProposal(goodProposal(), makeCtx({ milestone: milestoneOf("-1") })), /invalid context/);
+  assert.throws(() => evaluateProposal(goodProposal(), makeCtx({ spentTodayBaseUnits: "" })), /invalid context/);
 });
 
 test("OVER_SOFT_LIMIT: boundary and escalation", () => {
@@ -220,7 +255,7 @@ test("NEEDS_HUMAN", () => {
 });
 
 test("IDENTITY_MISMATCH", () => {
-  const ctx = makeCtx({ milestone: { cardFunded: false, releaseEligible: true, identityMatch: false } });
+  const ctx = makeCtx({ milestone: { cardFunded: false, releaseEligible: true, identityMatch: false, grossAmount: "0" } });
   const r = evaluateProposal(goodProposal(), ctx);
   assert.deepEqual([r.decision, r.reasons], ["escalated", ["IDENTITY_MISMATCH"]]);
 });
@@ -230,7 +265,7 @@ test("IDENTITY_MISMATCH", () => {
 test("all escalating codes are returned together", () => {
   const ctx = makeCtx({
     policy: { ...policy, min_tax_reserve_bps: 0 },
-    milestone: { cardFunded: false, releaseEligible: true, identityMatch: false },
+    milestone: { cardFunded: false, releaseEligible: true, identityMatch: false, grossAmount: "0" },
   });
   const p = withActions([payout("600000000")], { confidence: 0.1, needs_human: true });
   const r = evaluateProposal(p, ctx);
@@ -240,7 +275,10 @@ test("all escalating codes are returned together", () => {
 
 test("rejected beats escalated, and every rejecting code is returned in rule order", () => {
   const p = withActions([payout("2000000000", "payee-9")], { confidence: 0.1, needs_human: true });
-  const pCtx = makeCtx({ milestone: { cardFunded: true, releaseEligible: false, identityMatch: false } });
+  const pCtx = makeCtx({
+    vaultBalance: "1000000000", // less than the payout
+    milestone: { cardFunded: true, releaseEligible: false, identityMatch: false, grossAmount: "2000000000" },
+  });
   const ctx = { ...pCtx, seenProposalHashes: new Set([hashProposal(p)]) };
   const r = evaluateProposal(p, ctx);
   assert.equal(r.decision, "rejected");
@@ -250,13 +288,14 @@ test("rejected beats escalated, and every rejecting code is returned in rule ord
     "HOLD_ACTIVE",
     "PAYEE_NOT_ALLOWED",
     "OVER_PER_TX_CAP",
+    "BELOW_VAULT_RESERVE",
     "TAX_RESERVE_TOO_LOW",
   ]);
 });
 
 test("daily cap joins the rejected list when spent today pushes over", () => {
   const p = withActions([payout("2000000000", "payee-9")]);
-  const r = evaluateProposal(p, makeCtx({ spentTodayBaseUnits: "1" }));
+  const r = evaluateProposal(p, makeCtx({ spentTodayBaseUnits: "1", milestone: milestoneOf("2000000000") }));
   assert.deepEqual(r.reasons, ["PAYEE_NOT_ALLOWED", "OVER_PER_TX_CAP", "OVER_DAILY_CAP", "TAX_RESERVE_TOO_LOW"]);
 });
 
@@ -271,12 +310,12 @@ test("amounts beyond 2^53 are exact", () => {
     daily_cap: (2n ** 61n).toString(),
     min_tax_reserve_bps: 0,
   };
-  const ctx = makeCtx({ policy: bigPolicy });
+  const ctx = makeCtx({ policy: bigPolicy, vaultBalance: (2n ** 62n).toString() });
   assert.equal(evaluateProposal(withActions([payout(big)]), ctx).decision, "approved");
   const r = evaluateProposal(withActions([payout((2n ** 60n + 1n).toString())]), ctx);
   assert.deepEqual(r.reasons, ["OVER_PER_TX_CAP"]);
   // Two numbers that are equal as floats but differ as integers.
-  const daily = makeCtx({ policy: bigPolicy, spentTodayBaseUnits: (2n ** 61n - 2n ** 60n + 1n).toString() });
+  const daily = makeCtx({ policy: bigPolicy, vaultBalance: (2n ** 62n).toString(), spentTodayBaseUnits: (2n ** 61n - 2n ** 60n + 1n).toString() });
   assert.deepEqual(evaluateProposal(withActions([payout(big)]), daily).reasons, ["OVER_DAILY_CAP"]);
 });
 
@@ -368,7 +407,7 @@ test("scenario: duplicate send is rejected on the second attempt", () => {
 });
 
 test("scenario: identity mismatch escalates", () => {
-  const ctx = makeCtx({ milestone: { cardFunded: false, releaseEligible: true, identityMatch: false } });
+  const ctx = makeCtx({ milestone: { cardFunded: false, releaseEligible: true, identityMatch: false, grossAmount: "0" } });
   assert.deepEqual(evaluateProposal(goodProposal(), ctx).reasons, ["IDENTITY_MISMATCH"]);
 });
 

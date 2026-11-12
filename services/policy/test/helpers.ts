@@ -20,9 +20,11 @@ export function makeCtx(overrides: Partial<EvaluationContext> = {}): EvaluationC
       "payee-2": { address: "0x00000000000000000000000000000000000000a2", rail: "mpesa", simulated: true },
     },
     spentTodayBaseUnits: "0",
+    vaultBalance: "10000000000", // 10,000 USDT
     nowUnixSeconds: 1_800_000_000,
     seenProposalHashes: new Set<string>(),
-    milestone: { cardFunded: false, releaseEligible: true, identityMatch: true },
+    // grossAmount 0 keeps the tax rule out of the way; tests about tax or the reserve set it with milestoneOf().
+    milestone: { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount: "0" },
     ...overrides,
   };
 }
@@ -40,6 +42,11 @@ export function goodProposal(): Record<string, unknown> {
     flags: [],
     needs_human: false,
   };
+}
+
+// Milestone facts with a given gross amount (base units).
+export function milestoneOf(grossAmount: string, extra: Partial<EvaluationContext["milestone"]> = {}) {
+  return { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount, ...extra };
 }
 
 export function withActions(actions: unknown[], extra: Record<string, unknown> = {}): Record<string, unknown> {
