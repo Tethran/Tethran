@@ -14,6 +14,11 @@ import { contractRoutes } from "./contractRoutes";
 import { parseAgentMode } from "./replay";
 import { relayVaultActions } from "./vaultRelay";
 import type { WalletLayer } from "./wallets";
+import { operatorRoutes, type Operator } from "./operator";
+import { recordIdentity } from "./identity";
+import { payoutRoutes, processConfirmedPayouts } from "./payouts";
+import { phoneRegistryRoutes } from "./phoneRegistry";
+import { reconciliationRoutes, type RawResponse } from "./reconciliation";
 
 const MAX_BODY = 256 * 1024;
 
@@ -32,6 +37,8 @@ export interface HttpDeps {
   publicBaseUrl: string;
   /** WDK user wallets; absent when DEMO_WALLET_SEED is not set. */
   wallets?: WalletLayer;
+  phoneHashSalt?: string;
+  operator?: Operator;
 }
 
 type Handler = (ctx: { params: Record<string, string>; body: any; raw: string; req: IncomingMessage; url: URL }) => Promise<unknown>;
@@ -118,10 +125,17 @@ export function createHttpServer(deps: HttpDeps): Server {
     ["POST", /^\/milestones\/([^/]+)\/settle$/, async ({ params, body }) => {
       let agentMode;
       try { agentMode = parseAgentMode(body?.agent_mode, undefined); } catch (e) { throw new ApiError(400, (e as Error).message); }
-      return orchestrator.settle(params[1], { agentMode });
+      const result: any = await orchestrator.settle(params[1], { agentMode });
+      // Start the off-chain leg (SIMULATED rails) of every payout the vault just confirmed.
+      if (result?.decision === "approved") result.offchain = await processConfirmedPayouts(db, deps.now);
+      return result;
     }],
     ["POST", /^\/milestones\/([^/]+)\/evidence\/summary$/, async ({ params }) => orchestrator.summarize(params[1])],
-    ["POST", /^\/milestones\/([^/]+)\/escalations\/([^/]+)\/execute$/, async ({ params, body }) => orchestrator.executeApproval(params[1], params[2], body ?? {})],
+    ["POST", /^\/milestones\/([^/]+)\/escalations\/([^/]+)\/execute$/, async ({ params, body }) => {
+      const result: any = await orchestrator.executeApproval(params[1], params[2], body ?? {});
+      if (result?.decision === "approved") result.offchain = await processConfirmedPayouts(db, deps.now);
+      return result;
+    }],
     // Checkout. Real Stripe when its keys are set; otherwise Simulated (signed events into the same webhook path).
     ["GET", /^\/checkout\/options$/, async () => ({
       provider: deps.checkout.name, simulated: deps.checkout.name === "simulated",
@@ -144,6 +158,9 @@ export function createHttpServer(deps: HttpDeps): Server {
       return deps.simulatedCheckout.dispute(params[1]);
     }],
     ...contractRoutes({ db, now: deps.now, publicBaseUrl: deps.publicBaseUrl }),
+    ...(payoutRoutes({ db, now: deps.now }) as [string, RegExp, Handler][]),
+    ...(phoneRegistryRoutes({ db, now: deps.now, salt: deps.phoneHashSalt }) as [string, RegExp, Handler][]),
+    ...(reconciliationRoutes({ db, now: deps.now }) as [string, RegExp, Handler][]),
     // Wallet layer (WDK user wallets) for the review screen.
     ["GET", /^\/wallets$/, async () => needWallets().list()],
     ["GET", /^\/wallets\/transfers\/([^/]+)$/, async ({ params }) => needWallets().status(params[1])],
@@ -152,6 +169,14 @@ export function createHttpServer(deps: HttpDeps): Server {
     ["POST", /^\/wallets\/([^/]+)\/recipients$/, async ({ params, body }) => needWallets().saveRecipient(params[1], body ?? {})],
     ["POST", /^\/wallets\/([^/]+)\/transfers\/review$/, async ({ params, body }) => needWallets().review(params[1], body ?? {})],
     ["POST", /^\/wallets\/([^/]+)\/transfers$/, async ({ params, body }) => needWallets().send(params[1], body ?? {})],
+    ["POST", /^\/wallets\/([^/]+)\/escrow\/([^/]+)\/(approve|dispute)$/, async ({ params }) => needWallets().escrowAction(params[1], params[2], params[3])],
+    ["POST", /^\/wallets\/([^/]+)\/attestations\/([^/]+)$/, async ({ params, body }) => needWallets().signAttestation(params[1], params[2], body ?? {})],
+    // SIMULATED identity verification provider
+    ["POST", /^\/milestones\/([^/]+)\/identity$/, async ({ params, body }) => {
+      if (!milestones.get(db, params[1])) throw new ApiError(404, "milestone not found");
+      return recordIdentity(db, params[1], body ?? {});
+    }],
+    ...(deps.operator ? operatorRoutes(deps.operator) : []),
     ["POST", /^\/webhooks\/stripe$/, async ({ raw, req }) => treasury.handleStripeWebhook(raw, req.headers["stripe-signature"] as string | undefined)],
     // Public receipt verification: read from the chain, not from the database.
     ["GET", /^\/receipts\/([^/]+)$/, async ({ params }) => {
@@ -190,7 +215,13 @@ export function createHttpServer(deps: HttpDeps): Server {
         }
       }
       const params = route[1].exec(url.pathname)!.map((p) => decodeURIComponent(p));
-      send(res, 200, await route[2]({ params: params as unknown as Record<string, string>, body, raw, req, url }));
+      const out = await route[2]({ params: params as unknown as Record<string, string>, body, raw, req, url });
+      if (out && typeof out === "object" && (out as RawResponse).__raw === true) {
+        const r = out as RawResponse;
+        res.writeHead(200, { "content-type": r.contentType, ...(r.filename ? { "content-disposition": `attachment; filename="${r.filename}"` } : {}) });
+        return res.end(r.body);
+      }
+      send(res, 200, out);
     } catch (e) {
       if (e instanceof ApiError) return send(res, e.status, { error: safeErrorMessage(e), ...(e.code ? { code: e.code } : {}) });
       send(res, 500, { error: "internal error" });

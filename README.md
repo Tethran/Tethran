@@ -33,7 +33,11 @@ Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer tra
 | Checkout: card, Apple Pay, Google Pay, PayPal, Cash App Pay, stablecoin | **Simulated** (signed events through the real webhook path); real Stripe path built, off until keys are set |
 | Agent: final prompts, input guards, evidence summaries, tools, replay mode, Opik dataset, experiment and LLM-as-judge | Built, tested offline; real runs limited by free-tier rate limits |
 | Operator limit changes relayed to the vault through the Policy Service | Built, tested, run on Sepolia |
-| Payout adapters, reconciliation, wallet-layer endpoints, operator console | Not built yet |
+| WDK user wallets (client, payees, subcontractor) with a WDK transaction policy; wallet-layer API (review, fee shown separately, duplicate and wrong-network blocking, reconnect recheck) | Built, tested, run on Sepolia (demo custody of a test seed) |
+| Payout adapters (mobile money, bank, USDT), phone registry and send-to-phone | Built, tested; rails **simulated** |
+| Reconciliation ledger, failure queue, CSV export | Built, tested |
+| Strict identity-matched release with operator holds; operator and arbiter endpoints | Built, tested; identity **simulated** |
+| Seed script, x402, second chain | Not built yet |
 | Web app | Not in this repo (separate workstream) |
 
 ## Known trust assumptions

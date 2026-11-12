@@ -12,6 +12,10 @@ import { resolve } from "node:path";
 import { Wallet } from "ethers";
 import { EvmChainClient, SqliteIdempotencyStore, createWdkWallets, loadChain, loadEnvOnly, newProvider } from "../../chain/src/index";
 import { createWalletLayer } from "./wallets";
+import { createOperator } from "./operator";
+import { migratePayouts } from "./payouts";
+import { migratePhoneRegistry } from "./phoneRegistry";
+import { migrateReconciliation } from "./reconciliation";
 import { configFromEnv, createLlmProvider, createTracerFromEnv } from "../../llm/src/index";
 import { createAgentSigner } from "./agentSigner";
 import { openDb } from "./db";
@@ -30,7 +34,7 @@ loadEnvOnly(resolve(__dirname, "../../../.env"), [
   "CHAIN", "RPC_URL_*", "TREASURY_PRIVATE_KEY", "AGENT_SIGNER_PRIVATE_KEY", "ARBITER_ADDRESS", "POLICY_URL", "INTERNAL_TOKEN",
   "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
   "BACKEND_DATA_DIR", "BACKEND_PORT", "HOST", "CARD_HOLD_SECONDS", "MILESTONE_TIMEOUT_SECONDS",
-  "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED",
+  "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED", "PHONE_HASH_SALT",
 ]);
 
 function need(name: string): string {
@@ -46,6 +50,9 @@ const treasuryWallet = new Wallet(need("TREASURY_PRIVATE_KEY"), provider);
 const chain = new EvmChainClient(chainCfg, treasuryWallet, new SqliteIdempotencyStore(`${dir}/chain-idempotency.sqlite`), { provider });
 const db = openDb(`${dir}/backend.sqlite`);
 migrateContracts(db);
+migratePayouts(db);
+migratePhoneRegistry(db);
+migrateReconciliation(db);
 const now = () => new Date();
 const identity = createIdentityCheck(db);
 const tracer = createTracerFromEnv(process.env);
@@ -71,10 +78,11 @@ const agentSigner = createAgentSigner(
   async (vault) => (await chain.vaultState(vault)).policySigner,
   now,
 );
+const policyClient = createPolicyClient(need("POLICY_URL"));
 const llm = createLlmProvider(configFromEnv(process.env), { fetch: globalThis.fetch as never, tracer });
 const orchestrator = createOrchestrator({
   db, chain, agentSigner, tracer, now, chainName: chainCfg.name,
-  policy: createPolicyClient(need("POLICY_URL")),
+  policy: policyClient,
   agent: createAgent(llm, loadSavedProposals()),
   defaultAgentMode: parseAgentMode(process.env.AGENT_MODE, "live+replay"),
 });
@@ -82,18 +90,24 @@ const simulatedCheckout = stripeEnabled ? undefined : createSimulatedCheckout({ 
 const checkout = stripeEnabled ? createStripeCheckout({ secretKey: process.env.STRIPE_SECRET_KEY! }) : simulatedCheckout!.provider;
 
 // WDK user wallets (client, payees, subcontractor) for the wallet-layer API; demo custody of a test seed.
-const wallets = process.env.DEMO_WALLET_SEED
+const wdkWallets = process.env.DEMO_WALLET_SEED
+  ? createWdkWallets({ chain: chainCfg, seed: process.env.DEMO_WALLET_SEED, maxTransfer: 10_000_000_000n })
+  : undefined;
+const wallets = wdkWallets
   ? createWalletLayer({
       db, now,
-      wallets: createWdkWallets({ chain: chainCfg, seed: process.env.DEMO_WALLET_SEED, maxTransfer: 10_000_000_000n }),
+      wallets: wdkWallets,
       chain: { chainId: chainCfg.chainId, name: chainCfg.name, usdt: chainCfg.usdt, ready: () => chain.ready(), txStatus: (h) => chain.txStatus(h) },
+      escrowFor: (role) => new EvmChainClient(chainCfg, wdkWallets!.sender(role), new SqliteIdempotencyStore(`${dir}/chain-idempotency.sqlite`), { provider }),
+      attestationTypedData: (id, kind, release) => chain.attestationTypedData(id, kind, release),
     })
   : undefined;
+const operator = createOperator({ db, chain, treasury, policy: policyClient, now });
 
 const port = Number(process.env.BACKEND_PORT ?? process.env.PORT ?? 8788);
 const host = process.env.HOST ?? "127.0.0.1";
 listen(createHttpServer({
-  db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets,
+  db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets, phoneHashSalt: process.env.PHONE_HASH_SALT, operator,
 }), port, host).then(
   (p) => console.log(`backend listening on ${host}:${p} (chain ${chainCfg.name} ${chainCfg.chainId}; checkout ${checkout.name}; agent ${process.env.AGENT_MODE ?? "live+replay"})`),
   (e) => {

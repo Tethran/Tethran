@@ -15,6 +15,8 @@ import type { Cosignature, PolicyClient, PolicyDecision } from "../src/policyCli
 import { createTreasury } from "../src/treasury";
 import { createAgent, loadSavedProposals } from "../src/replay";
 import { migrateContracts } from "../src/contracts";
+import { migratePayouts } from "../src/payouts";
+import { migrateReconciliation } from "../src/reconciliation";
 
 export const CHAIN_ID = 31337;
 export const TREASURY = getAddress("0x00000000000000000000000000000000000000a0");
@@ -125,6 +127,20 @@ export function fakeChain(opts: { now: () => Date; policySigner: string }) {
     },
     async setPolicy(p, key) { return tx(key, `setPolicy:${p.version}`, () => {}); },
     async setPayees(p, key) { return tx(key, `setPayees:${p.version}`, () => {}); },
+    async decide(id, release, _sigs, _signers, key) {
+      return tx(key, "decide", () => {
+        const m = need(id);
+        if (m.state !== "Disputed") throw new Error(`WrongState(${m.state})`);
+        if (release) { m.state = "Approved"; m.approvedAt = nowS(); } else { m.state = "Refunded"; add(TREASURY, BigInt(m.amount)); }
+      });
+    },
+    attestationTypedData(id, kind, release) {
+      return {
+        domain: { name: "TethranEscrow", version: "1", chainId: CHAIN_ID, verifyingContract: "0x00000000000000000000000000000000000000e5" },
+        types: { Attestation: [{ name: "milestoneId", type: "bytes32" }, { name: "kind", type: "uint8" }, { name: "releaseToProvider", type: "bool" }] },
+        message: { milestoneId: keccakUtf8(id), kind, releaseToProvider: release },
+      };
+    },
     async milestone(id) {
       return escrow.get(id) ?? {
         funder: TREASURY, client: CLIENT, provider: PROVIDER, arbiter: ARBITER, vault: VAULT, amount: "0", timeout: 0,
@@ -149,6 +165,7 @@ export function fakeChain(opts: { now: () => Date; policySigner: string }) {
 export function fakePolicy(signer: Pick<Wallet, "signTypedData">, opts: { decision?: PolicyDecision["decision"]; reasons?: string[]; now: () => Date }) {
   const submitted: { proposal: any; traceId: string }[] = [];
   const policy: PolicyClient = {
+    async listApprovals() { return []; },
     async getPolicy() {
       return { version: 2, policy: { per_tx_cap: "900000000", per_tx_soft_limit: "800000000", confidence_threshold: 0.7, min_tax_reserve_bps: 1000 } };
     },
@@ -226,6 +243,8 @@ export function harness(opts: { decision?: PolicyDecision["decision"]; reply?: u
   const fc = fakeChain({ now, policySigner: policySigner.address });
   const db: DatabaseSync = openDb(":memory:");
   migrateContracts(db);
+  migratePayouts(db);
+  migrateReconciliation(db);
   db.prepare("INSERT INTO vaults (provider_id, chain_id, vault, operator, provider_payout) VALUES ('prov-1', ?, ?, ?, ?)").run(CHAIN_ID, VAULT, OPERATOR, PROVIDER);
   db.prepare("INSERT INTO payees VALUES ('payee_amara', 'prov-1', 'Amara Studio (demo)', '0x00000000000000000000000000000000000000b2', 'usdt', 0, 'Amara Studio')").run();
   db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-1', 'Kofi Print Works (demo)', '0x00000000000000000000000000000000000000b3', 'mpesa', 1, 'Kofi Print Works')").run();
@@ -254,6 +273,8 @@ export async function fundedAndReleased(h: ReturnType<typeof harness>, id = M1) 
   h.deposits.set("0x" + "dd".repeat(32), [{ from: CLIENT, to: TREASURY, value: "100000000" }]);
   h.add(TREASURY, 100_000_000n); // the deposit itself
   await h.treasury.confirmDeposit(id, "0x" + "dd".repeat(32));
+  // SIMULATED identity verification: the payer is the customer.
+  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Demo Client Ltd', 'Demo Client Ltd', 'SIM-T')").run(id);
   h.chain.approve(id);
   await h.treasury.release(id);
 }

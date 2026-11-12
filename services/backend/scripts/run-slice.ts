@@ -84,7 +84,6 @@ async function main() {
   if (!seed) throw new Error("DEMO_WALLET_SEED is not set (run: cd contracts && npm run wallets)");
   const wdk = createWdkWallets({ chain, seed, maxTransfer: 10_000_000_000n });
   const client = { address: await wdk.address("client") };
-  const clientChain = new EvmChainClient(chain, wdk.sender("client"), store, { provider });
 
   // Payee wallets: deterministic test addresses standing in for a USDT wallet and a SIMULATED M-Pesa rail wallet.
   const amara = await wdk.address("payee_amara"); // WDK wallet
@@ -167,7 +166,7 @@ async function main() {
     const wrong = await call(BACKEND, "POST", "/wallets/client/transfers/review", { ...transfer, chain_id: 84532 });
     say("wrong network", `review blocked before signing: ${wrong.blocked.map((b: any) => b.code).join(", ")}`);
     const review = await call(BACKEND, "POST", "/wallets/client/transfers/review", transfer);
-    say("review screen", `to ${review.recipient.address} on ${review.network.name}: ${review.amount.display}, fee ${review.fee.display} (separate)`);
+    say("review screen", `to ${review.recipient.address} on ${review.network.name}: ${review.amount.display}, fee ${review.fee?.display ?? "unavailable"} (separate)${review.can_sign ? "" : " BLOCKED: " + review.blocked.map((b: any) => b.code).join(",")}`);
     const sent = await call(BACKEND, "POST", "/wallets/client/transfers", transfer);
     say("client deposit", `${sent.tx_hash} signed by the WDK client wallet (demo simplification: pay the treasury)`);
     const dup = await fetch(`${BACKEND}/wallets/client/transfers`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(transfer) });
@@ -183,12 +182,13 @@ async function main() {
     say("escrow funded", `${funded.escrow_tx} (verified on-chain after funding)`);
 
     // 6. client approves on-chain from its own wallet; provider adds evidence; backend releases
-    const appr = await clientChain.approve(id, `slice:approve:${id}`);
-    await clientChain.waitConfirmed(appr.txHash);
-    say("client approved", `${appr.txHash} (signed by the WDK client wallet)`);
+    const appr = await call(BACKEND, "POST", `/wallets/client/escrow/${id}/approve`);
+    say("client approved", `${appr.tx_hash} (signed by the WDK client wallet)`);
+    const idr = await call(BACKEND, "POST", `/milestones/${id}/identity`, { payer_verified_name: "Demo Client Ltd", customer_verified_name: "Demo Client Ltd" });
+    say("identity", `payer and customer verified (${idr.simulated_id_ref}, simulated)`);
     await call(BACKEND, "POST", `/milestones/${id}/evidence`, { text: "All brand files delivered on 12 Nov 2026. The client confirmed receipt by email. Split: 60 to Amara Studio, 30 to Kofi Print Works by M-Pesa." });
     const rel = await call(BACKEND, "POST", `/milestones/${id}/release`);
-    say("released", `${rel.release_tx} (identity check simulated: match)`);
+    say("released", `${rel.release_tx} (identity matched, simulated)`);
 
     // 7. settlement through the agent, the Policy Service and the vault
     const s = await call(BACKEND, "POST", `/milestones/${id}/settle`, { agent_mode: env("AGENT_MODE") || "live+replay" });
@@ -200,6 +200,9 @@ async function main() {
       return;
     }
     for (const p of s.payouts) say(`  payout ${p.action_index}`, `${p.amount} to ${p.payee_id} (${p.rail}${p.simulated ? ", rail simulated" : ""}) ${p.tx}`);
+    say("off-chain legs", `${s.offchain?.count ?? 0} started (simulated rails)`);
+    const rec = await call(BACKEND, "GET", `/reconciliation/milestones/${id}`);
+    say("reconciliation", `complete=${rec.complete} gaps=${(rec.gaps ?? []).map((g: any) => g.code).join(",") || "none"}`);
     const receipt = await call(BACKEND, "GET", `/receipts/${id}`);
     say("receipt", `token #${receipt.tokenId} held by ${receipt.holder} (read from the chain)`);
     // 8. the operator lowers the per-transaction cap; the on-chain guard obeys at once
@@ -208,6 +211,8 @@ async function main() {
     const lower = { ...doc, version: doc.version + 1, per_tx_cap: usdt(5), per_tx_soft_limit: usdt(4) };
     const lowered = await call(POLICY, "POST", "/v1/policy", await signPolicyChange(lower, await relay.vaultState(vault), []));
     for (const t of lowered.vault_transactions) say(`  vault ${t.type}`, `v${t.version} relayed on-chain ${t.tx}`);
+    // Wait until this script's RPC node has seen the relayed change (public nodes can lag a block or two).
+    for (let i = 0; i < 20 && (await relay.vaultState(vault)).perTxCap !== usdt(5); i++) await new Promise((r) => setTimeout(r, 3000));
     const after = await relay.vaultCheck(vault, amara, usdt(6));
     say("limit change", `per-tx cap 1000 -> 5: a 6 USDT payout was ${before.ok ? "allowed" : "blocked (" + before.reason + ")"}, now ${after.ok ? "allowed" : "blocked (" + after.reason + ")"} by the vault`);
     if (!before.ok || after.ok) throw new Error("the vault did not follow the operator's limit change");

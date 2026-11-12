@@ -33,6 +33,9 @@ export interface WalletLayerDeps {
   wallets: WdkWallets;
   chain: { chainId: number; name: string; usdt: string; ready(): Promise<void>; txStatus(h: string): Promise<TxStatus> };
   now: () => Date;
+  /** Escrow calls signed by a role's WDK wallet (approve, dispute). */
+  escrowFor?: (role: WalletRole) => { approve(id: string, key: string): Promise<{ txHash: string }>; dispute(id: string, key: string): Promise<{ txHash: string }>; waitConfirmed(h: string): Promise<void> };
+  attestationTypedData?: (milestoneId: string, kind: 0 | 1 | 2, release: boolean) => { domain: any; types: any; message: any };
 }
 
 const usdtString = (base: bigint) => {
@@ -109,7 +112,14 @@ export function createWalletLayer(deps: WalletLayerDeps) {
       let fee: bigint | null = null;
       if (!blocks.some((b) => b.code === "BAD_ADDRESS" || b.code === "BAD_AMOUNT")) {
         try {
-          fee = (await (await wallets.account(w)).quoteTransfer({ token: chain.usdt, recipient: getAddress(body.to as string), amount: BigInt(body.amount as string) })).fee;
+          // A fee estimate is read-only, so it is asked again if a lagging RPC node has not seen a new balance yet.
+          const quote = () => wallets.account(w).then((acc) => acc.quoteTransfer({ token: chain.usdt, recipient: getAddress(body.to as string), amount: BigInt(body.amount as string) }));
+          for (let attempt = 1; ; attempt++) {
+            try { fee = (await quote()).fee; break; } catch (e) {
+              if (e instanceof PolicyViolationError || attempt >= 3) throw e;
+              await new Promise((r) => setTimeout(r, 3000));
+            }
+          }
         } catch (e) {
           blocks.push(e instanceof PolicyViolationError
             ? { code: "WALLET_POLICY", detail: "the wallet's WDK policy does not allow this transfer" }
@@ -164,6 +174,29 @@ export function createWalletLayer(deps: WalletLayerDeps) {
         db.prepare("UPDATE wallet_transfers SET error = ? WHERE payment_reference = ?").run(String((e as Error)?.message ?? e).slice(0, 200), ref);
         throw new ApiError(502, "send failed or its outcome is unknown; the payment reference stays blocked", "SEND_UNKNOWN");
       }
+    },
+
+    /** The role's own escrow action (the client approves; client or provider disputes), signed by its WDK wallet. */
+    async escrowAction(r: unknown, milestoneId: string, action: string) {
+      const w = role(r);
+      if (!deps.escrowFor) throw new ApiError(404, "escrow actions are not configured");
+      if (action !== "approve" && action !== "dispute") throw new ApiError(404, "unknown escrow action");
+      const c = deps.escrowFor(w);
+      const tx = await c[action](milestoneId, `wallet:${w}:${action}:${milestoneId}`);
+      await c.waitConfirmed(tx.txHash);
+      return { role: w, milestone_id: milestoneId, action, tx_hash: tx.txHash, signed_by: "Tether WDK wallet", custody: CUSTODY };
+    },
+
+    /** Signs a dispute attestation with the role's WDK wallet (EIP-712); the arbiter endpoint collects it. */
+    async signAttestation(r: unknown, milestoneId: string, body: { kind?: unknown; release_to_provider?: unknown }) {
+      const w = role(r);
+      if (!deps.attestationTypedData) throw new ApiError(404, "attestations are not configured");
+      const kinds: Record<string, 0 | 1 | 2> = { client: 0, provider: 1, arbiter: 2 };
+      if (typeof body.kind !== "string" || !(body.kind in kinds)) throw new ApiError(400, "kind must be client, provider or arbiter");
+      if (typeof body.release_to_provider !== "boolean") throw new ApiError(400, "release_to_provider must be a boolean");
+      const td = deps.attestationTypedData(milestoneId, kinds[body.kind], body.release_to_provider);
+      const signature = await (await wallets.account(w)).signTypedData({ domain: td.domain, types: td.types, message: td.message });
+      return { signer: await wallets.address(w), signature, release_to_provider: body.release_to_provider, custody: CUSTODY };
     },
 
     /** Reconnect: recheck the same transaction hash. Never resubmits. */

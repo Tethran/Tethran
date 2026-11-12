@@ -99,7 +99,7 @@ test("gaps: off-chain leg missing or in flight are informational; identity misma
   l = await ledger(h);
   assert.deepEqual(codes(l), ["OFFCHAIN_IN_FLIGHT"]);
   assert.equal(l.gaps[0].severity, "info");
-  h.db.prepare("INSERT INTO identity_records VALUES (?, 'A Payer', 'Someone Else', 'sim-1')").run(M1);
+  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'A Payer', 'Someone Else', 'sim-1')").run(M1);
   h.db.prepare("UPDATE fundings SET status = 'mismatch'").run();
   l = await ledger(h);
   assert.ok(codes(l).includes("IDENTITY_MISMATCH") && codes(l).includes("FUNDING_MISMATCH"));

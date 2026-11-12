@@ -160,6 +160,7 @@ test("verifyStripeSignature accepts any matching v1 among several and rejects a 
 test("release: only after the client approved, then once", async () => {
   const h = harness();
   await create(h);
+  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Demo Client Ltd', 'Demo Client Ltd', 'SIM-T')").run(M1); // simulated verification
   const tx = "0x" + "dd".repeat(32);
   h.deposits.set(tx, [{ from: CLIENT, to: TREASURY, value: "100000000" }]);
   h.add(TREASURY, 100_000_000n);
@@ -188,6 +189,7 @@ test("release: an identity mismatch holds the release (simulated identity check)
 test("card: release waits for the hold; a chargeback during the hold refunds the escrow to the treasury", async () => {
   const h = harness();
   await create(h);
+  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Demo Client Ltd', 'Demo Client Ltd', 'SIM-T')").run(M1); // simulated verification
   const body = event();
   await h.treasury.handleStripeWebhook(body, signed(h, body));
   h.chain.approve(M1);
@@ -201,6 +203,7 @@ test("card: release waits for the hold; a chargeback during the hold refunds the
 test("card: after the hold a chargeback is flagged for a human, not refunded", async () => {
   const h = harness();
   await create(h);
+  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Demo Client Ltd', 'Demo Client Ltd', 'SIM-T')").run(M1); // simulated verification
   const body = event();
   await h.treasury.handleStripeWebhook(body, signed(h, body));
   h.chain.approve(M1);
@@ -222,4 +225,18 @@ test("refund: refused before the timeout, done after it, with the off-chain leg 
   assert.equal(r.milestone.state, "refunded");
   assert.equal(r.offchain_refund?.simulated, true);
   assert.equal(h.bal(TREASURY), 100_000_000n);
+});
+
+test("strict identity: no identity record holds the release and opens an operator hold", async () => {
+  const h = harness();
+  await create(h);
+  const tx = "0x" + "dd".repeat(32);
+  h.deposits.set(tx, [{ from: CLIENT, to: TREASURY, value: "100000000" }]);
+  h.add(TREASURY, 100_000_000n);
+  await h.treasury.confirmDeposit(M1, tx);
+  h.chain.approve(M1);
+  await status(h.treasury.release(M1), 409, "IDENTITY_MISMATCH");
+  const hold = h.db.prepare("SELECT status, reason FROM identity_holds WHERE milestone_id = ?").get(M1) as { status: string; reason: string };
+  assert.deepEqual([hold.status, hold.reason], ["open", "no verified identity on file for this payment"]);
+  assert.equal(h.escrow.get(M1)?.state, "Approved");
 });

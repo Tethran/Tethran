@@ -1978,6 +1978,152 @@
         "Block 3: strict identity-matched release, payout adapters and phone registry, reconciliation, wallet-layer endpoints, operator and arbiter endpoints, seed script and handled failure"
       ],
       "notes": "Stopped after Block 2 as instructed. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
+    },
+    {
+      "session_id": "session_011",
+      "timestamp": "2026-11-12T08:02:29Z",
+      "ai_agent": "Executing engineer (main session) with helper agents (payouts and reconciliation; doc sync)",
+      "current_phase": "Block 3 complete; WDK wallets in",
+      "progress": {
+        "completed": [
+          "WDK user wallets with WDK transaction policy; wallet-layer API; slice uses WDK on Sepolia",
+          "Strict identity-matched release with operator holds",
+          "Payout adapters, phone registry, send-to-phone (simulated)",
+          "Reconciliation ledger, queue, CSV export",
+          "Operator queue, identity decisions; arbiter disputes and attestations with escrow.decide",
+          "PRD and architecture doc synced to INTERFACES v0.6 (status lines being corrected)"
+        ],
+        "in_progress": [
+          "Correcting PRD and architecture status lines for Blocks 2 and 3"
+        ],
+        "blocked": []
+      },
+      "last_session_summary": "Session 010 completed Block 2: limit relay enforced on Sepolia, simulated checkout, replay mode, escalation execute, treasury tracing, contracts and invoicing, final agent prompts, guards and Opik evaluation.",
+      "changes_made": [
+        "services/chain: wdk.ts (WDK wallets and policy)",
+        "services/backend: wallets.ts, operator.ts, identity.ts (strict), payouts.ts, phoneRegistry.ts, reconciliation.ts, routes and tests",
+        "contracts/scripts: gen-wallets (DEMO_WALLET_SEED), fund-gas (WDK client)",
+        "services/backend/scripts/run-slice.ts: WDK client, identity, payout legs, reconciliation",
+        "docs/API.md, docs/02-prd.md, docs/03-system-design-architecture.md, README, Development.md"
+      ],
+      "file_module_map": [
+        {
+          "file": "services/chain/src/wdk.ts",
+          "purpose": "WDK user wallets and wallet policy. Key handling: needs review",
+          "last_modified": "2026-11-12T08:02:29Z"
+        },
+        {
+          "file": "services/backend/src/wallets.ts",
+          "purpose": "Wallet-layer API on WDK",
+          "last_modified": "2026-11-12T08:02:29Z"
+        },
+        {
+          "file": "services/backend/src/operator.ts",
+          "purpose": "Operator and arbiter endpoints",
+          "last_modified": "2026-11-12T08:02:29Z"
+        },
+        {
+          "file": "services/backend/src/identity.ts",
+          "purpose": "Strict simulated identity check and holds",
+          "last_modified": "2026-11-12T08:02:29Z"
+        },
+        {
+          "file": "services/backend/src/payouts.ts",
+          "purpose": "Simulated payout adapters",
+          "last_modified": "2026-11-12T08:02:29Z"
+        },
+        {
+          "file": "services/backend/src/phoneRegistry.ts",
+          "purpose": "Consented phone registry (hashed)",
+          "last_modified": "2026-11-12T08:02:29Z"
+        },
+        {
+          "file": "services/backend/src/reconciliation.ts",
+          "purpose": "Ledger, queue, CSV",
+          "last_modified": "2026-11-12T08:02:29Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Decisions: lead's additions A to E (WDK wallets first; eval after the seed script; doc sync; repo hygiene without pushing; DEMO.md after Block 4)",
+          "reason": "Relayed by the lead developer",
+          "alternatives_considered": ""
+        },
+        {
+          "decision": "WDK wallets from one test seed held by a demo wallet service, labelled demo custody",
+          "reason": "API-only build with no app; the product path is WDK on the user's device",
+          "alternatives_considered": "Keeping ethers key wallets for users"
+        },
+        {
+          "decision": "Use the WDK core policy engine on user wallets",
+          "reason": "It exists in the installed WDK and adds a wallet-side guard; platform limits stay in the Policy Service and vault",
+          "alternatives_considered": "No wallet-side policy"
+        },
+        {
+          "decision": "Payment reference claimed before signing; freed only on a WDK policy refusal or an on-chain failure",
+          "reason": "Never two sends for one reference, even with concurrent requests or an unknown outcome",
+          "alternatives_considered": "Free on any error"
+        },
+        {
+          "decision": "Missing identity record is a hold (strict); operator decides with an EIP-712 signature by the vault operator",
+          "reason": "Lead decision for Block 3",
+          "alternatives_considered": "Treat as match"
+        },
+        {
+          "decision": "Arbiter endpoint submits escrow.decide once two different parties agree",
+          "reason": "Anyone may submit; signatures decide on-chain",
+          "alternatives_considered": "Require the arbiter to submit"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "Reconciliation country is not yet taken from the contract's country profile",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Off-chain legs show OFFCHAIN_IN_FLIGHT until their simulated delivery time passes",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Self-custody: the demo wallet service holds the WDK test seed",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "History hygiene: earlier memory-file sessions name the tool in ai_agent, which the working guide forbids editing; .gitignore names a tool folder",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Real nine-scenario eval with the new prompt still incomplete",
+          "severity": "medium",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "FEE_UNAVAILABLE on Sepolia",
+          "context": "WDK fee estimate ran before the RPC node saw the freshly minted client balance",
+          "resolution": "Read-only estimate retried twice"
+        },
+        {
+          "error": "Limit-change check read the old cap",
+          "context": "Script's RPC node one block behind the relay",
+          "resolution": "Poll until the new cap is visible"
+        },
+        {
+          "error": "Helper agent worktrees started from the last pushed commit",
+          "context": "Doc sync missed Block 2",
+          "resolution": "Status lines corrected afterwards"
+        }
+      ],
+      "next_steps": [
+        "Block 4: seed script and handled failure, x402, second chain",
+        "Then B (evaluation runs, replace replay proposals), D (hygiene), E (DEMO.md)"
+      ],
+      "notes": "Final submission is Fri 13 Nov 2026 at 22:59 WAT."
     }
   ]
 }

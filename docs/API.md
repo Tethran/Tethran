@@ -236,6 +236,7 @@ one, and the vault enforces its limits. `replay_source` says where the saved pro
   "receipt": { "token_id": 1, "mint_tx": "0x…", "holder": "0x24e1…" },
   "resumed": false,
   "agent_mode": "live",
+  "offchain": { "initiated": [1, 2], "count": 2, "simulated": true },
   "trace_id": "01a1cda7-bea5-74de-8063-77cdf30ab174"
 }
 ```
@@ -368,6 +369,94 @@ The escrow is funded card-funded, with the chargeback hold. Completing again ret
 
 Sends a signed `charge.dispute.created` event. Inside the card hold the escrow is refunded to the treasury
 (`"outcome": "refunded: chargeback during the hold"`); after it the case is flagged for a human.
+
+### Wallets: WDK user wallets and the review screen (built)
+
+The client, payee and subcontractor wallets are Tether WDK wallets (`@tetherto/wdk` core with
+`@tetherto/wdk-wallet-evm`), derived from one BIP-39 test seed (`DEMO_WALLET_SEED`). Roles: `client` (account 0),
+`payee_amara` (1), `subcontractor` (2), `client_b` (3). A WDK transaction policy on every account allows only
+test-USDT transfers up to a cap, raw transactions only to the escrow, and EIP-712 signing; WDK refuses anything else.
+**Demo custody:** in the product these wallets live on the user's device; here a demo wallet service holds the test
+seed. Every response says so in `custody`. Treasury, Policy Service, agent signer and operator keys are not WDK wallets.
+
+- `GET /wallets` → `{ "wallets": [{ "role": "client", "address": "0x0234…", "chain_id": 11155111 }, …], "provider": "Tether WDK (…)", "custody": "…" }`
+- `GET /wallets/{role}/balance` → `{ "usdt": { "base_units": "100000000", "display": "100 tUSDT (test token)" }, "gas": { "wei": "…", "display": "0.004 ETH (test)" }, … }`
+- `GET|POST /wallets/{role}/recipients` — saved recipients, `{ "name": "Tethran treasury (demo)", "address": "0x…" }`
+
+#### `POST /wallets/{role}/transfers/review` — what the review screen shows; nothing is signed
+
+```json
+{ "to": "0x7076…B09e", "amount": "100000000", "chain_id": 11155111, "payment_reference": "deposit:c9fe85ad-…" }
+```
+
+```json
+{ "from": "0x0234…", "recipient": { "address": "0x7076…", "saved_name": "Tethran treasury (demo)", "saved": true },
+  "network": { "name": "Sepolia", "chain_id": 11155111 },
+  "amount": { "base_units": "100000000", "display": "100 tUSDT (test token)" },
+  "fee": { "wei": "11067732", "display": "0.000000000011067732 ETH (test), estimated", "paid_in": "ETH" },
+  "payment_reference": "deposit:c9fe85ad-…", "can_sign": true, "blocked": [], "custody": "…" }
+```
+
+The fee is shown separately from the amount. `blocked` lists every reason it cannot be signed:
+`WRONG_NETWORK` (the app's `chain_id` is not the wallet's chain, or the RPC is not that chain),
+`DUPLICATE_PENDING` (same payment reference still pending), `ALREADY_SENT`, `BAD_ADDRESS`, `BAD_AMOUNT`,
+`NO_REFERENCE`, `WALLET_POLICY` (the WDK policy refuses it), `FEE_UNAVAILABLE`.
+
+#### `POST /wallets/{role}/transfers` — sign and send (same body)
+
+Runs the same checks and refuses before signing: `409 WRONG_NETWORK`, `409 DUPLICATE_PENDING`, `409 ALREADY_SENT`,
+`409 WALLET_POLICY`, `400` bad input. Then WDK signs and sends:
+`{ "payment_reference": "…", "tx_hash": "0x178e…", "status": "pending", "fee": { … }, "custody": "…" }`.
+If the outcome is unknown (`502 SEND_UNKNOWN`), the reference stays blocked; it is never sent twice.
+
+#### `GET /wallets/transfers/{payment_reference}` — reconnect: recheck the same transaction
+
+`{ "payment_reference": "…", "status": "pending" | "confirmed" | "failed" | "unknown", "tx_hash": "0x…", "rechecked": true, "last_known": "pending" }`.
+It reads the same hash from the chain and never resubmits. A failed transaction frees the reference.
+
+#### `POST /wallets/{role}/escrow/{milestoneId}/approve|dispute` — the client's own escrow action
+
+Signed by the role's WDK wallet (the client approves; the client or provider disputes):
+`{ "role": "client", "milestone_id": "…", "action": "approve", "tx_hash": "0x…", "signed_by": "Tether WDK wallet", "custody": "…" }`.
+
+#### `POST /wallets/{role}/attestations/{milestoneId}` — sign a dispute attestation (EIP-712)
+
+`{ "kind": "client", "release_to_provider": false }` → `{ "signer": "0x…", "signature": "0x…", "release_to_provider": false, "custody": "…" }`.
+Pass the result to `POST /arbiter/disputes/{id}/attestations`.
+
+### Identity (built; SIMULATED verification)
+
+#### `POST /milestones/{id}/identity` — record the verified names (simulated verification provider)
+
+`{ "payer_verified_name": "Demo Client Ltd", "customer_verified_name": "Demo Client Ltd" }` →
+`{ "milestone_id": "…", "simulated": true, "simulated_id_ref": "SIM-ID-c9fe85ad", "note": "SIMULATED verification: …" }`.
+
+The release check is **strict**: no identity record, or names that differ, hold the release
+(`409 IDENTITY_MISMATCH` on `POST /milestones/{id}/release`) and open an identity hold for the operator.
+
+### Operator (built)
+
+- `GET /operator/queue` → `{ "identity_holds": [{ "milestone_id": "…", "reason": "payer and customer names differ", "status": "open", "opened_at": "…" }], "policy_approvals": [ …Policy Service pending approvals… ], "reconciliation_queue": "/reconciliation/queue", "simulated_identity": true }`
+- `GET /operator/identity-holds/{milestoneId}/typed-data?decision=release|hold` → the EIP-712 payload to sign:
+  domain `{ "name": "TethranOperator", "version": "1", "chainId": 11155111 }`, type `IdentityDecision(string milestoneId, string decision)`.
+- `POST /operator/identity-holds/{milestoneId}/decision` `{ "decision": "release", "operator_signature": "0x…" }`.
+  The signature must recover to the provider's vault operator. `release` releases the escrow at once:
+  `{ "milestone_id": "…", "decision": "release", "released": true, "release": { "release_tx": "0x…", … } }`. `hold` keeps it held.
+  Errors: `403` signature, `404` no hold, `409` already decided.
+- Limits, payees and the approval queue are set through the Policy Service (`POST /v1/policy`,
+  `POST /v1/approvals/{id}/decision`); escalated settlements are executed with
+  `POST /milestones/{id}/escalations/{approvalId}/execute`; the audit log is `GET /v1/audit` on the Policy Service.
+
+### Arbiter (built)
+
+- `GET /arbiter/disputes` → `[{ "milestone_id": "…", "title": "…", "amount": "100000000", "timeout": 1794500000, "attestations": [ … ], "evidence_summary": "/milestones/…/evidence/summary" }]`
+- `GET /arbiter/disputes/{id}/typed-data?kind=client|provider|arbiter&release_to_provider=true|false` → the escrow's
+  `Attestation` typed data (domain `TethranEscrow` v1, chain id, escrow address).
+- `POST /arbiter/disputes/{id}/attestations` `{ "signer": "0x…", "signature": "0x…", "release_to_provider": false }`.
+  The signer must be the client, provider or arbiter of that milestone and the signature must be theirs for that
+  outcome. With one: `{ "recorded": true, "decided": false, "waiting_for": "one more party with the same outcome" }`.
+  With two different parties agreeing, the backend submits `escrow.decide` (anyone may; the signatures decide):
+  `{ "recorded": true, "decided": true, "outcome": "refund to funder", "decide_tx": "0x…", "state": "refunded" }`.
 
 ### Treasury traces
 

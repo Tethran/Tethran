@@ -14,6 +14,12 @@ export interface TreasuryChain {
   mintReceipt(p: MintReceiptParams, idempotencyKey: string): Promise<TxRef>;
   setPolicy(p: SetPolicyParams, idempotencyKey: string): Promise<TxRef>;
   setPayees(p: SetPayeesParams, idempotencyKey: string): Promise<TxRef>;
+  decide(milestoneId: string, releaseToProvider: boolean, sigs: string[], signers: string[], idempotencyKey: string): Promise<TxRef>;
+  attestationTypedData(milestoneId: string, kind: 0 | 1 | 2, releaseToProvider: boolean): {
+    domain: { name: string; version: string; chainId: number; verifyingContract: string };
+    types: { Attestation: { name: string; type: string }[] };
+    message: { milestoneId: string; kind: number; releaseToProvider: boolean };
+  };
   milestone(milestoneId: string): Promise<MilestoneView>;
   vaultState(vault: string): Promise<VaultState>;
   receiptOf(milestoneId: string): Promise<ReceiptView | undefined>;

@@ -19,7 +19,7 @@ import { assertMilestoneMatches, MilestoneMismatchError } from "../../chain/src/
 import type { TreasuryChain } from "./chainPort";
 import { milestones, vaultOf, type FundingSource, type MilestoneRow, type MilestoneState } from "./db";
 import { ApiError, bad, safeErrorMessage } from "./errors";
-import type { IdentityCheck } from "./identity";
+import { openIdentityHold, type IdentityCheck } from "./identity";
 import { StripeSignatureError, verifyStripeSignature } from "./stripe";
 import { currentRun, noopTracer, type Tracer } from "../../llm/src/index";
 import { traceActions, tracedChain } from "./traced";
@@ -280,7 +280,9 @@ export function createTreasury(deps: TreasuryDeps) {
       if (m.state !== "approved") throw new ApiError(409, `milestone is ${m.state}; the client must approve it first`);
       const identity = deps.identity.check(m);
       if (!identity.match) {
-        throw new ApiError(409, "release held: payer and customer names do not match (simulated identity check)", "IDENTITY_MISMATCH");
+        // Hold and escalate: the operator sees it in the queue and decides with a signature (operator.ts).
+        openIdentityHold(db, id, identity.reason, deps.now());
+        throw new ApiError(409, `release held for an operator: ${identity.reason} (simulated identity check)`, "IDENTITY_MISMATCH");
       }
       const onChain = await chain.milestone(id);
       // Only card-funded milestones have a hold. (Comparing a stablecoin milestone's approval time with this
