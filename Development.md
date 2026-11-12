@@ -195,3 +195,46 @@ HTTP API, co-signing and the Policy Service key, operator signature verification
 
 ### Housekeeping
 - Local worktree directories are ignored.
+
+---
+
+## 2026-11-12 — Session 005: contract review findings; wallet script fix
+
+A read-only reviewer helper agent (own worktree, no edits) checked the escrow, token, scripts and
+ChainClient against the trust boundaries in the project rules file and INTERFACES v0.3. It ran the 38 contract tests (pass)
+and found no mismatch between MilestoneEscrow and INTERFACES v0.3. Its findings are below. Only R6 was fixed in
+this session; the rest wait for the lead, because the escrow is under line-by-line review.
+
+### Findings
+| # | Severity | Finding | Status |
+|---|---|---|---|
+| R1 | medium-high | **Approved has no exit except `release`.** If the RELEASER key is lost or revoked, the identity hold never clears, or a card chargeback happens during the hold, the funds stay in the escrow for good. `holdSeconds` has no upper bound. A vault that cannot receive the token strands funds the same way. | Open: needs a design decision (rescue path) |
+| R2 | medium | `dispute` and `approve` do not check the timeout. After the timeout but before anyone calls `refund`, the provider can dispute and push the refund out 7 days. | Open |
+| R3 | medium | `createAndFund` is open to anyone and the id is global. An attacker who sees the treasury transaction can create the same id first with 1 base unit and their own vault: the real funding reverts, and a backend that trusts the state alone could treat the attacker milestone as the real one. | Open |
+| R4 | medium | Timeout, arbiter and vault are chosen by the funder and not checked on-chain (timeout only has to be in the future). In our flow the funder is the treasury, so the backend carries this. | Open |
+| R5 | medium | ChainClient idempotency: (a) a key reused with a different call silently returns the first transaction; (b) a key stays bound to a transaction that failed on-chain or was dropped; (c) a crash between send and record leaves the key claimed with no hash and no way to resolve it; (d) the allowance sub-key and exact-amount approval break on retry or on two fundings in parallel; (e) keys are not scoped by sender. No double-send path was found. | Open |
+| R6 | low-medium | `gen-wallets.ts`: the "do not overwrite" regex was built in a template literal, so `\s` became `s`. A key line with trailing whitespace was not recognised, deleted and replaced with a new random key. That could have destroyed the funded treasury key. | **Fixed** |
+| R7 | low | Scripts print raw error objects; an ethers error can include the RPC URL, which may carry an API key. | Open |
+| R8 | low | "Test network" is only the `testnet: true` flag; the RPC chain id is never checked against the config; no deny-list of mainnet chain ids. | Open |
+| R9 | low | `createAndFund` accepts the escrow or token address as vault or party. | Open |
+| R10 | note | Confirmed in the ethers source: `NonceManager` increments its nonce before sending and does not roll back on a failed send, so a retry after a reverted gas estimate leaves a nonce gap. Used only in the proof script today. | Open |
+| R11 | note | TestUSDT has only the v/r/s form of `transferWithAuthorization`; some x402 facilitators expect the `bytes signature` form, `receiveWithAuthorization` or `version()`. Check against the facilitator Person B picks. | Open |
+| R12 | note | Attestations have no deadline and no ERC-1271 support (by design in v0.3). | Open |
+
+The reviewer also listed missing tests (boundary timestamps in decide, role grant and revoke, the
+`AuthorizationNotYetValid` path, the ChainClient allowance path and SQLite persistence, among others).
+
+### What the reviewer confirmed as correct
+State is written before every transfer; no reentrancy path. No single key can send escrowed funds anywhere
+except the stored vault or the funder. RELEASER can only release Approved milestones to the stored vault and
+cannot skip the card hold. Admin can only manage roles. Attestation replay across milestones, chains and
+contracts is blocked; role confusion and duplicate signers are blocked. Refund and decide do not overlap at the
+exact timeout.
+
+### R6 fix: contracts/scripts/gen-wallets.ts (key handling, needs the lead to read the diff)
+- Parses `.env` line by line instead of with a built regex. A role whose variable is already there is kept
+  untouched; if its value is not a valid key the script stops with an error and writes nothing for that role.
+- Append only: it never rewrites or deletes a line, and starts a new line first if the file does not end with one.
+- `TETHRAN_ENV_FILE` lets a test point it at a scratch file.
+- Checked on a scratch file: a key with trailing whitespace and a last line without a newline were both kept;
+  a bad value stopped the script and left the file unchanged. The real `.env` hash was the same before and after.

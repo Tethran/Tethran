@@ -759,6 +759,128 @@
         "Then Policy Service HTTP API and co-signing, ReceiptNFT, treasury service"
       ],
       "notes": "Final submission is Fri 13 Nov 2026 at 22:59 WAT."
+    },
+    {
+      "session_id": "session_005",
+      "timestamp": "2026-11-12T00:07:16Z",
+      "ai_agent": "Executing engineer (Person A workstream) with a read-only reviewer agent",
+      "current_phase": "Phase 1 - Wallets and chain core (escrow under review)",
+      "progress": {
+        "completed": [
+          "Read-only contract review finished; findings R1 to R12 logged in Development.md",
+          "Fixed gen-wallets.ts so it can never overwrite or delete an existing key line"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "Escrow changes for R1 to R4 and R9 wait for the lead (design decisions; INTERFACES.md would change)",
+          "Vault and SpendingGuard wait for the escrow review"
+        ]
+      },
+      "last_session_summary": "Session 004 merged the Policy Service rule engine, reason codes and audit log (55 tests) built by a helper agent, and logged its assumptions and the INTERFACES gaps it found.",
+      "changes_made": [
+        "contracts/scripts/gen-wallets.ts rewritten: line-based parsing, append only, stops on an unparsable key",
+        "Development.md: session 005 entry with the review findings"
+      ],
+      "file_module_map": [
+        {
+          "file": "contracts/scripts/gen-wallets.ts",
+          "purpose": "Generates test keys into .env. Key handling: needs review of the new version",
+          "last_modified": "2026-11-12T00:07:16Z"
+        },
+        {
+          "file": "Development.md",
+          "purpose": "Change log",
+          "last_modified": "2026-11-12T00:07:16Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Fixed only R6 (wallet script) now; left every escrow and ChainClient finding open for the lead",
+          "reason": "R6 could destroy a funded key and the fix is small and local; the escrow is under line-by-line review and its fixes are design decisions that change INTERFACES.md",
+          "alternatives_considered": "Fixing the escrow findings straight away"
+        },
+        {
+          "decision": "gen-wallets never edits existing lines and stops on a value it cannot parse",
+          "reason": "A wrong guess here loses a key; stopping is the safe failure",
+          "alternatives_considered": "Repairing the regex only"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "R1: an Approved milestone can only leave the escrow through release; a lost or revoked RELEASER, a never-clearing identity hold or a chargeback during the hold strands the funds",
+          "severity": "high",
+          "status": "open"
+        },
+        {
+          "issue": "R2: dispute and approve are allowed after the timeout, so a provider can delay a due refund by 7 days",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "R3: createAndFund is open and the milestone id is global; it can be front-run, and the backend must verify funder, amount, vault and parties rather than trust the state alone",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "R4: timeout, arbiter and vault are funder-chosen with no on-chain bounds",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "R5: ChainClient idempotency gaps: no payload binding, keys stuck on failed or dropped transactions, no resolve path after a crash, allowance sub-key and exact approval, keys not scoped by sender",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "R6: gen-wallets could overwrite an existing key",
+          "severity": "medium",
+          "status": "resolved"
+        },
+        {
+          "issue": "R7: scripts print raw errors that can include an RPC URL with an API key",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "R8: test-network enforcement is a config flag only; RPC chain id is not checked against config",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "R9: createAndFund accepts the escrow or token address as vault or party",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "R10: ethers NonceManager leaves a nonce gap after a failed send; used in the proof script",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "R11: TestUSDT EIP-3009 surface may be narrower than the x402 facilitator expects",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Test gaps listed by the reviewer (decide boundaries, role management, AuthorizationNotYetValid, ChainClient allowance path and SQLite persistence)",
+          "severity": "low",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "Regex built in a template literal lost its backslashes (\\s became s)",
+          "context": "gen-wallets.ts, found by the reviewer and confirmed by reading the file",
+          "resolution": "Replaced the built regex with line-based parsing and a regex literal"
+        }
+      ],
+      "next_steps": [
+        "Lead: decide on R1 to R5 (recommended fixes are in the session report) and finish the escrow review",
+        "Apply the agreed escrow fixes with tests and INTERFACES v0.4, redeploy to Sepolia, rerun the proof",
+        "Then the 2-of-2 vault and SpendingGuard with tests; stop for review",
+        "Then Policy Service HTTP API and co-signing, ReceiptNFT, treasury service"
+      ],
+      "notes": "The escrow deployed on Sepolia predates any fix for R1 to R4; it will need a redeploy. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
     }
   ]
 }
