@@ -18,31 +18,40 @@ tax export.
 
 ## Run the demo (one command)
 
-Requires Node.js 22.13 or newer.
+Requires Node.js 22.13 or newer. Once:
 
 ```bash
 cd contracts && npm install && npm run wallets   # throwaway TEST keys into ../.env (git-ignored)
-cd ../services/chain && npm install
-cd ../policy && npm install
-cd ../llm && npm install
-cd ../backend && npm install
-
-# One command: starts the services, seeds all nine scenarios, keeps serving (backend :18788, Policy :18787)
-cd services/backend && CHAIN=localhost npm run demo   # local chain: starts `hardhat node` and deploys if needed
-cd services/backend && CHAIN=sepolia npm run demo     # Sepolia: uses the contracts in config/chains.json
+for d in services/chain services/policy services/llm services/backend app; do (cd $d && npm install); done
 ```
 
-`CHAIN` comes from the environment, then from `.env`, then defaults to `localhost`. The seed wipes `.demo-data/`
-(that directory only; service logs go to `.demo-data/logs/`), starts the Policy Service and the backend as separate
-processes with separate keys, signs a contract, and drives one milestone per scenario through the real API. It
-prints a short summary. Rerun it at any time; every run starts from an empty `.demo-data/`. `npm run demo:serve`
-restarts the services on the last seeded state; `DEMO_MODE=1 npm run seed` seeds without serving. The agent mode
-defaults to `replay`: saved proposals, eight of them real model outputs from the evaluation run (each names its
-Opik trace) and one curated (labelled). Set `AGENT_MODE=live+replay` to call the model and fall back to replay if
-it fails. The step-by-step demo is in [docs/DEMO.md](docs/DEMO.md).
+Then one command seeds the nine scenarios and serves everything:
 
-The web app (`app/`, see [app/README.md](app/README.md)): with the demo running, `cd app && npm install && npm run dev`,
-then open http://localhost:3000. The backend's CORS allows that origin (`CORS_ORIGINS` to change it).
+```bash
+cd services/backend && CHAIN=sepolia npm run demo     # Sepolia: the contracts in config/chains.json
+cd services/backend && CHAIN=localhost npm run demo   # local chain: starts `hardhat node` and deploys if needed
+```
+
+| Service | Address |
+|---|---|
+| Web app | http://localhost:3000 |
+| Backend API | http://127.0.0.1:18788 |
+| Policy Service | http://127.0.0.1:18787 |
+| Demo signer (DEMO_MODE only, test keys) | http://127.0.0.1:18789 |
+
+The seed wipes `.demo-data/` (that directory only; logs in `.demo-data/logs/`), starts the Policy Service and the
+backend as separate processes with separate keys, signs a contract and drives one milestone per scenario through the
+real API, then keeps serving. On Sepolia it takes about 40 minutes. `npm run demo:serve` restarts on the last seeded
+state; `npm run seed -- --retry-failed` (with `DEMO_MODE=1`) reruns only failed scenarios. Ports:
+`DEMO_BACKEND_PORT`, `DEMO_POLICY_PORT`, `DEMO_SIGNER_PORT`, `DEMO_APP_PORT`; `DEMO_APP=0` skips the app. The agent
+mode defaults to `replay` (saved proposals, labelled "Replay"); `AGENT_MODE=live+replay` calls the model and falls
+back to replay. The demo, step by step, is in [docs/DEMO.md](docs/DEMO.md).
+
+**Demo-key buttons.** In the app, each operator, arbiter and provider action offers **Sign with demo key** (DEMO_MODE
+only: one click, signed with that role's test key by the demo signer in the presenter's process, labelled "Demo:
+signed with a test key") next to **Sign with your wallet** (the real path, the person's own wallet extension). The
+milestone page adds the platform's own step, **Release and settle**, in demo mode. The backend and the Policy Service
+never hold the operator, arbiter or provider keys.
 
 ## Architecture in a few lines
 
@@ -60,7 +69,8 @@ client wallet (WDK) ──deposit──> treasury ──createAndFund──> Mil
 - `services/policy/`: the Policy Service. Its own process and its own key; reason codes; audit log.
 - `services/llm/`: `LlmProvider` (Groq first, Gemini fallback), agent prompt, input guards, Opik tracing, evals.
 - `app/`: the web app (Vite, React, TanStack Start, Tailwind, shadcn/ui). An interface only: it reads and writes
-  through `app/src/api`, holds no keys, and asks the user's own wallet for operator, arbiter and provider signatures.
+  through `app/src/api` and holds no keys; operator, arbiter and provider signatures come from the user's own wallet
+  or, in demo mode, the labelled demo signer.
 - `services/backend/`: treasury, settlement orchestrator, agent signer, contracts and invoices, checkout,
   payouts, reconciliation, operator and arbiter queues, x402 endpoints. See [docs/API.md](docs/API.md).
 - Config: `config/chains.json` holds chain id, RPC and contract addresses per chain. Nothing is hard-coded.
@@ -70,14 +80,16 @@ client wallet (WDK) ──deposit──> treasury ──createAndFund──> Mil
 | Part | What is real | What is simulated |
 |---|---|---|
 | Escrow, vault, limits, receipts | On-chain on a test network | Nothing |
-| Token | Our own `TestUSDT` (open test faucet) | It is not Tether USDT |
+| Token | Our own `TestUSDT` (open minting: it is its own faucet) | It is not Tether USDT |
 | Card, Apple Pay, Google Pay, PayPal, Cash App | Signed Stripe-format events through the real webhook handler | The checkout itself (real Stripe path built, off until keys are set) |
 | Fiat conversion and FX quotes | | Rates are placeholders |
-| Identity check (payer vs customer name) | The backend enforces it before release | The verification provider |
+| Identity check (payer vs customer name) | The backend enforces it before release: a mismatch holds the release for the operator | The verification provider |
 | Mobile money (M-Pesa, MTN MoMo, Airtel) and bank payouts | The vault pays the rail's wallet on-chain | The off-chain leg to the phone or bank |
 | x402 data purchases | EIP-3009 payment settled on-chain in TestUSDT | The data served (corridor rules from country profiles, demo FX rates) |
 | Tax rates in country profiles | | Unverified placeholders, labelled |
 | Wallet custody | WDK wallets sign every user transaction | One demo test seed holds all user wallets |
+| Demo-key signing | The same signatures and checks as the wallet path | The keys are test keys in the presenter's process (DEMO_MODE only) |
+| Agent (seed default) | Live model calls with `AGENT_MODE=live` or `live+replay` | `replay`: saved proposals, labelled |
 
 ## Trust assumptions
 
@@ -85,26 +97,35 @@ client wallet (WDK) ──deposit──> treasury ──createAndFund──> Mil
   change policy. Contract text, evidence and purchased data are untrusted data, never instructions.
 - **The Policy Service is authoritative** for off-chain rules; the **vault is final** for limits. A payout needs
   the Policy Service signature and the agent signer signature, and the vault checks payee, caps and reserve again.
+  The Policy Service decides only for the milestone the backend names in its authenticated request
+  (`x-internal-token`); a proposal for any other milestone is rejected (`MILESTONE_ID_MISMATCH`). Each milestone is
+  settled at most once (`ALREADY_SETTLED`), within what its escrow released, and only after it was released on-chain.
 - **The platform releases.** The treasury funds each escrow and is the only account that can release an approved
-  milestone. If it never releases, it can take the funds back three days after the hold ends.
+  milestone. Release, refund and settle need the platform token (`x-platform-token`). If the platform never
+  releases, it can take the funds back three days after the hold ends.
 - **The vault operator is effectively the owner of the vault.** The operator key (provider or agency admin) can
   replace both co-signers, allow any payee and raise the caps. The two-signature rule protects against a
   compromised agent or Policy Service, not against the operator. The operator address cannot be changed.
-- **Policy changes take effect at once.** The daily cap resets at 00:00 UTC. To pause payouts, sign zero caps.
+- **Policy changes take effect at once** and operator policy signatures do not expire (a newer version retires an
+  older one). The daily cap resets at 00:00 UTC. To pause payouts, sign zero caps.
 - **Stablecoin funding is a demo simplification:** the client pays a treasury deposit address and the treasury
   funds the escrow.
 - **Identity checks are simulated** and enforced by the backend, not on-chain.
-- **Backend routes have no user authentication** in this build (only `/internal` routes need a token). This is a
-  demo server on localhost.
+- **The demo signer holds test keys** for the operator, arbiter and provider, and the platform token, in the
+  presenter's process (DEMO_MODE only), so the demo needs no wallet switching. In real use each person signs with
+  their own wallet.
+- **Other backend routes have no user authentication** in this build. This is a demo server on localhost.
 
 ## Tests
 
 ```bash
 cd contracts && npm test                  # 122 contract tests
-cd services/chain && npm test             # ChainClient and the WDK signing policy
-cd services/policy && npm test            # Policy Service rules, co-signing, HTTP API
-cd services/llm && npm test               # providers, agent, guards (offline)
-cd services/backend && npm test           # treasury, settlement, wallets, x402, reconciliation, ...
+cd services/chain && npm test             # 40: ChainClient, WDK signing policy, RPC and WDK failover
+cd services/policy && npm test            # 159: Policy Service rules, co-signing, HTTP API
+cd services/llm && npm test               # 61: providers, agent, guards (offline)
+cd services/backend && npm test           # 131: treasury, settlement, wallets, x402, reconciliation, ...
+cd app && npm test                        # 9: app API mapping and reason-code parity
+cd app && npm run e2e:demo-short          # Playwright against the live demo (also e2e:tour, e2e:journey)
 cd services/backend && CHAIN=sepolia npm run slice   # one milestone through the real services on Sepolia
 cd services/llm && npm run eval:agent     # the nine scenarios against the live model, traced in Opik
 ```
@@ -118,9 +139,11 @@ seed and slice scripts):
   `registerPolicy` (WDK transaction policies); `getAccount(walletId, index)`; `PolicyViolationError`; `dispose`.
 - **`@tetherto/wdk-wallet-evm` 1.0.0-beta.26**: `WalletManagerEvm` (BIP-44 EVM accounts). Account calls we use:
   `getAddress`, `getBalance`, `getTokenBalance`, `quoteTransfer`, `transfer`, `sendTransaction`, `signTypedData`.
+- **`@tetherto/wdk-failover-provider` 1.0.0-beta.2**: the wallets' RPC. The API-key RPC (`RPC_URL_<chainId>`) is
+  first and the chain file's public RPC second, each with a 20-second request timeout; a timeout, network or server
+  error moves the call to the next one. Contract errors are not retried.
 
-`@tetherto/wdk-wallet` and `@tetherto/wdk-failover-provider` are installed only as dependencies of those two; we
-do not import them.
+`@tetherto/wdk-wallet` is installed only as a dependency; we do not import it.
 
 What WDK does for us: every user-side signature (client deposits, the client's on-chain approve and dispute,
 contract signing, the agent's x402 payment authorizations) is made by a WDK account. WDK policies limit each

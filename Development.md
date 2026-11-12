@@ -880,3 +880,40 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
 - Recordings and screenshots: app/e2e-artifacts/ (git-ignored). Playwright 1.65.0 (its Chromium build was installed).
 - Open: WDK wallet reads (balance) use the WDK provider without our retry/fallback and time out on Sepolia now and
   then.
+
+
+---
+
+## Session 016 — 2026-11-12 — Milestone id from the request, WDK failover, clean-delivery journey, docs, clean seed
+
+### Policy Service (v0.10)
+- POST /v1/proposals is backend-only: `x-internal-token` (INTERNAL_TOKEN, constant-time compare; 401 otherwise) and a
+  `milestone_id` in the body. Every chain read, the budget, the settled log and the audit row use the request's
+  milestone; a proposal naming another milestone is rejected `MILESTONE_ID_MISMATCH` (first rule after the schema),
+  whatever it contains. The backend sends the milestone it is settling. INTERFACES v0.10, API.md, the app's reasons.
+
+### WDK
+- The WDK wallets use @tetherto/wdk-failover-provider (now a direct dependency): the API-key RPC first, the public RPC
+  second, each JsonRpcProvider pinned to the chain id with a 20 s request timeout; only timeout, network and server
+  errors fail over (contract errors are not retried). Tests: a hanging primary falls over to the fallback, also
+  through a WDK account's balance read.
+
+### Demo
+- The demo signer adds POST /platform/settle (release, then settle, with the platform token held by the presenter's
+  process); the milestone page shows "Release and settle" in demo mode, the vault payouts and the Policy approval.
+- `npm run demo` / `demo:serve` also start the web app on :3000 when app/ is installed (DEMO_APP=0 skips it).
+- Playwright: the journey now includes the clean-delivery path (stablecoin payment, approve, release and settle,
+  receipt verified) and a card-paid contract with its hold; a short demo spec records its waits and
+  e2e/cut-video.mjs (ffmpeg) speeds each up to about a second -> recordings/tethran-demo-short.webm.
+- README and docs/DEMO.md rewritten to match what is built (one command, ports, demo-key buttons, real vs simulated,
+  trust assumptions, WDK modules, the nine seed results including identity_mismatch).
+
+### Seed
+- Clean Sepolia seed: nine scenarios, 0 problems (results in docs/DEMO.md). State kept in .demo-data/.
+
+### Tests
+- contracts 122, chain 40, policy 159, llm 61, backend 131, app 9.
+
+### Not done
+- The short demo recording and the full journey did not complete: the machine ran low on memory and the session
+  stopped the demo services and the Playwright run (after the first screenshot). Not restarted, pending the lead.

@@ -2394,6 +2394,72 @@
         "Lead review of Policy v0.9 and the treasury changes"
       ],
       "notes": "Recordings: app/e2e-artifacts/recordings/."
+    },
+    {
+      "session_id": "session_016",
+      "timestamp": "2026-11-12T21:55:03.207Z",
+      "ai_agent": "Executing engineer (main session)",
+      "current_phase": "Policy v0.10 (milestone id from the request), WDK failover, clean-delivery journey and short demo spec, docs, clean seed",
+      "progress": {
+        "completed": [
+          "MILESTONE_ID_MISMATCH and authenticated POST /v1/proposals; INTERFACES v0.10",
+          "WDK wallets through @tetherto/wdk-failover-provider with timeout failover tests",
+          "Demo release-and-settle step; npm run demo starts the web app",
+          "Journey with clean delivery; short demo spec and cut script",
+          "README and docs/DEMO.md match what is built",
+          "Clean Sepolia seed: nine scenarios, 0 problems"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "Short demo recording and full journey run: stopped by low memory, not restarted (lead to say when)",
+          "Push: waiting for the lead",
+          "Second chain: Base Sepolia test ETH"
+        ]
+      },
+      "last_session_summary": "Implemented the lead's five items; the seed passed; the Playwright recordings were stopped by memory pressure.",
+      "changes_made": [
+        "services/policy: request milestone id, token on proposals, MILESTONE_ID_MISMATCH",
+        "services/backend: Policy client sends milestone id and token; demo signer /platform/settle; seed starts the app",
+        "services/chain: createWdkProvider (failover provider)",
+        "app: Release and settle (demo), vault payouts, e2e journey and demo-short, cut-video.mjs",
+        "docs: INTERFACES v0.10, API.md, README, DEMO.md, app README"
+      ],
+      "file_module_map": [
+        {
+          "file": "services/policy/test/milestone.id.test.ts",
+          "purpose": "MILESTONE_ID_MISMATCH and proposal auth tests"
+        },
+        {
+          "file": "services/chain/test/wdkFailover.test.ts",
+          "purpose": "WDK RPC timeout failover tests"
+        },
+        {
+          "file": "app/e2e/demo-short.spec.ts",
+          "purpose": "Short demo video journey"
+        },
+        {
+          "file": "app/e2e/cut-video.mjs",
+          "purpose": "Speeds up recorded waits with ffmpeg"
+        }
+      ],
+      "decisions_log": [
+        "Proposal auth reuses INTERNAL_TOKEN (backend <-> Policy shared secret)",
+        "Short demo pays by stablecoin (no 10-minute card hold); the full journey shows a card payment and its hold",
+        "Waits are sped up to about a second, never removed"
+      ],
+      "known_issues": [
+        "Recordings for this round not produced (memory pressure stopped the run)",
+        "A contract from the interrupted short run exists unfunded on the seeded state"
+      ],
+      "errors_encountered": [
+        "Background services and the Playwright run were stopped by the session on low memory",
+        "Child processes outlived their stopped parent; stopped by PID"
+      ],
+      "next_steps": [
+        "Lead: when memory allows, run npm run demo:serve then app npm run e2e:demo-short and e2e:journey",
+        "Lead: say when to push"
+      ],
+      "notes": "Seeded state in .demo-data/ (Sepolia); demo:serve brings everything back including the app."
     }
   ]
 }
