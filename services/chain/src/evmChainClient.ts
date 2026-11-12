@@ -126,12 +126,17 @@ export type EvmChainClientOptions = {
   provider?: ChainReader;
   /** resolve() treats a transaction as "never landed" only when the key is at least this old. */
   resolveMinAgeMs?: number;
+  /** How often to ask again when gas estimation reverts. Default: 2 on chains with confirmations > 1, else 0. */
+  estimateRetries?: number;
+  estimateRetryMs?: number;
 };
 
 export class EvmChainClient implements ChainClient {
   readonly chainId: number;
   private readonly provider: ChainReader;
   private readonly resolveMinAgeMs: number;
+  private readonly estimateRetries: number;
+  private readonly estimateRetryMs: number;
   private readonly escrow = new Interface(ESCROW_ABI);
   private readonly erc20 = new Interface(ERC20_ABI);
   private chainChecked?: Promise<void>;
@@ -149,6 +154,8 @@ export class EvmChainClient implements ChainClient {
     this.chainId = config.chainId;
     this.provider = options.provider ?? newProvider(config);
     this.resolveMinAgeMs = options.resolveMinAgeMs ?? 120_000;
+    this.estimateRetries = options.estimateRetries ?? (config.confirmations > 1 ? 2 : 0);
+    this.estimateRetryMs = options.estimateRetryMs ?? 5_000;
   }
 
   /**
@@ -451,11 +458,20 @@ export class EvmChainClient implements ChainClient {
     if (!claimed) return this.refFor(this.store.get(scoped)!, to, data, idempotencyKey); // lost a race
 
     let hash: string;
-    try {
-      ({ hash } = await this.sender.sendTransaction({ to, data }));
-    } catch (e) {
-      if (REJECTED_BEFORE_BROADCAST.some((code) => isError(e, code))) this.store.release(scoped);
-      throw e;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        ({ hash } = await this.sender.sendTransaction({ to, data }));
+        break;
+      } catch (e) {
+        // A revert at gas estimation means nothing was broadcast, so asking again is safe. On a public,
+        // load-balanced RPC it is often a node that has not yet seen the previous block.
+        if (isError(e, "CALL_EXCEPTION") && attempt < this.estimateRetries) {
+          await new Promise((r) => setTimeout(r, this.estimateRetryMs));
+          continue;
+        }
+        if (REJECTED_BEFORE_BROADCAST.some((code) => isError(e, code))) this.store.release(scoped);
+        throw e;
+      }
     }
     try {
       this.store.complete(scoped, hash);

@@ -175,6 +175,33 @@ test("a send the node refused up front frees the key", async () => {
   }
 });
 
+test("a reverted gas estimate is asked again a limited number of times, then frees the key", async () => {
+  let calls = 0;
+  const { node, reader } = fakeNode();
+  void node;
+  const sent: string[] = [];
+  const sender = {
+    getAddress: async () => ALICE,
+    sendTransaction: async () => {
+      calls++;
+      if (calls <= 2) throw makeError("stale node", "CALL_EXCEPTION");
+      sent.push("0xok");
+      return { hash: "0xok" };
+    },
+  };
+  const store = new InMemoryIdempotencyStore();
+  const opts = { provider: reader, estimateRetries: 2, estimateRetryMs: 1 };
+  const ref = await new EvmChainClient(CONFIG, sender, store, opts).approve("m-1", "k");
+  assert.equal(ref.txHash, "0xok");
+  assert.equal(calls, 3);
+
+  calls = -10; // now it keeps reverting: three tries, then the key is freed
+  const failing = new EvmChainClient(CONFIG, sender, store, opts);
+  await assert.rejects(failing.approve("m-2", "k2"));
+  assert.equal(calls, -7);
+  assert.equal(store.get(`${ALICE}:k2`), undefined);
+});
+
 test("any other failure keeps the key claimed: it is never sent again by a retry", async () => {
   for (const code of ["TIMEOUT", "NETWORK_ERROR", "SERVER_ERROR", "UNKNOWN_ERROR"] as const) {
     const store = new InMemoryIdempotencyStore();
