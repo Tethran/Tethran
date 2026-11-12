@@ -21,6 +21,9 @@ import { milestones, vaultOf, type FundingSource, type MilestoneRow, type Milest
 import { ApiError, bad, safeErrorMessage } from "./errors";
 import type { IdentityCheck } from "./identity";
 import { StripeSignatureError, verifyStripeSignature } from "./stripe";
+import { currentRun, noopTracer, type Tracer } from "../../llm/src/index";
+import { traceActions, tracedChain } from "./traced";
+import { markInvoicePaidForMilestone } from "./invoices";
 
 export interface TreasuryConfig {
   chainId: number;
@@ -42,6 +45,8 @@ export interface TreasuryDeps {
   identity: IdentityCheck;
   config: TreasuryConfig;
   now: () => Date;
+  /** Opik tracing of treasury actions; optional (tests run without it). */
+  tracer?: Tracer;
 }
 
 /** USD cents to USDT base units (6 decimals) at the SIMULATED rate of 1 USD = 1 USDT. */
@@ -55,7 +60,8 @@ const ESCROW_TO_DB: Record<string, MilestoneState> = {
 };
 
 export function createTreasury(deps: TreasuryDeps) {
-  const { db, chain, config } = deps;
+  const { db, config } = deps;
+  const chain = tracedChain(deps.chain);
   const iso = () => deps.now().toISOString();
   const nowS = () => Math.floor(deps.now().getTime() / 1000);
 
@@ -76,7 +82,7 @@ export function createTreasury(deps: TreasuryDeps) {
     return need(id);
   }
 
-  return {
+  const api = {
     sync,
 
     /**
@@ -162,8 +168,11 @@ export function createTreasury(deps: TreasuryDeps) {
         await chain.waitConfirmed(tx.txHash);
         const onChain = await chain.milestone(id);
         assertMilestoneMatches(onChain, { ...request, funder: config.treasuryAddress });
-        db.prepare("UPDATE fundings SET status = 'funded', escrow_tx = ? WHERE reference = ?").run(tx.txHash, reference);
+        db.prepare("UPDATE fundings SET status = 'funded', escrow_tx = ?, trace_id = ? WHERE reference = ?").run(tx.txHash, currentRun()?.traceId ?? null, reference);
         milestones.setState(db, id, "funded", { escrow_tx: tx.txHash, funding_source: source, card_funded: cardFunded ? 1 : 0, hold_seconds: holdSeconds });
+        if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'invoices'").get()) {
+          markInvoicePaidForMilestone(db, id, reference, deps.now());
+        }
         return { milestone: need(id), escrow_tx: tx.txHash, simulated };
       } catch (e) {
         const status = e instanceof MilestoneMismatchError ? "mismatch" : "failed";
@@ -281,6 +290,7 @@ export function createTreasury(deps: TreasuryDeps) {
       const tx = await chain.release(id, `release:${id}`);
       await chain.waitConfirmed(tx.txHash);
       milestones.setState(db, id, "released", { release_tx: tx.txHash });
+      db.prepare("UPDATE milestones SET release_trace_id = ? WHERE id = ?").run(currentRun()?.traceId ?? null, id);
       return { milestone: need(id), release_tx: tx.txHash, already: false, identity: { simulated: true, match: true } };
     },
 
@@ -312,6 +322,8 @@ export function createTreasury(deps: TreasuryDeps) {
       };
     },
   };
+  return traceActions(api, ["createMilestone", "fund", "confirmDeposit", "handleStripeWebhook", "chargeback", "release", "refund"],
+    { tracer: deps.tracer ?? noopTracer, db, now: deps.now });
 }
 
 export type Treasury = ReturnType<typeof createTreasury>;

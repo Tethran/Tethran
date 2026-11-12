@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Wallet, getAddress, id as keccakUtf8, verifyTypedData } from "ethers";
 import type { MilestoneView, ReceiptView, TxRef, VaultState } from "../../chain/src/index";
 import { VAULT_TYPES } from "../../chain/src/index";
-import { MemoryTracer } from "../../llm/src/index";
+import { LlmAllFailedError, MemoryTracer } from "../../llm/src/index";
 import type { LlmProvider } from "../../llm/src/index";
 import { createAgentSigner } from "../src/agentSigner";
 import type { TreasuryChain } from "../src/chainPort";
@@ -13,6 +13,8 @@ import { createIdentityCheck } from "../src/identity";
 import { createOrchestrator } from "../src/orchestrator";
 import type { Cosignature, PolicyClient, PolicyDecision } from "../src/policyClient";
 import { createTreasury } from "../src/treasury";
+import { createAgent, loadSavedProposals } from "../src/replay";
+import { migrateContracts } from "../src/contracts";
 
 export const CHAIN_ID = 31337;
 export const TREASURY = getAddress("0x00000000000000000000000000000000000000a0");
@@ -121,6 +123,8 @@ export function fakeChain(opts: { now: () => Date; policySigner: string }) {
         });
       });
     },
+    async setPolicy(p, key) { return tx(key, `setPolicy:${p.version}`, () => {}); },
+    async setPayees(p, key) { return tx(key, `setPayees:${p.version}`, () => {}); },
     async milestone(id) {
       return escrow.get(id) ?? {
         funder: TREASURY, client: CLIENT, provider: PROVIDER, arbiter: ARBITER, vault: VAULT, amount: "0", timeout: 0,
@@ -167,6 +171,12 @@ export function fakePolicy(signer: Pick<Wallet, "signTypedData">, opts: { decisi
       }
       return { decision, reasons: [], proposal_hash, cosignatures };
     },
+    async decideApproval(_id, decision) {
+      if (decision !== "approve") return { decision: "rejected", reasons: ["HUMAN_REJECTED"], proposal_hash: "ab".repeat(32) };
+      const last = submitted.at(-1)!;
+      const signed = await (opts.decision = "approved", policy.submitProposal(last.proposal, last.traceId));
+      return { ...signed, reasons: ["LOW_CONFIDENCE"] };
+    },
   };
   return { policy, submitted };
 }
@@ -184,6 +194,18 @@ export const GOOD_PROPOSAL = {
   needs_human: false,
 };
 
+/** A provider that always fails like a rate-limited free tier. */
+export function failingLlm(): LlmProvider & { calls: number } {
+  const llm = {
+    calls: 0,
+    async complete(): Promise<never> {
+      llm.calls++;
+      throw new LlmAllFailedError([{ provider: "groq", model: "m", attempt: 1, reason: "HTTP 429" }]);
+    },
+  };
+  return llm;
+}
+
 export function fixedLlm(reply: unknown): LlmProvider & { calls: number } {
   const llm = {
     calls: 0,
@@ -196,13 +218,14 @@ export function fixedLlm(reply: unknown): LlmProvider & { calls: number } {
 }
 
 /** A full backend wired to the fakes. `clock` can be moved by tests. */
-export function harness(opts: { decision?: PolicyDecision["decision"]; reply?: unknown } = {}) {
+export function harness(opts: { decision?: PolicyDecision["decision"]; reply?: unknown; mode?: "live" | "replay" | "live+replay"; failLlm?: boolean } = {}) {
   let clock = new Date("2026-11-12T10:00:00Z");
   const now = () => clock;
   const policySigner = Wallet.createRandom();
   const agentKey = Wallet.createRandom();
   const fc = fakeChain({ now, policySigner: policySigner.address });
   const db: DatabaseSync = openDb(":memory:");
+  migrateContracts(db);
   db.prepare("INSERT INTO vaults (provider_id, chain_id, vault, operator, provider_payout) VALUES ('prov-1', ?, ?, ?, ?)").run(CHAIN_ID, VAULT, OPERATOR, PROVIDER);
   db.prepare("INSERT INTO payees VALUES ('payee_amara', 'prov-1', 'Amara Studio (demo)', '0x00000000000000000000000000000000000000b2', 'usdt', 0, 'Amara Studio')").run();
   db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-1', 'Kofi Print Works (demo)', '0x00000000000000000000000000000000000000b3', 'mpesa', 1, 'Kofi Print Works')").run();
@@ -215,10 +238,11 @@ export function harness(opts: { decision?: PolicyDecision["decision"]; reply?: u
     },
   });
   const { policy, submitted } = fakePolicy(policySigner, { decision: opts.decision, now });
-  const llm = fixedLlm(opts.reply ?? GOOD_PROPOSAL);
+  const llm = opts.failLlm ? failingLlm() : fixedLlm(opts.reply ?? GOOD_PROPOSAL);
   const tracer = new MemoryTracer();
   const agentSigner = createAgentSigner(agentKey, async () => policySigner.address, now);
-  const orchestrator = createOrchestrator({ db, chain: fc.chain, policy, agentSigner, llm, tracer, chainName: "Hardhat local", now });
+  const agent = createAgent(llm, loadSavedProposals());
+  const orchestrator = createOrchestrator({ db, chain: fc.chain, policy, agentSigner, agent, defaultAgentMode: opts.mode ?? "live", tracer, chainName: "Hardhat local", now });
   return {
     db, treasury, orchestrator, identity, tracer, llm, submitted, policySigner, agentKey, ...fc,
     now, setClock: (d: Date) => { clock = d; }, advance: (s: number) => { clock = new Date(clock.getTime() + s * 1000); },

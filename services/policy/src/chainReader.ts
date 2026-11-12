@@ -11,7 +11,8 @@ import type { ChainReader } from "./service";
 export interface ChainReads {
   chainId: number;
   milestone(milestoneId: string): Promise<{ vault: string; amount: string; cardFunded: boolean; state: string }>;
-  vaultState(vault: string): Promise<{ spentToday: string; balance: string }>;
+  vaultState(vault: string): Promise<{ spentToday: string; balance: string; policyVersion: number; perTxCap: string; dailyCap: string; minReserve: string; operator: string }>;
+  vaultPayeeAllowed(vault: string, address: string): Promise<boolean>;
 }
 
 export function createChainReader(opts: {
@@ -51,6 +52,12 @@ export function createChainReader(opts: {
         grossAmount: m.amount,
       };
     },
+    async vaultPolicy(vault) {
+      const s = await opts.chain.vaultState(vault);
+      return { policyVersion: s.policyVersion, perTxCap: s.perTxCap, dailyCap: s.dailyCap, minReserve: s.minReserve, operator: s.operator };
+    },
+    vaultPayeeAllowed: (vault, address) => opts.chain.vaultPayeeAllowed(vault, address),
+    chainId: () => opts.chain.chainId,
     async payees(): Promise<Record<string, ResolvedPayee>> {
       return (await backend("/internal/payees")) as Record<string, ResolvedPayee>;
     },

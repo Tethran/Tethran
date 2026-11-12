@@ -1,6 +1,6 @@
 import { Wallet } from "ethers";
 import { openAuditLog } from "../src/audit";
-import { createService, stubChainWriter, type ChainReader, type ServiceDeps } from "../src/service";
+import { createService, recordingChainWriter, type ChainReader, type ServiceDeps } from "../src/service";
 import { openApprovalStore, openDecisionStore, openPolicyStore } from "../src/stores";
 import {
   approvalDecisionTypes,
@@ -21,11 +21,14 @@ export function makeHarness(overrides: Partial<ServiceDeps> = {}) {
   const policySigner = Wallet.createRandom();
   const operator = Wallet.createRandom();
   const audit = openAuditLog();
-  const chainWriter = stubChainWriter();
+  const chainWriter = recordingChainWriter();
 
   const fake = {
     state: { spentToday: "0", balance: "10000000000" },
     facts: { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount: "500000000" } as MilestoneFacts,
+    // The vault starts in agreement with the base policy: same limits, both payees allowed.
+    vault: { policyVersion: 2, perTxCap: basePolicy.per_tx_cap, dailyCap: basePolicy.daily_cap, minReserve: basePolicy.vault_min_reserve, operator: operator.address },
+    allowed: new Set(["0x00000000000000000000000000000000000000A1", "0x00000000000000000000000000000000000000A2"].map((a) => a.toLowerCase())),
   };
   const chain: ChainReader = {
     async vaultFor() {
@@ -37,6 +40,13 @@ export function makeHarness(overrides: Partial<ServiceDeps> = {}) {
     async milestoneFacts() {
       return { ...fake.facts };
     },
+    async vaultPolicy() {
+      return { ...fake.vault };
+    },
+    async vaultPayeeAllowed(_v: string, a: string) {
+      return fake.allowed.has(a.toLowerCase());
+    },
+    chainId: () => CHAIN_ID,
     async payees() {
       return {
         "payee-1": { address: "0x00000000000000000000000000000000000000a1", rail: "usdt", simulated: false },

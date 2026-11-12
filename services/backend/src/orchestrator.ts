@@ -10,8 +10,9 @@
 // - Untrusted input (contract text, evidence) is passed to the agent as delimited data (see services/llm).
 import type { DatabaseSync } from "node:sqlite";
 import { keccak256, toUtf8Bytes } from "ethers";
-import type { AgentInput, LlmProvider, Tracer } from "../../llm/src/index";
-import { proposeSettlement, traceTool } from "../../llm/src/index";
+import type { AgentInput, Tracer } from "../../llm/src/index";
+import { traceTool } from "../../llm/src/index";
+import type { Agent, AgentMode } from "./replay";
 import type { AgentSigner } from "./agentSigner";
 import type { TreasuryChain } from "./chainPort";
 import { milestones, payeesOf, type MilestoneRow } from "./db";
@@ -23,7 +24,10 @@ export interface OrchestratorDeps {
   chain: TreasuryChain;
   policy: PolicyClient;
   agentSigner: AgentSigner;
-  llm: LlmProvider;
+  /** The Settlement Agent, live or replay (see replay.ts). */
+  agent: Agent;
+  /** Default agent mode when a request does not choose one. */
+  defaultAgentMode: AgentMode;
   tracer: Tracer;
   chainName: string;
   now: () => Date;
@@ -139,7 +143,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
      * Runs a settlement for a released milestone. If an approved plan already exists (an earlier run stopped
      * part-way), it resumes that plan's payouts instead of asking the agent again.
      */
-    async settle(milestoneId: string) {
+    async settle(milestoneId: string, opts: { agentMode?: AgentMode } = {}) {
+      const mode = opts.agentMode ?? deps.defaultAgentMode;
       const m = milestones.get(db, milestoneId);
       if (!m) throw new ApiError(404, "milestone not found");
       if (m.state !== "released" && m.state !== "paid_out") {
@@ -153,33 +158,73 @@ export function createOrchestrator(deps: OrchestratorDeps) {
       }
 
       const { traceId, result } = await deps.tracer.run(
-        { name: "settlement", input: { milestone_id: m.id }, metadata: { milestone_id: m.id, chain_id: m.chain_id }, tags: ["settlement"] },
+        { name: "settlement", input: { milestone_id: m.id }, metadata: { milestone_id: m.id, chain_id: m.chain_id, agent_mode: mode }, tags: ["settlement"] },
         async (run) => {
           const { policy } = await traceTool("get_policy_summary", { output: () => ({ ok: true }) }, () => deps.policy.getPolicy());
           const input = await traceTool("build_agent_input", { input: { milestone_id: m.id } }, async () => agentInput(m, policy));
-          const proposed = await proposeSettlement(input, deps.llm);
+          const proposed = await deps.agent.propose(input, mode, m.scenario ?? "clean_delivery");
+          const agent = { agent_mode: proposed.agent_mode, ...(proposed.replay_source ? { replay_source: proposed.replay_source } : {}) };
+          if (proposed.agent_mode !== "live") run.span({ name: "agent.replay", type: "general", output: agent });
           if (!proposed.ok) {
             run.span({ name: "agent.rejected", type: "guardrail", output: { reasons: proposed.reasons } });
-            const planId = Number(db.prepare("INSERT INTO settlement_plans (milestone_id, proposal_json, proposal_hash, trace_id, decision, reasons, at) VALUES (?, NULL, NULL, ?, 'rejected', ?, ?)")
-              .run(m.id, run.traceId, JSON.stringify(proposed.reasons), iso()).lastInsertRowid);
+            const planId = Number(db.prepare("INSERT INTO settlement_plans (milestone_id, proposal_json, proposal_hash, trace_id, decision, reasons, agent_mode, at) VALUES (?, NULL, NULL, ?, 'rejected', ?, ?, ?)")
+              .run(m.id, run.traceId, JSON.stringify(proposed.reasons), proposed.agent_mode, iso()).lastInsertRowid);
             const agent_attempts = proposed.attempts.map((x) => ({ provider: x.provider, model: x.model, attempt: x.attempt, reason: x.reason }));
-            return { decision: "rejected" as const, reasons: proposed.reasons as string[], rejected_by: "agent output check", agent_attempts, plan_id: planId };
+            return { decision: "rejected" as const, reasons: proposed.reasons as string[], rejected_by: "agent output check", agent_attempts, plan_id: planId, ...agent };
           }
           const decision = await traceTool("policy.submit", {
             input: { actions: proposed.proposal.actions.length },
             output: (d) => ({ decision: d.decision, reasons: d.reasons, cosignatures: d.cosignatures?.length ?? 0 }),
           }, () => deps.policy.submitProposal(proposed.proposal, run.traceId));
-          const planId = Number(db.prepare("INSERT INTO settlement_plans (milestone_id, proposal_json, proposal_hash, trace_id, decision, reasons, at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-            .run(m.id, JSON.stringify(proposed.proposal), decision.proposal_hash, run.traceId, decision.decision, JSON.stringify(decision.reasons), iso()).lastInsertRowid);
+          const planId = Number(db.prepare("INSERT INTO settlement_plans (milestone_id, proposal_json, proposal_hash, trace_id, decision, reasons, approval_id, agent_mode, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .run(m.id, JSON.stringify(proposed.proposal), decision.proposal_hash, run.traceId, decision.decision, JSON.stringify(decision.reasons), decision.approval_id ?? null, proposed.agent_mode, iso()).lastInsertRowid);
           if (decision.decision !== "approved") {
-            return { decision: decision.decision, reasons: decision.reasons, rejected_by: "policy service", approval_id: decision.approval_id, plan_id: planId };
+            return { decision: decision.decision, reasons: decision.reasons, rejected_by: "policy service", approval_id: decision.approval_id, plan_id: planId, ...agent };
           }
           recordPayouts(planId, m, proposed.proposal, decision.proposal_hash, decision.cosignatures ?? []);
           const { payouts, receipt } = await finish(m, planId, decision.proposal_hash);
-          return { decision: "approved" as const, reasons: [], plan_id: planId, proposal_hash: decision.proposal_hash, payouts, receipt };
+          return { decision: "approved" as const, reasons: [], plan_id: planId, proposal_hash: decision.proposal_hash, payouts, receipt, ...agent };
         },
       );
       return { ...result, resumed: false, trace_id: traceId };
+    },
+
+    /**
+     * Executes an escalated settlement after a human decision. The operator's signed decision goes to the
+     * Policy Service, which re-runs every rejecting rule against the current policy and chain state and only then
+     * co-signs. A human can override an escalation reason (low confidence, soft limit), never a rejecting rule or
+     * an on-chain limit. The payouts then run exactly as for an approved settlement.
+     */
+    async executeApproval(milestoneId: string, approvalId: string, body: { decision?: unknown; operator_signature?: unknown }) {
+      const m = milestones.get(db, milestoneId);
+      if (!m) throw new ApiError(404, "milestone not found");
+      const plan = db.prepare("SELECT * FROM settlement_plans WHERE milestone_id = ? AND approval_id = ? ORDER BY id DESC LIMIT 1")
+        .get(m.id, approvalId) as { id: number; proposal_json: string; proposal_hash: string; trace_id: string; decision: string } | undefined;
+      if (!plan) throw new ApiError(404, "no escalated settlement with this approval id for this milestone");
+      if (plan.decision === "approved" || plan.decision === "paid_out") {
+        const { payouts, receipt } = await finish(m, plan.id, plan.proposal_hash);
+        return { decision: "approved", resumed: true, trace_id: plan.trace_id, payouts, receipt };
+      }
+      if (plan.decision !== "escalated") throw new ApiError(409, `this settlement was ${plan.decision}, not escalated`);
+      if (body.decision !== "approve" && body.decision !== "reject") throw new ApiError(400, 'decision must be "approve" or "reject"');
+      if (typeof body.operator_signature !== "string") throw new ApiError(403, "operator_signature required");
+
+      const { traceId, result } = await deps.tracer.run(
+        { name: "settlement.approval", input: { milestone_id: m.id, approval_id: approvalId }, metadata: { milestone_id: m.id, approval_id: approvalId, settlement_trace_id: plan.trace_id }, tags: ["settlement", "approval"] },
+        async () => {
+          const decision = await traceTool("policy.decide_approval", {
+            input: { approval_id: approvalId, decision: body.decision },
+            output: (d) => ({ decision: d.decision, reasons: d.reasons, cosignatures: d.cosignatures?.length ?? 0 }),
+          }, () => deps.policy.decideApproval(approvalId, body.decision as string, body.operator_signature as string));
+          db.prepare("UPDATE settlement_plans SET decision = ?, reasons = ? WHERE id = ?").run(decision.decision, JSON.stringify(decision.reasons), plan.id);
+          if (decision.decision !== "approved") return { decision: decision.decision, reasons: decision.reasons, plan_id: plan.id };
+          if (m.state !== "released" && m.state !== "paid_out") throw new ApiError(409, `milestone is ${m.state}; it must be released to the vault first`);
+          recordPayouts(plan.id, m, JSON.parse(plan.proposal_json), plan.proposal_hash, decision.cosignatures ?? []);
+          const { payouts, receipt } = await finish(m, plan.id, plan.proposal_hash);
+          return { decision: "approved" as const, reasons: decision.reasons, plan_id: plan.id, payouts, receipt };
+        },
+      );
+      return { ...result, trace_id: traceId, settlement_trace_id: plan.trace_id };
     },
   };
 }

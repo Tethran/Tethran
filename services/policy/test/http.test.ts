@@ -6,7 +6,7 @@ import { createHttpServer, listen, MAX_BODY_BYTES } from "../src/http";
 import { ATTESTATION_KIND, attestationDomain, attestationTypes, onChainMilestoneId } from "../src/typed";
 import type { Policy } from "../src/index";
 import { goodProposal, policy as basePolicy } from "./helpers";
-import { CHAIN_ID, ESCROW, escalatingProposal, makeHarness, signApproval, signPolicy } from "./service-helpers";
+import { CHAIN_ID, ESCROW, escalatingProposal, makeHarness, signApproval, signPolicy, VAULT } from "./service-helpers";
 
 const h = makeHarness();
 const server = createHttpServer(h.service);
@@ -53,9 +53,10 @@ test("GET /v1/policy and POST /v1/policy", async () => {
   assert.equal(got.status, 200);
   assert.equal(got.json.version, 1);
 
-  const doc: Policy = { ...basePolicy, version: 2, daily_cap: "3000000000" };
+  // An off-chain-only change (the vault already has the same on-chain limits), so no vault action is needed.
+  const doc: Policy = { ...basePolicy, version: 2, confidence_threshold: 0.8 };
   const operator_signature = await signPolicy(h.operator, 2, doc);
-  const set = await call("POST", "/v1/policy", { policy: doc, version: 2, operator_signature });
+  const set = await call("POST", "/v1/policy", { policy: doc, version: 2, operator_signature, vault: VAULT });
   assert.equal(set.status, 200);
   assert.equal(set.json.version, 2);
 

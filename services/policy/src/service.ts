@@ -1,3 +1,4 @@
+import { checkVaultActions, parseVaultActions, VaultActionError, type VaultAction, type VaultOnChain } from "./vaultActions";
 import { getAddress, isAddress } from "ethers";
 import type { AuditLog, AuditRow } from "./audit";
 import { cosignProposal, type Cosignature, type TypedDataSigner } from "./cosign";
@@ -56,20 +57,27 @@ export interface ChainReader {
   vaultState(vault: string): Promise<{ spentToday: string; balance: string }>;
   milestoneFacts(milestone_id: string): Promise<MilestoneFacts>;
   payees(): Promise<Record<string, ResolvedPayee>>;
+  /** The provider vault's current limits and operator, from the chain. */
+  vaultPolicy(vault: string): Promise<VaultOnChain>;
+  /** Is this address on the vault's allowlist right now? */
+  vaultPayeeAllowed(vault: string, address: string): Promise<boolean>;
+  chainId(): number;
 }
 
-// Writes accepted policy limits to the on-chain vault. Called after a policy update is accepted.
+// Relays operator-signed vault actions to the vault, in order, waiting for each to confirm. The relayer adds
+// no authority: the vault checks the operator's signature itself.
 export interface ChainWriter {
-  applyPolicy(update: { policy: Policy; version: number; operator_signature: string }): Promise<void>;
+  relayVaultActions(vault: string, actions: VaultAction[]): Promise<{ type: string; version: number; tx: string }[]>;
 }
 
-// NOT WIRED YET: records the call and does nothing on chain. Replace before the demo.
-export function stubChainWriter(): ChainWriter & { calls: { policy: Policy; version: number; operator_signature: string }[] } {
-  const calls: { policy: Policy; version: number; operator_signature: string }[] = [];
+/** For tests: records the relayed actions and returns fake transaction hashes. */
+export function recordingChainWriter(): ChainWriter & { calls: { vault: string; actions: VaultAction[] }[] } {
+  const calls: { vault: string; actions: VaultAction[] }[] = [];
   return {
     calls,
-    async applyPolicy(update) {
-      calls.push(update);
+    async relayVaultActions(vault, actions) {
+      calls.push({ vault, actions });
+      return actions.map((a, i) => ({ type: a.type, version: a.version, tx: "0x" + String(i + 1).padStart(64, "0") }));
     },
   };
 }
@@ -234,6 +242,26 @@ export function createService(deps: ServiceDeps) {
         throw new ServiceError(403, "operator signature does not verify");
       }
 
+      // On-chain limits: the vault must end up with exactly the document's limits and payees. The operator signs
+      // those changes in the vault's own format (vault_actions); they are checked here and relayed before the
+      // new policy becomes active, so the Policy Service and the guard never disagree.
+      const vault = input.vault;
+      if (typeof vault !== "string" || !isAddress(vault)) bad("vault (the provider's vault address) is required");
+      let relayed: { type: string; version: number; tx: string }[] = [];
+      try {
+        const actions = parseVaultActions(input.vault_actions);
+        const [onChain, payees] = await Promise.all([chain.vaultPolicy(vault as string), chain.payees()]);
+        await checkVaultActions({
+          vault: vault as string, chainId: chain.chainId(), actions, doc, onChain, trustedOperator: deps.operatorAddress, payees,
+          allowedOnChain: (a) => chain.vaultPayeeAllowed(vault as string, a),
+        });
+        if (actions.length > 0) relayed = await chainWriter.relayVaultActions(vault as string, actions);
+      } catch (e) {
+        if (e instanceof VaultActionError) throw new ServiceError(e.status, e.message);
+        if (e instanceof ServiceError) throw e;
+        throw new ServiceError(502, "vault update failed, policy not changed: " + safeErrorMessage(e));
+      }
+
       policyStore.add(doc, operator_signature, iso());
       audit.append({
         at: iso(),
@@ -244,13 +272,7 @@ export function createService(deps: ServiceDeps) {
         policy_version: doc.version,
         trace_id: "operator",
       });
-      try {
-        await chainWriter.applyPolicy({ policy: doc, version: doc.version, operator_signature });
-      } catch (e) {
-        // The new policy is active here and logged; the on-chain write needs a retry.
-        throw new ServiceError(502, "policy accepted but on-chain update failed: " + safeErrorMessage(e));
-      }
-      return { policy: doc, version: doc.version };
+      return { policy: doc, version: doc.version, vault, vault_transactions: relayed };
     },
 
     listApprovals(status: unknown = "pending"): ApprovalRow[] {

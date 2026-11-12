@@ -12,6 +12,7 @@ import {
 } from "../src/typed";
 import type { Policy } from "../src/index";
 import { goodProposal, policy as basePolicy, withActions } from "./helpers";
+import { VAULT_PAYEES_TYPES, VAULT_POLICY_TYPES } from "../src/vaultActions";
 import { CHAIN_ID, ESCROW, escalatingProposal, makeHarness, signApproval, signPolicy, submit, VAULT } from "./service-helpers";
 
 const MILESTONE = "11111111-1111-4111-8111-111111111111";
@@ -82,6 +83,9 @@ test("schema-invalid proposal is rejected and logged without reading the chain",
       async vaultState() { reads++; throw new Error("no"); },
       async milestoneFacts() { reads++; throw new Error("no"); },
       async payees() { reads++; throw new Error("no"); },
+      async vaultPolicy() { reads++; throw new Error("no"); },
+      async vaultPayeeAllowed() { reads++; throw new Error("no"); },
+      chainId: () => CHAIN_ID,
     },
   });
   const r = await submit(h, { nonsense: true });
@@ -118,6 +122,9 @@ test("a chain read failure is an error, not a guessed decision", async () => {
       async vaultState() { throw new Error("x"); },
       async milestoneFacts() { throw new Error("x"); },
       async payees() { throw new Error("x"); },
+      async vaultPolicy() { throw new Error("x"); },
+      async vaultPayeeAllowed() { throw new Error("x"); },
+      chainId: () => CHAIN_ID,
     },
   });
   const e = await expectError(submit(h), 502);
@@ -148,6 +155,19 @@ test("missing trace_id or proposal is a 400", async () => {
 
 // ---- policy ----
 
+/** The operator's vault-format SetPolicy action for a document's on-chain limits. */
+async function vaultSetPolicy(h: ReturnType<typeof makeHarness>, version: number, doc: Policy, by: { signTypedData: Wallet["signTypedData"] } = h.operator) {
+  const v = { version, perTxCap: doc.per_tx_cap, dailyCap: doc.daily_cap, minReserve: doc.vault_min_reserve };
+  const domain = { name: "TethranVault", version: "1", chainId: CHAIN_ID, verifyingContract: VAULT };
+  return { type: "setPolicy" as const, ...v, operator_signature: await by.signTypedData(domain, VAULT_POLICY_TYPES, v) };
+}
+
+async function vaultSetPayees(h: ReturnType<typeof makeHarness>, version: number, payees: string[], allowed: boolean) {
+  const v = { version, payees, allowed };
+  const domain = { name: "TethranVault", version: "1", chainId: CHAIN_ID, verifyingContract: VAULT };
+  return { type: "setPayees" as const, ...v, operator_signature: await h.operator.signTypedData(domain, VAULT_PAYEES_TYPES, v) };
+}
+
 function nextPolicy(version: number, extra: Partial<Policy> = {}): Policy {
   return { ...basePolicy, version, per_tx_cap: "900000000", ...extra };
 }
@@ -157,16 +177,19 @@ test("getPolicy returns the active policy and version", () => {
   assert.deepEqual(h.service.getPolicy(), { policy: basePolicy, version: 1 });
 });
 
-test("setPolicy with a good operator signature and version + 1 is applied, audited and sent to the chain writer", async () => {
+test("setPolicy with a good operator signature and version + 1 is applied, audited, and its vault actions relayed", async () => {
   const h = makeHarness();
   const doc = nextPolicy(2);
   const sig = await signPolicy(h.operator, 2, doc);
-  const r = await h.service.setPolicy({ policy: doc, version: 2, operator_signature: sig });
+  const action = await vaultSetPolicy(h, 3, doc);
+  const r = await h.service.setPolicy({ policy: doc, version: 2, operator_signature: sig, vault: VAULT, vault_actions: [action] });
   assert.equal(r.version, 2);
   assert.deepEqual(h.service.getPolicy().policy, doc);
   assert.equal(h.policyStore.history().length, 2);
   assert.equal(h.chainWriter.calls.length, 1);
-  assert.equal(h.chainWriter.calls[0].version, 2);
+  assert.equal(h.chainWriter.calls[0].vault, VAULT);
+  assert.deepEqual(h.chainWriter.calls[0].actions.map((a) => [a.type, a.version]), [["setPolicy", 3]]);
+  assert.equal(r.vault_transactions.length, 1);
   const row = h.audit.list({ milestone_id: "policy" })[0];
   assert.equal(row.proposal_hash, policyHash(doc).slice(2));
   // new policy is used by the next proposal
@@ -428,4 +451,83 @@ test("a proposal waiting in the approval queue is a duplicate until a human deci
   const second = await submit(h, escalatingProposal());
   assert.deepEqual([second.decision, second.reasons], ["rejected", ["DUPLICATE_PROPOSAL"]]);
   assert.equal(h.service.listApprovals("pending").length, 1);
+});
+
+// ---- on-chain limits: vault-format operator signatures, relayed (INTERFACES 2b) ----
+
+test("an off-chain-only change needs no vault action when the vault already agrees", async () => {
+  const h = makeHarness();
+  const doc = { ...basePolicy, version: 2, confidence_threshold: 0.8 };
+  const r = await h.service.setPolicy({ policy: doc, version: 2, operator_signature: await signPolicy(h.operator, 2, doc), vault: VAULT });
+  assert.deepEqual(r.vault_transactions, []);
+  assert.equal(h.chainWriter.calls.length, 0);
+});
+
+test("changing an on-chain limit without the signed vault action is refused: policy and guard would disagree", async () => {
+  const h = makeHarness();
+  const doc = nextPolicy(2);
+  await expectError(h.service.setPolicy({ policy: doc, version: 2, operator_signature: await signPolicy(h.operator, 2, doc), vault: VAULT }), 409);
+  assert.equal(h.service.getPolicy().version, 1);
+});
+
+test("a vault action whose values differ from the document is refused", async () => {
+  const h = makeHarness();
+  const doc = nextPolicy(2);
+  const action = await vaultSetPolicy(h, 3, { ...doc, per_tx_cap: "5" });
+  await expectError(h.service.setPolicy({ policy: doc, version: 2, operator_signature: await signPolicy(h.operator, 2, doc), vault: VAULT, vault_actions: [action] }), 409);
+  assert.equal(h.chainWriter.calls.length, 0);
+});
+
+test("a vault action signed by someone other than the vault's operator is refused before anything is relayed", async () => {
+  const h = makeHarness();
+  const doc = nextPolicy(2);
+  const action = await vaultSetPolicy(h, 3, doc, Wallet.createRandom());
+  await expectError(h.service.setPolicy({ policy: doc, version: 2, operator_signature: await signPolicy(h.operator, 2, doc), vault: VAULT, vault_actions: [action] }), 403);
+  assert.equal(h.chainWriter.calls.length, 0);
+});
+
+test("vault versions must continue from the on-chain version, one by one", async () => {
+  const h = makeHarness();
+  const doc = nextPolicy(2);
+  for (const v of [2, 4]) {
+    const action = await vaultSetPolicy(h, v, doc);
+    await expectError(h.service.setPolicy({ policy: doc, version: 2, operator_signature: await signPolicy(h.operator, 2, doc), vault: VAULT, vault_actions: [action] }), 409);
+  }
+});
+
+test("the vault's on-chain operator must be the operator this Policy Service trusts", async () => {
+  const h = makeHarness();
+  h.fake.vault.operator = Wallet.createRandom().address;
+  const doc = nextPolicy(2);
+  await expectError(h.service.setPolicy({ policy: doc, version: 2, operator_signature: await signPolicy(h.operator, 2, doc), vault: VAULT, vault_actions: [await vaultSetPolicy(h, 3, doc)] }), 403);
+});
+
+test("a new payee on the allowlist needs a signed setPayees action; with it, both actions are relayed in order", async () => {
+  const h = makeHarness();
+  h.fake.allowed.delete("0x00000000000000000000000000000000000000a2");
+  const doc = { ...nextPolicy(2) };
+  const sig = await signPolicy(h.operator, 2, doc);
+  const limits = await vaultSetPolicy(h, 3, doc);
+  await expectError(h.service.setPolicy({ policy: doc, version: 2, operator_signature: sig, vault: VAULT, vault_actions: [limits] }), 409);
+  const payees = await vaultSetPayees(h, 4, ["0x00000000000000000000000000000000000000a2"], true);
+  const r = await h.service.setPolicy({ policy: doc, version: 2, operator_signature: sig, vault: VAULT, vault_actions: [limits, payees] });
+  assert.deepEqual(r.vault_transactions.map((x: { type: string }) => x.type), ["setPolicy", "setPayees"]);
+});
+
+test("if the relay fails, the new policy is not activated", async () => {
+  const h = makeHarness({ chainWriter: { async relayVaultActions() { throw new Error("rpc https://example.invalid/KEY down"); } } });
+  const doc = nextPolicy(2);
+  const e = await expectError(h.service.setPolicy({ policy: doc, version: 2, operator_signature: await signPolicy(h.operator, 2, doc), vault: VAULT, vault_actions: [await vaultSetPolicy(h, 3, doc)] }), 502);
+  assert.ok(!e.message.includes("KEY"));
+  assert.equal(h.service.getPolicy().version, 1);
+});
+
+test("malformed vault actions are refused", async () => {
+  const h = makeHarness();
+  const doc = nextPolicy(2);
+  const sig = await signPolicy(h.operator, 2, doc);
+  for (const bad of [{}, { type: "drain", version: 3, operator_signature: "0x" + "11".repeat(65) }, { type: "setPolicy", version: 3, perTxCap: "1.5", dailyCap: "1", minReserve: "0", operator_signature: "0x" + "11".repeat(65) }, "x"]) {
+    await expectError(h.service.setPolicy({ policy: doc, version: 2, operator_signature: sig, vault: VAULT, vault_actions: [bad] }), 400);
+  }
+  await expectError(h.service.setPolicy({ policy: doc, version: 2, operator_signature: sig }), 400); // no vault
 });

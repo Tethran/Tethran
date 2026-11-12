@@ -1,7 +1,7 @@
 // The part of ChainClient the backend uses, so tests can pass a fake. The real one is EvmChainClient
 // (services/chain), bound to the treasury key. The backend never talks to a chain any other way.
 import type {
-  CreateAndFundParams, MilestoneView, MintReceiptParams, ReceiptView, TxRef, VaultExecuteParams, VaultState,
+  CreateAndFundParams, MilestoneView, MintReceiptParams, ReceiptView, SetPayeesParams, SetPolicyParams, TxRef, VaultExecuteParams, VaultState,
 } from "../../chain/src/index";
 
 export interface TreasuryChain {
@@ -12,6 +12,8 @@ export interface TreasuryChain {
   refundApproved(milestoneId: string, idempotencyKey: string): Promise<TxRef>;
   vaultExecute(p: VaultExecuteParams, idempotencyKey: string): Promise<TxRef>;
   mintReceipt(p: MintReceiptParams, idempotencyKey: string): Promise<TxRef>;
+  setPolicy(p: SetPolicyParams, idempotencyKey: string): Promise<TxRef>;
+  setPayees(p: SetPayeesParams, idempotencyKey: string): Promise<TxRef>;
   milestone(milestoneId: string): Promise<MilestoneView>;
   vaultState(vault: string): Promise<VaultState>;
   receiptOf(milestoneId: string): Promise<ReceiptView | undefined>;

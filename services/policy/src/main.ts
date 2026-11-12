@@ -4,7 +4,8 @@ import { EvmChainClient, InMemoryIdempotencyStore, loadChain, loadEnvOnly, newPr
 import { createChainReader } from "./chainReader";
 import { openAuditLog } from "./audit";
 import { createHttpServer, listen } from "./http";
-import { createService, stubChainWriter } from "./service";
+import { createService } from "./service";
+import { createBackendRelay } from "./backendRelay";
 import { openApprovalStore, openDecisionStore, openPolicyStore } from "./stores";
 import type { Policy } from "./types";
 
@@ -61,9 +62,8 @@ const service = createService({
   decisions: openDecisionStore(`${dir}/decisions.sqlite`),
   approvals: openApprovalStore(`${dir}/approvals.sqlite`),
   chain: chainReader,
-  // NOT WIRED YET: relaying vault-format operator signatures for on-chain limits (INTERFACES 2b) comes with the
-  // operator console block. Until then on-chain limits are set by the seed script with operator signatures.
-  chainWriter: stubChainWriter(),
+  // On-chain limit changes: operator-signed vault actions, checked here, relayed through the backend.
+  chainWriter: createBackendRelay({ backendUrl: need("BACKEND_URL"), internalToken: need("INTERNAL_TOKEN") }),
   signer: new Wallet(need("POLICY_SIGNER_PRIVATE_KEY")),
   operatorAddress,
   escrow: { chainId: chainCfg.chainId, address: escrowAddress },

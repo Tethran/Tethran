@@ -63,6 +63,7 @@ const VAULT_ABI = [
   "function policySigner() view returns (address)",
   "function operator() view returns (address)",
   "function providerPayout() view returns (address)",
+  "function allowedPayee(address) view returns (bool)",
 ];
 const RECEIPT_ABI = [
   "function mint(bytes32 milestoneId, address holder, bytes32 invoiceHash, bytes32 settlementHash, uint256 amount, uint256 chainId, bytes32 releaseTx) returns (uint256)",
@@ -381,6 +382,12 @@ export class EvmChainClient implements ChainClient {
       operator: await addr("operator"),
       providerPayout: await addr("providerPayout"),
     };
+  }
+
+  /** Is this address on the vault's allowlist? */
+  async vaultPayeeAllowed(vault: string, address: string): Promise<boolean> {
+    await this.ready();
+    return (await this.read(vault, this.vaultAbi, "allowedPayee", [address]))[0] as boolean;
   }
 
   /** Would the vault's limits let this transfer through right now? reason is "" when ok. */

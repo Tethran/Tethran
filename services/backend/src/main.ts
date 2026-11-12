@@ -18,13 +18,18 @@ import { createHttpServer, listen } from "./http";
 import { createIdentityCheck } from "./identity";
 import { createOrchestrator } from "./orchestrator";
 import { createPolicyClient } from "./policyClient";
-import { createTreasury } from "./treasury";
+import { createTreasury, type Treasury } from "./treasury";
+import { randomBytes } from "node:crypto";
+import { createSimulatedCheckout, createStripeCheckout } from "./checkout";
+import { migrateContracts } from "./contracts";
+import { createAgent, loadSavedProposals, parseAgentMode } from "./replay";
 
 // Only the backend's own settings and keys. It never receives the Policy Service or operator key.
 loadEnvOnly(resolve(__dirname, "../../../.env"), [
   "CHAIN", "RPC_URL_*", "TREASURY_PRIVATE_KEY", "AGENT_SIGNER_PRIVATE_KEY", "ARBITER_ADDRESS", "POLICY_URL", "INTERNAL_TOKEN",
   "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
   "BACKEND_DATA_DIR", "BACKEND_PORT", "HOST", "CARD_HOLD_SECONDS", "MILESTONE_TIMEOUT_SECONDS",
+  "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS",
 ]);
 
 function need(name: string): string {
@@ -39,18 +44,25 @@ const provider = newProvider(chainCfg);
 const treasuryWallet = new Wallet(need("TREASURY_PRIVATE_KEY"), provider);
 const chain = new EvmChainClient(chainCfg, treasuryWallet, new SqliteIdempotencyStore(`${dir}/chain-idempotency.sqlite`), { provider });
 const db = openDb(`${dir}/backend.sqlite`);
+migrateContracts(db);
 const now = () => new Date();
 const identity = createIdentityCheck(db);
 const tracer = createTracerFromEnv(process.env);
 
-const treasury = createTreasury({
-  db, chain, identity, now,
+// Real Stripe only when both keys are set. Otherwise the Simulated checkout signs its events with a secret of
+// its own, and the treasury verifies them with that secret through the same webhook code.
+const stripeEnabled = Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+const webhookSecret = stripeEnabled ? process.env.STRIPE_WEBHOOK_SECRET! : `whsec_simulated_${randomBytes(24).toString("hex")}`;
+const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
+
+const treasury: Treasury = createTreasury({
+  db, chain, identity, now, tracer,
   config: {
     chainId: chainCfg.chainId, chainName: chainCfg.name, treasuryAddress: treasuryWallet.address, usdtAddress: chainCfg.usdt,
     arbiterAddress: need("ARBITER_ADDRESS"),
     defaultTimeoutSeconds: Number(process.env.MILESTONE_TIMEOUT_SECONDS ?? 7 * 24 * 3600),
     cardHoldSeconds: Number(process.env.CARD_HOLD_SECONDS ?? 600),
-    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+    stripeWebhookSecret: webhookSecret,
   },
 });
 const agentSigner = createAgentSigner(
@@ -58,16 +70,22 @@ const agentSigner = createAgentSigner(
   async (vault) => (await chain.vaultState(vault)).policySigner,
   now,
 );
+const llm = createLlmProvider(configFromEnv(process.env), { fetch: globalThis.fetch as never, tracer });
 const orchestrator = createOrchestrator({
   db, chain, agentSigner, tracer, now, chainName: chainCfg.name,
   policy: createPolicyClient(need("POLICY_URL")),
-  llm: createLlmProvider(configFromEnv(process.env), { fetch: globalThis.fetch as never, tracer }),
+  agent: createAgent(llm, loadSavedProposals()),
+  defaultAgentMode: parseAgentMode(process.env.AGENT_MODE, "live+replay"),
 });
+const simulatedCheckout = stripeEnabled ? undefined : createSimulatedCheckout({ db, webhookSecret, treasury: () => treasury, publicBaseUrl, now });
+const checkout = stripeEnabled ? createStripeCheckout({ secretKey: process.env.STRIPE_SECRET_KEY! }) : simulatedCheckout!.provider;
 
 const port = Number(process.env.BACKEND_PORT ?? process.env.PORT ?? 8788);
 const host = process.env.HOST ?? "127.0.0.1";
-listen(createHttpServer({ db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now }), port, host).then(
-  (p) => console.log(`backend listening on ${host}:${p} (chain ${chainCfg.name} ${chainCfg.chainId})`),
+listen(createHttpServer({
+  db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl,
+}), port, host).then(
+  (p) => console.log(`backend listening on ${host}:${p} (chain ${chainCfg.name} ${chainCfg.chainId}; checkout ${checkout.name}; agent ${process.env.AGENT_MODE ?? "live+replay"})`),
   (e) => {
     console.error("could not start:", (e as Error).message);
     process.exit(1);

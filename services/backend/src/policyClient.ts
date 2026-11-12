@@ -22,6 +22,7 @@ export interface PolicyDecision {
 export interface PolicyClient {
   submitProposal(proposal: unknown, traceId: string): Promise<PolicyDecision>;
   getPolicy(): Promise<{ policy: Record<string, unknown>; version: number }>;
+  decideApproval(approvalId: string, decision: string, operatorSignature: string): Promise<PolicyDecision>;
 }
 
 export function createPolicyClient(baseUrl: string, fetchImpl: typeof fetch = fetch): PolicyClient {
@@ -50,5 +51,7 @@ export function createPolicyClient(baseUrl: string, fetchImpl: typeof fetch = fe
   return {
     submitProposal: (proposal, traceId) => call("POST", "/v1/proposals", { proposal, trace_id: traceId }),
     getPolicy: () => call("GET", "/v1/policy"),
+    decideApproval: (id, decision, operator_signature) =>
+      call("POST", `/v1/approvals/${encodeURIComponent(id)}/decision`, { decision, operator_signature }),
   };
 }

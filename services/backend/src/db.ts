@@ -26,6 +26,8 @@ export interface MilestoneRow {
   escrow_tx: string | null;
   release_tx: string | null;
   invoice_ref: string;
+  /** Seeded demo scenario this milestone stands for (selects the saved proposal in replay mode). */
+  scenario?: string | null;
   created_at: string;
 }
 
@@ -58,19 +60,23 @@ export function openDb(path: string): DatabaseSync {
       amount TEXT NOT NULL, amount_usd_cents INTEGER NOT NULL, timeout INTEGER NOT NULL,
       funding_source TEXT, card_funded INTEGER NOT NULL DEFAULT 0, hold_seconds INTEGER NOT NULL DEFAULT 0,
       chain_id INTEGER NOT NULL, state TEXT NOT NULL, escrow_tx TEXT, release_tx TEXT,
-      invoice_ref TEXT NOT NULL, created_at TEXT NOT NULL
+      invoice_ref TEXT NOT NULL, scenario TEXT, release_trace_id TEXT, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS treasury_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, milestone_id TEXT, action TEXT NOT NULL, outcome TEXT NOT NULL,
+      tx TEXT, trace_id TEXT NOT NULL, at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS fundings (
       id INTEGER PRIMARY KEY AUTOINCREMENT, milestone_id TEXT NOT NULL, source TEXT NOT NULL,
       reference TEXT NOT NULL UNIQUE, amount TEXT NOT NULL, chain_id INTEGER NOT NULL, timeout_at INTEGER NOT NULL,
-      escrow_tx TEXT, status TEXT NOT NULL, at TEXT NOT NULL
+      escrow_tx TEXT, status TEXT NOT NULL, trace_id TEXT, at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS stripe_events (
       event_id TEXT PRIMARY KEY, type TEXT NOT NULL, milestone_id TEXT, outcome TEXT NOT NULL, at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS settlement_plans (
       id INTEGER PRIMARY KEY AUTOINCREMENT, milestone_id TEXT NOT NULL, proposal_json TEXT, proposal_hash TEXT,
-      trace_id TEXT NOT NULL, decision TEXT NOT NULL, reasons TEXT NOT NULL, at TEXT NOT NULL
+      trace_id TEXT NOT NULL, decision TEXT NOT NULL, reasons TEXT NOT NULL, approval_id TEXT, agent_mode TEXT, at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS payouts (
       id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER NOT NULL, milestone_id TEXT NOT NULL,

@@ -9,6 +9,10 @@ import type { IdentityCheck } from "./identity";
 import type { Orchestrator } from "./orchestrator";
 import type { Treasury } from "./treasury";
 import type { TreasuryChain } from "./chainPort";
+import { PAYMENT_METHODS, startCheckout, type CheckoutProvider, type SimulatedCheckout } from "./checkout";
+import { contractRoutes } from "./contractRoutes";
+import { parseAgentMode } from "./replay";
+import { relayVaultActions } from "./vaultRelay";
 
 const MAX_BODY = 256 * 1024;
 
@@ -21,6 +25,10 @@ export interface HttpDeps {
   /** Shared secret for /internal/* (the Policy Service). Empty disables the internal routes. */
   internalToken: string;
   now: () => Date;
+  checkout: CheckoutProvider;
+  /** Present when the simulated checkout is active (no Stripe keys). */
+  simulatedCheckout?: SimulatedCheckout;
+  publicBaseUrl: string;
 }
 
 type Handler = (ctx: { params: Record<string, string>; body: any; raw: string; req: IncomingMessage; url: URL }) => Promise<unknown>;
@@ -99,7 +107,34 @@ export function createHttpServer(deps: HttpDeps): Server {
     }],
     ["POST", /^\/milestones\/([^/]+)\/release$/, async ({ params }) => treasury.release(params[1])],
     ["POST", /^\/milestones\/([^/]+)\/refund$/, async ({ params }) => treasury.refund(params[1])],
-    ["POST", /^\/milestones\/([^/]+)\/settle$/, async ({ params }) => orchestrator.settle(params[1])],
+    ["POST", /^\/milestones\/([^/]+)\/settle$/, async ({ params, body }) => {
+      let agentMode;
+      try { agentMode = parseAgentMode(body?.agent_mode, undefined); } catch (e) { throw new ApiError(400, (e as Error).message); }
+      return orchestrator.settle(params[1], { agentMode });
+    }],
+    ["POST", /^\/milestones\/([^/]+)\/escalations\/([^/]+)\/execute$/, async ({ params, body }) => orchestrator.executeApproval(params[1], params[2], body ?? {})],
+    // Checkout. Real Stripe when its keys are set; otherwise Simulated (signed events into the same webhook path).
+    ["GET", /^\/checkout\/options$/, async () => ({
+      provider: deps.checkout.name, simulated: deps.checkout.name === "simulated",
+      label: deps.checkout.name === "simulated" ? "Simulated: no money moves and no Stripe account is used" : "Stripe test mode",
+      methods: PAYMENT_METHODS,
+    })],
+    ["POST", /^\/checkout\/sessions$/, async ({ body }) => startCheckout({
+      db, provider: deps.checkout, treasury, publicBaseUrl: deps.publicBaseUrl, milestone_id: body?.milestone_id, method: body?.method,
+    })],
+    ["GET", /^\/checkout\/sessions\/([^/]+)$/, async ({ params }) => {
+      if (!deps.simulatedCheckout) throw new ApiError(404, "session lookup is only available for the simulated checkout");
+      return deps.simulatedCheckout.get(params[1]);
+    }],
+    ["POST", /^\/checkout\/sessions\/([^/]+)\/complete$/, async ({ params, body }) => {
+      if (!deps.simulatedCheckout) throw new ApiError(404, "only the simulated checkout can be completed here; Stripe calls the webhook");
+      return deps.simulatedCheckout.complete(params[1], body?.outcome);
+    }],
+    ["POST", /^\/checkout\/sessions\/([^/]+)\/dispute$/, async ({ params }) => {
+      if (!deps.simulatedCheckout) throw new ApiError(404, "only the simulated checkout can simulate a dispute");
+      return deps.simulatedCheckout.dispute(params[1]);
+    }],
+    ...contractRoutes({ db, now: deps.now, publicBaseUrl: deps.publicBaseUrl }),
     ["POST", /^\/webhooks\/stripe$/, async ({ raw, req }) => treasury.handleStripeWebhook(raw, req.headers["stripe-signature"] as string | undefined)],
     // Public receipt verification: read from the chain, not from the database.
     ["GET", /^\/receipts\/([^/]+)$/, async ({ params }) => {
@@ -108,6 +143,7 @@ export function createHttpServer(deps: HttpDeps): Server {
       return { ...r, verified_on_chain: true, chain_id: deps.chain.chainId };
     }],
     // For the Policy Service only.
+    ["POST", /^\/internal\/vault-actions$/, internal(async ({ body }) => relayVaultActions(deps.chain, body?.vault, body?.actions))],
     ["GET", /^\/internal\/payees$/, internal(async () =>
       Object.fromEntries(allPayees(db).map((p) => [p.payee_id, { address: p.address, rail: p.rail, simulated: p.simulated === 1 }])))],
     ["GET", /^\/internal\/milestones\/([^/]+)\/identity$/, internal(async ({ params }) => {
