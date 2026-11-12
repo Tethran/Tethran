@@ -19,7 +19,8 @@ export function assertTestNetwork(chainId: number, testnet: unknown, label: stri
 /**
  * Loads one chain from config/chains.json. `key` defaults to env CHAIN, then to the file's defaultChain.
  * TEST NETWORKS ONLY: see assertTestNetwork.
- * The RPC URL can be overridden with env RPC_URL_<chainId> (for a provider URL that carries an API key).
+ * The RPC URL can be overridden with env RPC_URL_<chainId> (for a provider URL that carries an API key, such as
+ * Alchemy). That override is then the primary RPC and the file's public rpcUrl becomes the read-only fallback.
  * The client checks the chain id the RPC actually reports against this config before it does anything.
  */
 export function loadChain(key?: string, path: string = DEFAULT_PATH): ChainConfig {
@@ -33,6 +34,7 @@ export function loadChain(key?: string, path: string = DEFAULT_PATH): ChainConfi
     name: entry.name,
     chainId: entry.chainId,
     rpcUrl: process.env[`RPC_URL_${entry.chainId}`] || entry.rpcUrl,
+    ...(process.env[`RPC_URL_${entry.chainId}`] && entry.rpcUrl ? { fallbackRpcUrl: entry.rpcUrl } : {}),
     testnet: true,
     confirmations: entry.confirmations ?? 1,
     usdt: entry.usdt,

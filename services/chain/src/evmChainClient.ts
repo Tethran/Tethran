@@ -183,7 +183,11 @@ export function assertMilestoneMatches(
  * two sends a few milliseconds apart read the same cached account nonce and the second one is refused.
  */
 export function newProvider(config: ChainConfig): JsonRpcProvider {
-  return new RetryingJsonRpcProvider(config.rpcUrl, config.chainId, { staticNetwork: true, cacheTimeout: -1 });
+  const opts = { staticNetwork: true, cacheTimeout: -1 } as const;
+  const fallback = config.fallbackRpcUrl && config.fallbackRpcUrl !== config.rpcUrl
+    ? new RetryingJsonRpcProvider(config.fallbackRpcUrl, config.chainId, opts)
+    : undefined;
+  return new RetryingJsonRpcProvider(config.rpcUrl, config.chainId, opts, fallback);
 }
 
 /** JSON-RPC methods that change nothing, so asking again is always safe. */
@@ -193,32 +197,61 @@ const READ_ONLY_RPC = new Set([
   "eth_getTransactionByHash", "eth_getTransactionReceipt", "eth_getLogs", "eth_getCode",
 ]);
 
+/** Per-request timeout and read retries (public test networks are slow at times). */
+export const RPC_TIMEOUT_MS = 45_000;
+export const RPC_READ_ATTEMPTS = 5;
+export const RPC_FALLBACK_ATTEMPTS = 3;
+
 /**
- * A provider that survives a flaky RPC endpoint: each request times out after 20 seconds instead of ethers'
- * default 5 minutes, and a read-only request that times out or hits a network error is sent again, up to three
- * attempts. eth_sendRawTransaction is never resent here: if it times out, the transaction may already be out,
- * and the idempotency rules in EvmChainClient decide what happens next.
+ * A provider that survives a flaky RPC endpoint: each request times out after 45 seconds instead of ethers'
+ * default 5 minutes, and a read-only request that times out or hits a network error is sent again, up to five
+ * attempts with a growing pause. If the primary still fails and a fallback RPC is configured (the public RPC behind
+ * an API-key provider), the read goes to the fallback, up to three attempts. eth_sendRawTransaction is never resent
+ * and never goes to the fallback: if it times out, the transaction may already be out, and the idempotency rules in
+ * EvmChainClient decide what happens next.
  */
 export class RetryingJsonRpcProvider extends JsonRpcProvider {
+  constructor(url: string, chainId: number, options: ConstructorParameters<typeof JsonRpcProvider>[2], private readonly fallback?: RetryingJsonRpcProvider) {
+    super(url, chainId, options);
+  }
+
   _getConnection() {
     const req = super._getConnection();
-    req.timeout = 20_000;
+    req.timeout = RPC_TIMEOUT_MS;
     return req;
   }
 
-  async _send(payload: any): Promise<any[]> {
-    const items = Array.isArray(payload) ? payload : [payload];
-    const retryable = items.every((p) => READ_ONLY_RPC.has(p.method));
+  private async sendWithRetry(payload: any, attempts: number): Promise<any[]> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await super._send(payload);
       } catch (e) {
-        const transient = isError(e, "TIMEOUT") || isError(e, "NETWORK_ERROR") || isError(e, "SERVER_ERROR");
-        if (!retryable || !transient || attempt >= 3) throw e;
-        await new Promise((r) => setTimeout(r, 500 * attempt));
+        if (!isTransient(e) || attempt >= attempts) throw e;
+        await new Promise((r) => setTimeout(r, 1_000 * attempt));
       }
     }
   }
+
+  async _send(payload: any): Promise<any[]> {
+    const items = Array.isArray(payload) ? payload : [payload];
+    const readOnly = items.every((p) => READ_ONLY_RPC.has(p.method));
+    if (!readOnly) return super._send(payload); // sends: exactly once, primary only
+    try {
+      return await this.sendWithRetry(payload, RPC_READ_ATTEMPTS);
+    } catch (e) {
+      if (!this.fallback || !isTransient(e)) throw e;
+      return this.fallback.readOnFallback(payload);
+    }
+  }
+
+  /** Used by the primary provider only, for read-only payloads. */
+  readOnFallback(payload: any): Promise<any[]> {
+    return this.sendWithRetry(payload, RPC_FALLBACK_ATTEMPTS);
+  }
+}
+
+function isTransient(e: unknown): boolean {
+  return isError(e, "TIMEOUT") || isError(e, "NETWORK_ERROR") || isError(e, "SERVER_ERROR");
 }
 
 export type EvmChainClientOptions = {
@@ -556,7 +589,7 @@ export class EvmChainClient implements ChainClient {
    * More than one confirmation matters on public RPC endpoints: they are load-balanced, and a node that
    * is one block behind would make the next call see the old state.
    */
-  async waitConfirmed(txHash: string, timeoutMs = 180_000, pollMs = 1_500): Promise<void> {
+  async waitConfirmed(txHash: string, timeoutMs = 300_000, pollMs = 2_000): Promise<void> {
     await this.ready();
     const deadline = Date.now() + timeoutMs;
     for (;;) {

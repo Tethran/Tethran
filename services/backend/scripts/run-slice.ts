@@ -26,6 +26,8 @@ import { policyDocumentTypes, policyDocumentValue, policyDomain } from "../../po
 
 const ROOT = resolve(__dirname, "../../..");
 const fileEnv = parse(readFileSync(join(ROOT, ".env")));
+// The API-key RPC (Alchemy) is the primary for this process too; the public RPC in chains.json becomes its fallback.
+for (const [k, v] of Object.entries(fileEnv)) if (k.startsWith("RPC_URL_") && process.env[k] === undefined) process.env[k] = v;
 const env = (k: string) => process.env[k] ?? fileEnv[k] ?? "";
 const wallet = (role: string) => {
   const pk = env(`${role}_PRIVATE_KEY`);

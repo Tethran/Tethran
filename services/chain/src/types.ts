@@ -131,6 +131,8 @@ export type ChainConfig = {
   name: string;
   chainId: number;
   rpcUrl: string;
+  /** Public RPC used for read-only calls when the primary (an API-key provider) times out. Never used to send. */
+  fallbackRpcUrl?: string;
   testnet: boolean;
   /** Blocks to wait before treating a transaction as settled. */
   confirmations: number;
