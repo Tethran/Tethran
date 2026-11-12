@@ -75,6 +75,8 @@ const ERC20_ABI = [
   "function allowance(address owner, address spender) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
   "function mint(address to, uint256 amount)",
+  "function transfer(address to, uint256 amount) returns (bool)",
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
 ];
 
 /**
@@ -451,6 +453,24 @@ export class EvmChainClient implements ChainClient {
   }
 
   // ---- extras outside the ChainClient interface ----
+
+  /**
+   * Transfers of the configured USDT token inside one transaction, read from its receipt.
+   * Empty if the transaction is unknown, still pending, or failed. Used to confirm stablecoin deposits.
+   */
+  async usdtTransfersInTx(txHash: string): Promise<{ from: string; to: string; value: string }[]> {
+    await this.ready();
+    const receipt = await this.provider.getTransactionReceipt(txHash);
+    if (!receipt || receipt.status !== 1) return [];
+    const topic = this.erc20.getEvent("Transfer")!.topicHash;
+    return receipt.logs
+      .filter((l) => l.address.toLowerCase() === this.config.usdt.toLowerCase() && l.topics[0] === topic)
+      .map((l) => {
+        const parsed = this.erc20.parseLog({ topics: [...l.topics], data: l.data })!;
+        return { from: parsed.args[0] as string, to: parsed.args[1] as string, value: (parsed.args[2] as bigint).toString() };
+      });
+  }
+
 
   /** TEST TOKEN FAUCET. Mints TestUSDT; it only exists on test networks. */
   mintTestUsdt(to: string, amount: string, idempotencyKey: string): Promise<TxRef> {

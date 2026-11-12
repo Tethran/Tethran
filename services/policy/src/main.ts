@@ -1,14 +1,19 @@
+import { resolve } from "node:path";
 import { Wallet, isAddress } from "ethers";
+import { config as loadEnv } from "dotenv";
+import { EvmChainClient, InMemoryIdempotencyStore, loadChain, newProvider } from "../../chain/src/index";
+import { createChainReader } from "./chainReader";
 import { openAuditLog } from "./audit";
 import { createHttpServer, listen } from "./http";
-import { createService, stubChainWriter, type ChainReader } from "./service";
+import { createService, stubChainWriter } from "./service";
 import { openApprovalStore, openDecisionStore, openPolicyStore } from "./stores";
 import type { Policy } from "./types";
 
 // Starts the Policy Service. Config comes from environment variables only.
 //   POLICY_SIGNER_PRIVATE_KEY  the Policy Service signer (test key). Read once, never printed.
 //   OPERATOR_ADDRESS           the operator's ADDRESS (never the operator's key)
-//   ESCROW_ADDRESS, CHAIN_ID   for attestation verification
+//   CHAIN                      which entry of config/chains.json (escrow address and chain id come from there)
+//   BACKEND_URL, INTERNAL_TOKEN where payees and identity results are read from
 //   POLICY_DATA_DIR (default "."), PORT (default 8787), HOST (default 127.0.0.1)
 
 function need(name: string): string {
@@ -17,21 +22,17 @@ function need(name: string): string {
   return v;
 }
 
-// NOT WIRED YET: no chain access in this build. Every read fails, so proposals error out instead of being guessed.
-const chainReaderStub: ChainReader = {
-  async vaultFor() {
-    throw new Error("chain reader not wired yet");
-  },
-  async vaultState() {
-    throw new Error("chain reader not wired yet");
-  },
-  async milestoneFacts() {
-    throw new Error("chain reader not wired yet");
-  },
-  async payees() {
-    throw new Error("chain reader not wired yet");
-  },
+loadEnv({ path: resolve(__dirname, "../../../.env"), quiet: true });
+
+// Read-only chain access through ChainClient. The Policy Service sends no transactions: its sender refuses.
+const chainCfg = loadChain();
+const provider = newProvider(chainCfg);
+const readOnlySender = {
+  getAddress: async () => "0x0000000000000000000000000000000000000000",
+  sendTransaction: async () => { throw new Error("the Policy Service does not send transactions"); },
 };
+const chainClient = new EvmChainClient(chainCfg, readOnlySender, new InMemoryIdempotencyStore(), { provider });
+const chainReader = createChainReader({ chain: chainClient, backendUrl: need("BACKEND_URL"), internalToken: need("INTERNAL_TOKEN") });
 
 // Nothing can be paid until the operator signs a real policy: all limits 0, empty allowlist.
 const initialPolicy: Policy = {
@@ -47,7 +48,7 @@ const initialPolicy: Policy = {
 };
 
 const operatorAddress = need("OPERATOR_ADDRESS");
-const escrowAddress = need("ESCROW_ADDRESS");
+const escrowAddress = chainCfg.escrow;
 if (!isAddress(operatorAddress) || !isAddress(escrowAddress)) throw new Error("OPERATOR_ADDRESS and ESCROW_ADDRESS must be addresses");
 const dir = process.env.POLICY_DATA_DIR ?? ".";
 
@@ -56,11 +57,13 @@ const service = createService({
   audit: openAuditLog(`${dir}/audit.sqlite`),
   decisions: openDecisionStore(`${dir}/decisions.sqlite`),
   approvals: openApprovalStore(`${dir}/approvals.sqlite`),
-  chain: chainReaderStub,
-  chainWriter: stubChainWriter(), // NOT WIRED YET: the on-chain limits are not written
+  chain: chainReader,
+  // NOT WIRED YET: relaying vault-format operator signatures for on-chain limits (INTERFACES 2b) comes with the
+  // operator console block. Until then on-chain limits are set by the seed script with operator signatures.
+  chainWriter: stubChainWriter(),
   signer: new Wallet(need("POLICY_SIGNER_PRIVATE_KEY")),
   operatorAddress,
-  escrow: { chainId: Number(need("CHAIN_ID")), address: escrowAddress },
+  escrow: { chainId: chainCfg.chainId, address: escrowAddress },
   now: () => new Date(),
 });
 

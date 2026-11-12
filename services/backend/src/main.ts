@@ -1,0 +1,71 @@
+// Starts the backend. Config from environment variables (see .env.example); keys are read once and never printed.
+//   TREASURY_PRIVATE_KEY     treasury: FUNDER, RELEASER and MINTER (test key)
+//   AGENT_SIGNER_PRIVATE_KEY the agent signer module (first vault co-signer; never given to the LLM)
+//   ARBITER_ADDRESS          the platform arbiter (address only)
+//   POLICY_URL               the Policy Service, e.g. http://127.0.0.1:8787
+//   INTERNAL_TOKEN           shared secret the Policy Service sends to /internal/*
+//   STRIPE_WEBHOOK_SECRET    whsec_... from the Stripe dashboard (optional until Stripe is set up)
+//   CHAIN, BACKEND_DATA_DIR (default "."), PORT (default 8788), HOST (default 127.0.0.1)
+//   CARD_HOLD_SECONDS (default 600), MILESTONE_TIMEOUT_SECONDS (default 7 days)
+//   LLM_* and OPIK_* as in services/llm
+import { resolve } from "node:path";
+import { config as loadEnv } from "dotenv";
+import { Wallet } from "ethers";
+import { EvmChainClient, SqliteIdempotencyStore, loadChain, newProvider } from "../../chain/src/index";
+import { configFromEnv, createLlmProvider, createTracerFromEnv } from "../../llm/src/index";
+import { createAgentSigner } from "./agentSigner";
+import { openDb } from "./db";
+import { createHttpServer, listen } from "./http";
+import { createIdentityCheck } from "./identity";
+import { createOrchestrator } from "./orchestrator";
+import { createPolicyClient } from "./policyClient";
+import { createTreasury } from "./treasury";
+
+loadEnv({ path: resolve(__dirname, "../../../.env"), quiet: true });
+
+function need(name: string): string {
+  const v = process.env[name];
+  if (v === undefined || v === "") throw new Error("missing environment variable " + name);
+  return v;
+}
+
+const chainCfg = loadChain();
+const dir = process.env.BACKEND_DATA_DIR ?? ".";
+const provider = newProvider(chainCfg);
+const treasuryWallet = new Wallet(need("TREASURY_PRIVATE_KEY"), provider);
+const chain = new EvmChainClient(chainCfg, treasuryWallet, new SqliteIdempotencyStore(`${dir}/chain-idempotency.sqlite`), { provider });
+const db = openDb(`${dir}/backend.sqlite`);
+const now = () => new Date();
+const identity = createIdentityCheck(db);
+const tracer = createTracerFromEnv(process.env);
+
+const treasury = createTreasury({
+  db, chain, identity, now,
+  config: {
+    chainId: chainCfg.chainId, chainName: chainCfg.name, treasuryAddress: treasuryWallet.address, usdtAddress: chainCfg.usdt,
+    arbiterAddress: need("ARBITER_ADDRESS"),
+    defaultTimeoutSeconds: Number(process.env.MILESTONE_TIMEOUT_SECONDS ?? 7 * 24 * 3600),
+    cardHoldSeconds: Number(process.env.CARD_HOLD_SECONDS ?? 600),
+    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+  },
+});
+const agentSigner = createAgentSigner(
+  new Wallet(need("AGENT_SIGNER_PRIVATE_KEY")),
+  async (vault) => (await chain.vaultState(vault)).policySigner,
+  now,
+);
+const orchestrator = createOrchestrator({
+  db, chain, agentSigner, tracer, now, chainName: chainCfg.name,
+  policy: createPolicyClient(need("POLICY_URL")),
+  llm: createLlmProvider(configFromEnv(process.env), { fetch: globalThis.fetch as never, tracer }),
+});
+
+const port = Number(process.env.PORT ?? 8788);
+const host = process.env.HOST ?? "127.0.0.1";
+listen(createHttpServer({ db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now }), port, host).then(
+  (p) => console.log(`backend listening on ${host}:${p} (chain ${chainCfg.name} ${chainCfg.chainId})`),
+  (e) => {
+    console.error("could not start:", (e as Error).message);
+    process.exit(1);
+  },
+);

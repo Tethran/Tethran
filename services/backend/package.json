@@ -1,0 +1,22 @@
+{
+  "name": "tethran-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Backend API: treasury (funding, release, refunds), settlement orchestrator, agent signer module. Test networks only.",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "start": "tsx src/main.ts",
+    "slice": "tsx scripts/run-slice.ts"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.10",
+    "ethers": "^6.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.8.3"
+  }
+}
