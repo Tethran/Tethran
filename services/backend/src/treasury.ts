@@ -274,8 +274,10 @@ export function createTreasury(deps: TreasuryDeps) {
         throw new ApiError(409, "release held: payer and customer names do not match (simulated identity check)", "IDENTITY_MISMATCH");
       }
       const onChain = await chain.milestone(id);
-      const holdEnd = onChain.approvedAt + (onChain.cardFunded ? onChain.holdSeconds : 0);
-      if (nowS() < holdEnd) throw new ApiError(409, `card chargeback hold runs until ${new Date(holdEnd * 1000).toISOString()}`, "HOLD_ACTIVE");
+      // Only card-funded milestones have a hold. (Comparing a stablecoin milestone's approval time with this
+      // clock would misfire: block time can run ahead of the wall clock.) The escrow enforces the hold anyway.
+      const holdEnd = onChain.approvedAt + onChain.holdSeconds;
+      if (onChain.cardFunded && nowS() < holdEnd) throw new ApiError(409, `card chargeback hold runs until ${new Date(holdEnd * 1000).toISOString()}`, "HOLD_ACTIVE");
       const tx = await chain.release(id, `release:${id}`);
       await chain.waitConfirmed(tx.txHash);
       milestones.setState(db, id, "released", { release_tx: tx.txHash });

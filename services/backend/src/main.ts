@@ -9,9 +9,8 @@
 //   CARD_HOLD_SECONDS (default 600), MILESTONE_TIMEOUT_SECONDS (default 7 days)
 //   LLM_* and OPIK_* as in services/llm
 import { resolve } from "node:path";
-import { config as loadEnv } from "dotenv";
 import { Wallet } from "ethers";
-import { EvmChainClient, SqliteIdempotencyStore, loadChain, newProvider } from "../../chain/src/index";
+import { EvmChainClient, SqliteIdempotencyStore, loadChain, loadEnvOnly, newProvider } from "../../chain/src/index";
 import { configFromEnv, createLlmProvider, createTracerFromEnv } from "../../llm/src/index";
 import { createAgentSigner } from "./agentSigner";
 import { openDb } from "./db";
@@ -21,7 +20,12 @@ import { createOrchestrator } from "./orchestrator";
 import { createPolicyClient } from "./policyClient";
 import { createTreasury } from "./treasury";
 
-loadEnv({ path: resolve(__dirname, "../../../.env"), quiet: true });
+// Only the backend's own settings and keys. It never receives the Policy Service or operator key.
+loadEnvOnly(resolve(__dirname, "../../../.env"), [
+  "CHAIN", "RPC_URL_*", "TREASURY_PRIVATE_KEY", "AGENT_SIGNER_PRIVATE_KEY", "ARBITER_ADDRESS", "POLICY_URL", "INTERNAL_TOKEN",
+  "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
+  "BACKEND_DATA_DIR", "BACKEND_PORT", "HOST", "CARD_HOLD_SECONDS", "MILESTONE_TIMEOUT_SECONDS",
+]);
 
 function need(name: string): string {
   const v = process.env[name];
@@ -60,7 +64,7 @@ const orchestrator = createOrchestrator({
   llm: createLlmProvider(configFromEnv(process.env), { fetch: globalThis.fetch as never, tracer }),
 });
 
-const port = Number(process.env.PORT ?? 8788);
+const port = Number(process.env.BACKEND_PORT ?? process.env.PORT ?? 8788);
 const host = process.env.HOST ?? "127.0.0.1";
 listen(createHttpServer({ db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now }), port, host).then(
   (p) => console.log(`backend listening on ${host}:${p} (chain ${chainCfg.name} ${chainCfg.chainId})`),

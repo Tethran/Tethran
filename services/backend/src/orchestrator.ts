@@ -162,7 +162,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
             run.span({ name: "agent.rejected", type: "guardrail", output: { reasons: proposed.reasons } });
             const planId = Number(db.prepare("INSERT INTO settlement_plans (milestone_id, proposal_json, proposal_hash, trace_id, decision, reasons, at) VALUES (?, NULL, NULL, ?, 'rejected', ?, ?)")
               .run(m.id, run.traceId, JSON.stringify(proposed.reasons), iso()).lastInsertRowid);
-            return { decision: "rejected" as const, reasons: proposed.reasons as string[], plan_id: planId };
+            const agent_attempts = proposed.attempts.map((x) => ({ provider: x.provider, model: x.model, attempt: x.attempt, reason: x.reason }));
+            return { decision: "rejected" as const, reasons: proposed.reasons as string[], rejected_by: "agent output check", agent_attempts, plan_id: planId };
           }
           const decision = await traceTool("policy.submit", {
             input: { actions: proposed.proposal.actions.length },
@@ -171,7 +172,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
           const planId = Number(db.prepare("INSERT INTO settlement_plans (milestone_id, proposal_json, proposal_hash, trace_id, decision, reasons, at) VALUES (?, ?, ?, ?, ?, ?, ?)")
             .run(m.id, JSON.stringify(proposed.proposal), decision.proposal_hash, run.traceId, decision.decision, JSON.stringify(decision.reasons), iso()).lastInsertRowid);
           if (decision.decision !== "approved") {
-            return { decision: decision.decision, reasons: decision.reasons, approval_id: decision.approval_id, plan_id: planId };
+            return { decision: decision.decision, reasons: decision.reasons, rejected_by: "policy service", approval_id: decision.approval_id, plan_id: planId };
           }
           recordPayouts(planId, m, proposed.proposal, decision.proposal_hash, decision.cosignatures ?? []);
           const { payouts, receipt } = await finish(m, planId, decision.proposal_hash);

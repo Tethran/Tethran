@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import { Wallet, isAddress } from "ethers";
-import { config as loadEnv } from "dotenv";
-import { EvmChainClient, InMemoryIdempotencyStore, loadChain, newProvider } from "../../chain/src/index";
+import { EvmChainClient, InMemoryIdempotencyStore, loadChain, loadEnvOnly, newProvider } from "../../chain/src/index";
 import { createChainReader } from "./chainReader";
 import { openAuditLog } from "./audit";
 import { createHttpServer, listen } from "./http";
@@ -22,7 +21,11 @@ function need(name: string): string {
   return v;
 }
 
-loadEnv({ path: resolve(__dirname, "../../../.env"), quiet: true });
+// Only the Policy Service's own settings and key. It never receives the treasury, agent or operator key.
+loadEnvOnly(resolve(__dirname, "../../../.env"), [
+  "CHAIN", "RPC_URL_*", "POLICY_SIGNER_PRIVATE_KEY", "OPERATOR_ADDRESS", "BACKEND_URL", "INTERNAL_TOKEN",
+  "POLICY_DATA_DIR", "POLICY_PORT", "HOST",
+]);
 
 // Read-only chain access through ChainClient. The Policy Service sends no transactions: its sender refuses.
 const chainCfg = loadChain();
@@ -67,7 +70,7 @@ const service = createService({
   now: () => new Date(),
 });
 
-const port = Number(process.env.PORT ?? 8787);
+const port = Number(process.env.POLICY_PORT ?? process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "127.0.0.1";
 listen(createHttpServer(service), port, host).then(
   () => console.log(`policy service listening on ${host}:${port}`),

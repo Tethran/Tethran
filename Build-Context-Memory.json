@@ -1586,6 +1586,202 @@
         "Then Blocks 2 to 4 as listed by the lead"
       ],
       "notes": "This entry was added at the start of session 009; it was missed when session 008 ended at the usage limit."
+    },
+    {
+      "session_id": "session_009",
+      "timestamp": "2026-11-12T02:52:17Z",
+      "ai_agent": "Executing engineer (scope now Person A and Person B backend and agent work, no UI)",
+      "current_phase": "Block 1 complete: full slice through the real services on Sepolia",
+      "progress": {
+        "completed": [
+          "Session 008 memory entry added",
+          "Opik verified (workspace benedict258, project Tethran); tracer rebuilt with one trace per run and spans per LLM attempt and tool call",
+          "Groq model chosen (openai/gpt-oss-120b); order groq,gemini",
+          "ReceiptNFT built, tested, deployed on Sepolia; ChainClient mint and read",
+          "Backend service: treasury, Stripe webhook verification, stablecoin deposits, release, refunds, chargebacks, agent signer, orchestrator, HTTP API",
+          "Policy Service reads the chain and the backend",
+          "Per-service env allowlists",
+          "Full slice passed on localhost and Sepolia; docs/API.md"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "Real Stripe sandbox needs STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET",
+          "Block 2 waits for the lead's report review"
+        ]
+      },
+      "last_session_summary": "Session 008 applied the vault review (deadline, payee checks, operator-is-owner wording), published INTERFACES v0.6, wired the vault into ChainClient, deployed a demo vault on Sepolia, set up Alchemy and chose gemini-3.5-flash.",
+      "changes_made": [
+        "contracts/contracts/ReceiptNFT.sol, test, deploy-receipt.ts",
+        "services/backend (new)",
+        "services/policy/src/chainReader.ts; main.ts wired to the chain",
+        "services/chain: receipt calls, usdtTransfersInTx, transferUsdt, loadEnvOnly",
+        "services/llm: tracing.ts rebuilt, opik-check and opik-count scripts, eval spacing and trace ids",
+        "docs/API.md (new); README; .env.example; the project rules file commands; Development.md"
+      ],
+      "file_module_map": [
+        {
+          "file": "contracts/contracts/ReceiptNFT.sol",
+          "purpose": "Soulbound receipt. Needs line-by-line review",
+          "last_modified": "2026-11-12T02:52:17Z"
+        },
+        {
+          "file": "services/backend/src/treasury.ts",
+          "purpose": "Funding, deposits, Stripe events, release, refunds, chargebacks. Needs review",
+          "last_modified": "2026-11-12T02:52:17Z"
+        },
+        {
+          "file": "services/backend/src/agentSigner.ts",
+          "purpose": "Agent signer module (key handling). Needs review",
+          "last_modified": "2026-11-12T02:52:17Z"
+        },
+        {
+          "file": "services/backend/src/orchestrator.ts",
+          "purpose": "Agent -> Policy -> vault -> receipt. Needs review",
+          "last_modified": "2026-11-12T02:52:17Z"
+        },
+        {
+          "file": "services/backend/src/stripe.ts",
+          "purpose": "Webhook signature verification",
+          "last_modified": "2026-11-12T02:52:17Z"
+        },
+        {
+          "file": "services/backend/src/http.ts",
+          "purpose": "Backend API routes",
+          "last_modified": "2026-11-12T02:52:17Z"
+        },
+        {
+          "file": "services/backend/scripts/run-slice.ts",
+          "purpose": "Full slice through separate service processes",
+          "last_modified": "2026-11-12T02:52:17Z"
+        },
+        {
+          "file": "services/policy/src/chainReader.ts",
+          "purpose": "Policy Service chain and backend reads",
+          "last_modified": "2026-11-12T02:52:17Z"
+        },
+        {
+          "file": "services/llm/src/tracing.ts",
+          "purpose": "Opik tracing: runs and spans",
+          "last_modified": "2026-11-12T02:52:17Z"
+        },
+        {
+          "file": "services/chain/src/env.ts",
+          "purpose": "Per-service env allowlist",
+          "last_modified": "2026-11-12T02:52:17Z"
+        },
+        {
+          "file": "docs/API.md",
+          "purpose": "Every endpoint with examples",
+          "last_modified": "2026-11-12T02:52:17Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Decisions: off-chain policy fields signed with the Policy Service typed data, on-chain limits with vault-format signatures; gemini-3.5-flash approved; Opik cloud; scope extended to Person B backend and agent work, no UI; Groq main provider, Gemini fallback",
+          "reason": "Relayed by the lead developer",
+          "alternatives_considered": "Gemini first"
+        },
+        {
+          "decision": "Opik workspace benedict258, project Tethran",
+          "reason": "The configured workspace 'Tethran' does not exist for the key; the key can access benedict258 and tenax",
+          "alternatives_considered": "tenax"
+        },
+        {
+          "decision": "Groq model openai/gpt-oss-120b",
+          "reason": "Picked from the Groq model list; schema-valid JSON in one real call",
+          "alternatives_considered": "openai/gpt-oss-20b, qwen/qwen3.8-27b"
+        },
+        {
+          "decision": "The Policy Service reads vault, amount and release state from the chain, and payees and identity from the backend",
+          "reason": "Chain is the authority for money facts; a wrong payee address is still blocked by the vault allowlist",
+          "alternatives_considered": "Reading everything from the backend"
+        },
+        {
+          "decision": "Agent signer signs only transfers already signed by the vault's on-chain policySigner",
+          "reason": "The agent side can never originate a payout",
+          "alternatives_considered": "Trusting the orchestrator"
+        },
+        {
+          "decision": "Each service loads only an allowlist of env variables",
+          "reason": "Keep the treasury and Policy keys in separate processes even though the demo keeps them in one file",
+          "alternatives_considered": "Separate .env files"
+        },
+        {
+          "decision": "Milestone timeout fixed at the first funding attempt",
+          "reason": "A retry must send the identical call or the idempotency key refuses it",
+          "alternatives_considered": "Recomputing the timeout"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "No Stripe keys: webhook verified only with locally signed events; checkout session creation not possible",
+          "severity": "high",
+          "status": "open"
+        },
+        {
+          "issue": "Missing identity record is treated as a match (simulated check); Block 3 makes it strict",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Treasury actions (funding, release, refund) are not traced in Opik; only settlement runs are",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Policy Service POST /v1/policy does not relay vault-format operator signatures yet (stub chain writer)",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Escalated settlements: approving them through the Policy approval queue returns co-signatures, but the backend has no endpoint yet to execute them (Block 3 operator console)",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Gemini free tier rate-limits after about 27 calls in 30 minutes",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Agent has no tools yet (x402 purchases); Block 2 item 8",
+          "severity": "medium",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "Opik 400 No such workspace!",
+          "context": "OPIK_WORKSPACE=Tethran",
+          "resolution": "Workspace benedict258, project Tethran"
+        },
+        {
+          "error": "First Opik trace after start-up missing",
+          "context": "eval:agent",
+          "resolution": "Flush when each run ends"
+        },
+        {
+          "error": "Gemini HTTP 429",
+          "context": "Second eval run and a slice run",
+          "resolution": "Not retried in a loop; eval spacing; Groq added and made first"
+        },
+        {
+          "error": "False HOLD_ACTIVE on a stablecoin milestone",
+          "context": "Local chain block time ahead of the wall clock",
+          "resolution": "Hold check only for card-funded milestones"
+        },
+        {
+          "error": "Stack too deep in ReceiptNFT.tokenURI",
+          "context": "Compile",
+          "resolution": "Split the metadata builder into helpers"
+        }
+      ],
+      "next_steps": [
+        "Lead: review ReceiptNFT.sol, treasury.ts, agentSigner.ts, orchestrator.ts",
+        "Lead: provide Stripe sandbox keys (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET) for Block 2 item 7",
+        "Block 2: contracts and milestones, invoicing, Stripe checkout, Settlement Agent prompts, tools, guards and Opik evaluation"
+      ],
+      "notes": "Stopped after Block 1 as instructed. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
     }
   ]
 }

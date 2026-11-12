@@ -9,7 +9,7 @@
       "confirmations": 1,
       "usdt": "0xf71881cb70FAeDa9106576f6DaE6B74676164f2b",
       "escrow": "0x55CCC2eC0eC0E031c155865230A41b4bA40EA513",
-      "receiptNft": "",
+      "receiptNft": "0x0acD7957Be50efDd6170D08B0f600e2d8118297F",
       "demoVault": "0x61ce54f184BB7f93998F2a51aa6577Ef818C1691"
     },
     "sepolia": {

@@ -452,3 +452,57 @@ Interface gaps it found (not changed; for the lead):
   by the operator with the Policy Service's existing policy typed data; on-chain limits use vault-format operator
   signatures relayed by the Policy Service. `gemini-3.5-flash` approved; Groq stays as fallback once its key and
   model are set. Opik cloud.
+
+### Block 1: the full slice through the real services
+
+**Opik.** `OPIK_WORKSPACE` was set to "Tethran", which Opik rejected ("No such workspace"). The key can access the
+workspaces `benedict258` and `tenax`; `.env` now uses workspace `benedict258` and project `Tethran`. One test trace was
+written and read back (`npm run opik:check`). The tracer was rebuilt: one trace per run, a span per LLM attempt
+(provider, model, latency, attempt, tokens) and per tool call, through AsyncLocalStorage; no prompts or keys sent.
+The first trace after start-up was lost until each run flushes when it ends. `eval:agent`: nine traces in Opik.
+On the second eval run four scenarios hit Gemini's free-tier HTTP 429 (no retry loop, as instructed); the runner
+now waits 8 s between scenarios.
+
+**LLM.** Groq key present: model chosen from the Groq model list, `openai/gpt-oss-120b` (schema-valid JSON in one
+call, 1.5 s). The lead set **Groq first, Gemini fallback** (`LLM_PROVIDER_ORDER=groq,gemini`).
+
+**ReceiptNFT** (`contracts/contracts/ReceiptNFT.sol`, needs review): soulbound ERC-721; MINTER role (treasury);
+one per milestone (reverts on a second); chain id must be this chain; no empty fields; stores milestone id,
+invoice hash, settlement hash, amount, chain id, release tx and mint time; self-contained JSON `tokenURI`; no
+transfer, approval or burn. 8 tests (122 contract tests). Deployed on Sepolia at
+`0x596B49052701d5B83F2098b055C10c08f314d209`. `ChainClient.mintReceipt` and `receiptOf` wired.
+
+**Backend** (`services/backend`, new; money-moving code, needs review):
+- `treasury.ts`: creates milestones (backend picks the platform arbiter and the provider's vault, vault checked
+  on-chain); funds after a verified Stripe event or a confirmed stablecoin deposit; idempotent on the payment
+  reference and the escrow id, with the absolute timeout fixed at the first attempt so a retry sends the same
+  call; post-funding check of the on-chain milestone; release after the simulated identity check; refund after
+  the timeout or the funder rescue; chargeback during the card hold refunds the escrow, after it flags a human.
+  Card payments are converted to test USDT at 1:1 (simulated). The off-chain refund leg is simulated.
+- `stripe.ts`: Stripe-Signature verification (HMAC-SHA256, 5-minute tolerance, any matching v1); event ids recorded.
+- `agentSigner.ts`: the agent signer module; signs a vault transfer only if the Policy Service already signed the
+  same transfer (checked against the vault's policySigner on-chain) and the deadline is valid.
+- `orchestrator.ts`: agent -> Policy Service -> agent signer -> vault -> receipt, one trace per run; payouts are
+  stored with their co-signatures so a run that stops part-way resumes without a new proposal.
+- `http.ts`, `main.ts`: the API in `docs/API.md`; internal routes for the Policy Service behind a shared token.
+- 26 tests.
+
+**Policy Service** now reads the chain (`src/chainReader.ts`): vault, gross amount, card funding and release state
+from the escrow; spent today and balance from the vault; payees and identity from the backend's internal routes.
+Relaying vault-format operator signatures through `POST /v1/policy` is still a labelled stub (operator console block).
+
+**Key separation.** Each service loads only its own variables from `.env` (`loadEnvOnly` in `services/chain`); the
+slice runner starts each service with an explicit environment and passes no other secrets.
+
+**Full slice** (`npm run slice`): passed on the local chain and on **Sepolia**: deposit `0x89be8ab3…`, escrow funded
+`0xdf5af18a…`, client approved `0x4dc2eee2…`, released `0x11f43af8…`, settlement approved by the Policy Service,
+payouts `0x5472d075…` (60 to a USDT payee) and `0x085b9626…` (30 to a simulated M-Pesa rail wallet), receipt token
+#1 to the provider. Opik trace `01a1cda7-bea5-74de-8063-77cdf30ab174` with 9 spans, including the Groq call.
+
+**Errors on the way:** a false `HOLD_ACTIVE` on a stablecoin milestone (block time ahead of the wall clock; the
+check now applies only to card-funded milestones); a settlement rejected as `SCHEMA_INVALID` that was really a
+Gemini 429 (the API now says which layer rejected and why).
+
+**Not done in Block 1:** real Stripe sandbox (no Stripe keys; webhook tested with locally signed events);
+treasury actions are not traced in Opik (only the settlement run); identity record missing = treated as a match
+(Block 3 makes the identity check strict); `docs/API.md` written.

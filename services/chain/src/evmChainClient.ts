@@ -472,6 +472,11 @@ export class EvmChainClient implements ChainClient {
   }
 
 
+  /** Sends USDT from this client's own account (used for a client wallet paying a deposit). */
+  transferUsdt(to: string, amount: string, idempotencyKey: string): Promise<TxRef> {
+    return this.send(this.config.usdt, this.erc20.encodeFunctionData("transfer", [to, BigInt(amount)]), idempotencyKey);
+  }
+
   /** TEST TOKEN FAUCET. Mints TestUSDT; it only exists on test networks. */
   mintTestUsdt(to: string, amount: string, idempotencyKey: string): Promise<TxRef> {
     return this.send(this.config.usdt, this.erc20.encodeFunctionData("mint", [to, BigInt(amount)]), idempotencyKey);
