@@ -9,7 +9,8 @@ import { goodProposal, policy as basePolicy } from "./helpers";
 import { CHAIN_ID, ESCROW, escalatingProposal, makeHarness, signApproval, signPolicy, VAULT } from "./service-helpers";
 
 const h = makeHarness();
-const server = createHttpServer(h.service);
+export const TOKEN = "test-internal-token-0123456789";
+const server = createHttpServer(h.service, { proposalToken: TOKEN });
 let base = "";
 let allBodies = "";
 
@@ -21,10 +22,13 @@ after(() => {
   server.close();
 });
 
-async function call(method: string, path: string, body?: unknown, rawBody?: string) {
+async function call(method: string, path: string, body?: unknown, rawBody?: string, token: string | null = TOKEN) {
+  // Proposals are sent as the backend sends them: with the token and the milestone named in the request.
+  const b = body as { proposal?: { milestone_id?: unknown }; milestone_id?: unknown } | undefined;
+  if (path === "/v1/proposals" && b && b.milestone_id === undefined && typeof b.proposal?.milestone_id === "string") body = { ...b, milestone_id: b.proposal.milestone_id };
   const res = await fetch(base + path, {
     method,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(token === null ? {} : { "x-internal-token": token }) },
     body: rawBody ?? (body === undefined ? undefined : JSON.stringify(body)),
   });
   const text = await res.text();

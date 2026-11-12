@@ -113,6 +113,7 @@ test("replay mode: a saved proposal is used, labelled Replay, and still goes thr
   assert.match(r.replay_source, /^(curated|real model output: .+ Opik trace )/); // always says where it came from
   assert.equal(h.llm.calls, 0);
   assert.equal(h.submitted.length, 1); // the Policy Service still decided
+  assert.equal(h.submitted[0].milestoneId, M1); // the backend names the milestone it settles
   assert.equal(r.decision, "approved");
   // the saved proposal is scaled to this milestone: 90% payout, 10% tax reserve of 100 USDT
   assert.deepEqual(h.submitted[0].proposal.actions.map((a: any) => a.amount), ["90000000", "10000000"]);

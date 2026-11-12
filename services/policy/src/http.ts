@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { ServiceError, safeErrorMessage, type PolicyService } from "./service";
 
@@ -43,9 +44,31 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 
 type Handler = (url: URL, req: IncomingMessage, match: RegExpMatchArray) => Promise<unknown> | unknown;
 
-export function createHttpServer(service: PolicyService): Server {
+class Unauthorised extends Error {}
+
+/** Constant-time check of the x-internal-token header. */
+export function tokenMatches(header: string | string[] | undefined, token: string): boolean {
+  if (typeof header !== "string" || token.length === 0) return false;
+  const a = Buffer.from(header);
+  const b = Buffer.from(token);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * proposalToken: the shared secret the backend sends as x-internal-token on POST /v1/proposals. Only the backend may
+ * ask for a settlement decision; the milestone it names in that request is the one the decision is about.
+ */
+export function createHttpServer(service: PolicyService, opts: { proposalToken: string }): Server {
+  if (typeof opts?.proposalToken !== "string" || opts.proposalToken.length < 16) throw new Error("proposalToken must be at least 16 characters");
   const routes: { method: string; path: RegExp; handler: Handler }[] = [
-    { method: "POST", path: /^\/v1\/proposals$/, handler: async (_u, req) => service.submitProposal(await readJson(req)) },
+    {
+      method: "POST",
+      path: /^\/v1\/proposals$/,
+      handler: async (_u, req) => {
+        if (!tokenMatches(req.headers["x-internal-token"], opts.proposalToken)) throw new Unauthorised();
+        return service.submitProposal(await readJson(req));
+      },
+    },
     { method: "GET", path: /^\/v1\/policy$/, handler: () => service.getPolicy() },
     { method: "POST", path: /^\/v1\/policy$/, handler: async (_u, req) => service.setPolicy(await readJson(req)) },
     { method: "GET", path: /^\/v1\/approvals$/, handler: (u) => service.listApprovals(u.searchParams.get("status") ?? "pending") },
@@ -70,6 +93,7 @@ export function createHttpServer(service: PolicyService): Server {
       const result = await route.handler(url, req, url.pathname.match(route.path) as RegExpMatchArray);
       send(res, 200, result);
     } catch (e) {
+      if (e instanceof Unauthorised) return send(res, 401, { error: "unauthorised" });
       if (e instanceof BodyTooLarge) return send(res, 413, { error: "body too large" });
       if (e instanceof BadJson) return send(res, 400, { error: "malformed JSON" });
       if (e instanceof ServiceError) return send(res, e.status, { error: e.message });

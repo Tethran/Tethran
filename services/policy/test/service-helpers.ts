@@ -82,6 +82,7 @@ export function makeHarness(overrides: Partial<ServiceDeps> = {}) {
     chainWriter,
     fake,
     policyStore,
+    decisions,
     approvals,
     setClock(d: Date) {
       clock = d;
@@ -91,8 +92,11 @@ export function makeHarness(overrides: Partial<ServiceDeps> = {}) {
 
 export type Harness = ReturnType<typeof makeHarness>;
 
-export function submit(h: Harness, proposal: unknown = goodProposal(), trace_id = "trace-1") {
-  return h.service.submitProposal({ proposal, trace_id });
+/** Submits as the backend would: the request names the proposal's own milestone unless a test says otherwise. */
+export function submit(h: Harness, proposal: unknown = goodProposal(), trace_id = "trace-1", milestone_id?: string) {
+  const own = proposal !== null && typeof proposal === "object" && typeof (proposal as { milestone_id?: unknown }).milestone_id === "string"
+    ? (proposal as { milestone_id: string }).milestone_id : "11111111-1111-4111-8111-111111111111";
+  return h.service.submitProposal({ proposal, trace_id, milestone_id: milestone_id ?? own });
 }
 
 export function signPolicy(wallet: { signTypedData: Wallet["signTypedData"] }, version: number, doc: Policy): Promise<string> {

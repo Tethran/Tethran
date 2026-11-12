@@ -20,7 +20,8 @@ export interface PolicyDecision {
 }
 
 export interface PolicyClient {
-  submitProposal(proposal: unknown, traceId: string): Promise<PolicyDecision>;
+  /** milestoneId: the milestone this backend is settling. The Policy Service decides for it, not for whatever milestone the proposal names. */
+  submitProposal(milestoneId: string, proposal: unknown, traceId: string): Promise<PolicyDecision>;
   getPolicy(): Promise<{ policy: Record<string, unknown>; version: number }>;
   /** Append-only decision log (read only). */
   getAudit?(milestoneId?: string): Promise<unknown>;
@@ -28,13 +29,14 @@ export interface PolicyClient {
   listApprovals(status: string): Promise<unknown>;
 }
 
-export function createPolicyClient(baseUrl: string, fetchImpl: typeof fetch = fetch): PolicyClient {
+/** internalToken: the shared secret the Policy Service checks on POST /v1/proposals (x-internal-token). */
+export function createPolicyClient(baseUrl: string, internalToken: string, fetchImpl: typeof fetch = fetch): PolicyClient {
   async function call(method: string, path: string, body?: unknown) {
     let res: Response;
     try {
       res = await fetchImpl(new URL(path, baseUrl), {
         method,
-        headers: body === undefined ? {} : { "content-type": "application/json" },
+        headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), "x-internal-token": internalToken },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(30_000),
       });
@@ -52,7 +54,7 @@ export function createPolicyClient(baseUrl: string, fetchImpl: typeof fetch = fe
     return json;
   }
   return {
-    submitProposal: (proposal, traceId) => call("POST", "/v1/proposals", { proposal, trace_id: traceId }),
+    submitProposal: (milestoneId, proposal, traceId) => call("POST", "/v1/proposals", { milestone_id: milestoneId, proposal, trace_id: traceId }),
     getPolicy: () => call("GET", "/v1/policy"),
     getAudit: (milestoneId?: string) => call("GET", `/v1/audit${milestoneId ? `?milestone_id=${encodeURIComponent(milestoneId)}` : ""}`),
     listApprovals: (status) => call("GET", `/v1/approvals?status=${encodeURIComponent(status)}`),

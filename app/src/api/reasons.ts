@@ -1,10 +1,10 @@
-// Reason codes in plain language. docs/INTERFACES.md v0.9 is the source of truth for the Policy Service codes;
+// Reason codes in plain language. docs/INTERFACES.md v0.10 is the source of truth for the Policy Service codes;
 // this file only explains them. Codes from the wallet layer, identity check and reconciliation follow docs/API.md.
 
 export interface ReasonInfo { title: string; plain: string; kind: "rejected" | "escalated" | "blocked" | "info" }
 
 export const POLICY_REJECT_CODES = [
-  "SCHEMA_INVALID", "ALREADY_SETTLED", "ZERO_AMOUNT_PAYOUT", "DUPLICATE_PROPOSAL", "MILESTONE_NOT_RELEASED", "HOLD_ACTIVE", "PAYEE_NOT_ALLOWED", "OVER_PER_TX_CAP",
+  "SCHEMA_INVALID", "MILESTONE_ID_MISMATCH", "ALREADY_SETTLED", "ZERO_AMOUNT_PAYOUT", "DUPLICATE_PROPOSAL", "MILESTONE_NOT_RELEASED", "HOLD_ACTIVE", "PAYEE_NOT_ALLOWED", "OVER_PER_TX_CAP",
   "OVER_DAILY_CAP", "BELOW_VAULT_RESERVE", "OVER_MILESTONE_AMOUNT", "TAX_RESERVE_TOO_LOW",
 ] as const;
 export const POLICY_ESCALATE_CODES = [
@@ -12,7 +12,8 @@ export const POLICY_ESCALATE_CODES = [
 ] as const;
 
 const REASONS: Record<string, ReasonInfo> = {
-  // ---- Policy Service: rejected (INTERFACES v0.9) ----
+  // ---- Policy Service: rejected (INTERFACES v0.10) ----
+  MILESTONE_ID_MISMATCH: { kind: "rejected", title: "Plan for a different milestone", plain: "The plan names another milestone than the one being settled, so it was refused without paying anything." },
   ALREADY_SETTLED: { kind: "rejected", title: "Already settled", plain: "This milestone was already paid out under an approved plan. A second plan can never pay it again." },
   MILESTONE_NOT_RELEASED: { kind: "rejected", title: "Not released yet", plain: "The escrow has not released this milestone to the vault, so nothing can be paid from it yet." },
   SCHEMA_INVALID: { kind: "rejected", title: "The plan was not readable", plain: "The AI's plan did not match the required format, so nothing in it was considered." },
@@ -25,7 +26,7 @@ const REASONS: Record<string, ReasonInfo> = {
   BELOW_VAULT_RESERVE: { kind: "rejected", title: "Below the vault reserve", plain: "Paying this would leave less in the vault than the minimum it must keep." },
   OVER_MILESTONE_AMOUNT: { kind: "rejected", title: "More than the milestone", plain: "Together with what was already approved for this milestone, the payments and tax reserve add up to more than it released." },
   TAX_RESERVE_TOO_LOW: { kind: "rejected", title: "Tax reserve too low", plain: "Not enough is set aside for tax. A share of every payout must be reserved." },
-  // ---- Policy Service: escalated to a human (INTERFACES v0.9) ----
+  // ---- Policy Service: escalated to a human (INTERFACES v0.10) ----
   LOW_CONFIDENCE: { kind: "escalated", title: "The AI is not sure", plain: "The AI's confidence is below the threshold, so a person decides." },
   NEEDS_HUMAN: { kind: "escalated", title: "Asked for a person", plain: "The AI asked for a human to look at this before anything is paid." },
   IDENTITY_MISMATCH: { kind: "escalated", title: "Names don't match", plain: "The payer's verified name and the customer's name differ (simulated identity check)." },

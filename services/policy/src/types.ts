@@ -14,7 +14,8 @@ export type RejectReason =
   | "OVER_MILESTONE_AMOUNT"
   | "ZERO_AMOUNT_PAYOUT"
   | "MILESTONE_NOT_RELEASED"
-  | "ALREADY_SETTLED";
+  | "ALREADY_SETTLED"
+  | "MILESTONE_ID_MISMATCH";
 
 export type EscalateReason = "LOW_CONFIDENCE" | "NEEDS_HUMAN" | "IDENTITY_MISMATCH" | "OVER_SOFT_LIMIT" | "INJECTION_FLAGGED" | "NO_PAYOUTS";
 
@@ -79,6 +80,9 @@ export interface EvaluationContext {
   // From the Policy Service's own log of signed (approved) proposals for this milestone: how many, and how much they
   // allocated (payouts plus tax reserve, base units).
   settled: { approvedCount: number; allocated: string };
+  // The milestone the authenticated request is about (POST /v1/proposals body `milestone_id`, sent by the backend).
+  // Every fact above was read for this milestone. A proposal naming any other milestone is rejected.
+  requestMilestoneId: string;
 }
 
 export interface EvaluationResult {

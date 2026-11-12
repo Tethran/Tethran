@@ -93,7 +93,7 @@ test("schema-invalid proposal is rejected and logged without reading the chain",
   assert.deepEqual(r.reasons, ["SCHEMA_INVALID"]);
   assert.equal(reads, 0);
   assert.equal(h.audit.list().length, 1);
-  assert.equal(h.audit.list()[0].milestone_id, "unknown");
+  assert.equal(h.audit.list()[0].milestone_id, "11111111-1111-4111-8111-111111111111"); // the milestone the request named
 });
 
 test("daily cap uses the chain's spentToday and the reserve uses the chain balance", async () => {

@@ -537,10 +537,13 @@ moves no money is never approved).
 
 ### `POST /v1/proposals` — decide on an agent proposal
 
-Called by the backend.
+Called by the backend only: header `x-internal-token: <INTERNAL_TOKEN>` (401 `unauthorised` otherwise). The body names
+the milestone being settled; the Policy Service reads the chain, the budget and its log for that milestone and rejects
+a proposal naming another one (`MILESTONE_ID_MISMATCH`). A missing `milestone_id` is 400.
 
 ```json
-{ "proposal": { "milestone_id": "c9fe85ad-…", "confidence": 0.92, "evidence_used": ["ev-1"],
+{ "milestone_id": "c9fe85ad-…",
+  "proposal": { "milestone_id": "c9fe85ad-…", "confidence": 0.92, "evidence_used": ["ev-1"],
     "actions": [
       { "type": "payout", "payee_id": "payee_amara", "amount": "60000000", "asset": "USDT" },
       { "type": "mobile_money_payout", "payee_id": "payee_kofi", "amount": "30000000", "provider": "mpesa" },

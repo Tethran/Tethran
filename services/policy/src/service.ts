@@ -136,6 +136,7 @@ export function createService(deps: ServiceDeps) {
         seenProposalHashes: seen,
         milestone,
         settled: decisions.settledFor(milestoneId),
+        requestMilestoneId: milestoneId,
       };
       return { ctx, vault, chainId, payees };
     } catch (e) {
@@ -163,12 +164,17 @@ export function createService(deps: ServiceDeps) {
   return {
     async submitProposal(input: unknown): Promise<ProposalResponse> {
       if (!isRecord(input)) bad("body must be an object");
-      const { proposal, trace_id } = input;
+      const { proposal, trace_id, milestone_id } = input;
       if (typeof trace_id !== "string" || trace_id.length === 0) bad("trace_id is required");
       if (proposal === undefined) bad("proposal is required");
+      // The milestone comes from the authenticated request (the backend names the milestone it is settling), never
+      // from the agent's proposal. Every chain read, budget and log entry below uses it; a proposal naming another
+      // milestone is rejected by the engine (MILESTONE_ID_MISMATCH).
+      if (typeof milestone_id !== "string" || milestone_id.length === 0 || milestone_id.length > 128) bad("milestone_id is required");
+      const requestMilestone = milestone_id as string;
 
       const active = policyStore.current();
-      const rawMilestone = isRecord(proposal) && typeof proposal.milestone_id === "string" ? proposal.milestone_id : "unknown";
+      const rawMilestone = requestMilestone;
       // Duplicates: a hash that already has co-signatures, or one waiting in the approval queue.
       const seen = decisions.signedHashes();
       for (const pending of approvals.list("pending")) seen.add(pending.proposal_hash);
@@ -189,6 +195,7 @@ export function createService(deps: ServiceDeps) {
           seenProposalHashes: seen,
           milestone: { cardFunded: false, releaseEligible: true, released: false, identityMatch: true, grossAmount: "0" },
           settled: { approvedCount: 0, allocated: "0" },
+          requestMilestoneId: requestMilestone,
         });
       }
 

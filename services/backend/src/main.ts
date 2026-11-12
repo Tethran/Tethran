@@ -90,7 +90,7 @@ const agentSigner = createAgentSigner(
   async (vault) => (await chain.vaultState(vault)).policySigner,
   now,
 );
-const policyClient = createPolicyClient(need("POLICY_URL"));
+const policyClient = createPolicyClient(need("POLICY_URL"), need("INTERNAL_TOKEN"));
 const llm = createLlmProvider(configFromEnv(process.env), { fetch: globalThis.fetch as never, tracer });
 const port = Number(process.env.BACKEND_PORT ?? process.env.PORT ?? 8788);
 const host = process.env.HOST ?? "127.0.0.1";

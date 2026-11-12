@@ -164,14 +164,14 @@ export function fakeChain(opts: { now: () => Date; policySigner: string }) {
 
 /** A Policy Service stand-in that signs every payout of an approved proposal with a real key. */
 export function fakePolicy(signer: Pick<Wallet, "signTypedData">, opts: { decision?: PolicyDecision["decision"]; reasons?: string[]; now: () => Date }) {
-  const submitted: { proposal: any; traceId: string }[] = [];
+  const submitted: { milestoneId: string; proposal: any; traceId: string }[] = [];
   const policy: PolicyClient = {
     async listApprovals() { return []; },
     async getPolicy() {
       return { version: 2, policy: { per_tx_cap: "900000000", per_tx_soft_limit: "800000000", confidence_threshold: 0.7, min_tax_reserve_bps: 1000 } };
     },
-    async submitProposal(proposal: any, traceId) {
-      submitted.push({ proposal, traceId });
+    async submitProposal(milestoneId, proposal: any, traceId) {
+      submitted.push({ milestoneId, proposal, traceId });
       const decision = opts.decision ?? "approved";
       const proposal_hash = "ab".repeat(32);
       if (decision !== "approved") return { decision, reasons: opts.reasons ?? ["LOW_CONFIDENCE"], proposal_hash, approval_id: decision === "escalated" ? "ap-1" : undefined };
@@ -193,7 +193,7 @@ export function fakePolicy(signer: Pick<Wallet, "signTypedData">, opts: { decisi
       if (decision === "new_plan") return { decision: "rejected", reasons: ["NO_PAYOUTS"], proposal_hash: "ab".repeat(32), new_plan_requested: true } as never;
       if (decision !== "approve") return { decision: "rejected", reasons: ["HUMAN_REJECTED"], proposal_hash: "ab".repeat(32) };
       const last = submitted.at(-1)!;
-      const signed = await (opts.decision = "approved", policy.submitProposal(last.proposal, last.traceId));
+      const signed = await (opts.decision = "approved", policy.submitProposal(last.milestoneId, last.proposal, last.traceId));
       return { ...signed, reasons: ["LOW_CONFIDENCE"] };
     },
   };

@@ -72,7 +72,7 @@ const service = createService({
 
 const port = Number(process.env.POLICY_PORT ?? process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "127.0.0.1";
-listen(createHttpServer(service), port, host).then(
+listen(createHttpServer(service, { proposalToken: need("INTERNAL_TOKEN") }), port, host).then(
   () => console.log(`policy service listening on ${host}:${port}`),
   (e) => {
     console.error("could not start:", (e as Error).message);

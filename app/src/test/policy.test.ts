@@ -30,7 +30,7 @@ describe("reason codes in plain language", () => {
     }
   });
   it("includes the v0.8 and v0.9 codes", () => {
-    expect(POLICY_CODES.rejected).toEqual(expect.arrayContaining(["OVER_MILESTONE_AMOUNT", "ZERO_AMOUNT_PAYOUT", "MILESTONE_NOT_RELEASED", "ALREADY_SETTLED"]));
+    expect(POLICY_CODES.rejected).toEqual(expect.arrayContaining(["OVER_MILESTONE_AMOUNT", "ZERO_AMOUNT_PAYOUT", "MILESTONE_NOT_RELEASED", "ALREADY_SETTLED", "MILESTONE_ID_MISMATCH"]));
     expect(POLICY_CODES.escalated).toEqual(expect.arrayContaining(["NO_PAYOUTS", "INJECTION_FLAGGED"]));
   });
 });

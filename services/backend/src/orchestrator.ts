@@ -186,7 +186,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
           const decision = await traceTool("policy.submit", {
             input: { actions: proposed.proposal.actions.length },
             output: (d) => ({ decision: d.decision, reasons: d.reasons, cosignatures: d.cosignatures?.length ?? 0 }),
-          }, () => deps.policy.submitProposal(proposed.proposal, run.traceId));
+          }, () => deps.policy.submitProposal(m.id, proposed.proposal, run.traceId));
           const planId = Number(db.prepare("INSERT INTO settlement_plans (milestone_id, proposal_json, proposal_hash, trace_id, decision, reasons, approval_id, agent_mode, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
             .run(m.id, JSON.stringify(proposed.proposal), decision.proposal_hash, run.traceId, decision.decision, JSON.stringify(decision.reasons), decision.approval_id ?? null, proposed.agent_mode, iso()).lastInsertRowid);
           if (decision.decision !== "approved") {

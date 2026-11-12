@@ -1,4 +1,4 @@
-# Interfaces (v0.9)
+# Interfaces (v0.10)
 
 The contract between the two workstreams. Change only by agreement, and log the change in Development.md.
 Amounts are strings in base units (USDT: 6 decimals). IDs are UUIDs unless stated.
@@ -18,7 +18,9 @@ v0.7 (13 Nov 2026) runs the hard rules only for plans that move money, escalates
 defines "moves money" as a payout total above zero, and limits a `NO_PAYOUTS` escalation to "request a new plan"
 or "reject". v0.9 (13 Nov 2026) adds `MILESTONE_NOT_RELEASED` and `ALREADY_SETTLED`, makes the milestone budget
 cumulative over the Policy Service's own signed-proposal log, limits vault actions per request, and requires the
-platform token for release, refund and settle. Where the architecture document
+platform token for release, refund and settle. v0.10 (13 Nov 2026) takes the milestone id from the authenticated
+request (`POST /v1/proposals` needs `x-internal-token` and a `milestone_id` in the body) and adds
+`MILESTONE_ID_MISMATCH`. Where the architecture document
 (`docs/03-system-design-architecture.md`, sections 3.2, 3.3 and 5.2) differs, this file wins.
 
 ## 0. State model
@@ -97,7 +99,7 @@ Off-chain milestone states (database) add `draft`, `in_review` and `paid_out`.
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /v1/proposals` | Body: `{ proposal, trace_id }`. Returns `{ decision: "approved" \| "escalated" \| "rejected", reasons: string[], cosignatures?, proposal_hash }`. Only `approved` carries co-signatures (see 2a). `reasons` holds the reason codes below. |
+| `POST /v1/proposals` | Backend only: header `x-internal-token` (`INTERNAL_TOKEN`), otherwise 401. Body: `{ milestone_id, proposal, trace_id }`; `milestone_id` is the milestone the backend is settling, and every chain read, budget and log entry uses it (a proposal naming another milestone is `MILESTONE_ID_MISMATCH`). Returns `{ decision: "approved" \| "escalated" \| "rejected", reasons: string[], cosignatures?, proposal_hash }`. Only `approved` carries co-signatures (see 2a). `reasons` holds the reason codes below. |
 | `GET /v1/policy` | Active policy and version. |
 | `POST /v1/policy` | Body: `{ policy, vault_actions }` (see 2b). The operator signs the vault's own typed-data actions, once per on-chain action; the Policy Service verifies them and only relays them to the vault. It has no typed data of its own. |
 | `GET /v1/approvals?status=pending` | Human approval queue. |
@@ -187,10 +189,11 @@ Reason codes:
 
 | Decision | Codes |
 |---|---|
-| `rejected` | `SCHEMA_INVALID`, `ALREADY_SETTLED`, `ZERO_AMOUNT_PAYOUT`, `DUPLICATE_PROPOSAL`, `MILESTONE_NOT_RELEASED`, `HOLD_ACTIVE`, `PAYEE_NOT_ALLOWED`, `OVER_PER_TX_CAP`, `OVER_DAILY_CAP`, `BELOW_VAULT_RESERVE`, `OVER_MILESTONE_AMOUNT`, `TAX_RESERVE_TOO_LOW` |
+| `rejected` | `SCHEMA_INVALID`, `MILESTONE_ID_MISMATCH`, `ALREADY_SETTLED`, `ZERO_AMOUNT_PAYOUT`, `DUPLICATE_PROPOSAL`, `MILESTONE_NOT_RELEASED`, `HOLD_ACTIVE`, `PAYEE_NOT_ALLOWED`, `OVER_PER_TX_CAP`, `OVER_DAILY_CAP`, `BELOW_VAULT_RESERVE`, `OVER_MILESTONE_AMOUNT`, `TAX_RESERVE_TOO_LOW` |
 | `escalated` | `LOW_CONFIDENCE`, `NEEDS_HUMAN`, `IDENTITY_MISMATCH`, `OVER_SOFT_LIMIT`, `INJECTION_FLAGGED`, `NO_PAYOUTS` |
 
-Rule order (v0.9, 13 Nov 2026): schema valid (`SCHEMA_INVALID` always rejects) → already settled (once the Policy
+Rule order (v0.10, 13 Nov 2026): schema valid (`SCHEMA_INVALID` always rejects) → milestone id (the proposal's
+`milestone_id` must equal the request's; otherwise `MILESTONE_ID_MISMATCH`, whatever the plan contains) → already settled (once the Policy
 Service has signed a plan for this milestone, every further plan is `ALREADY_SETTLED`, whatever it contains) →
 zero-amount payout (any
 `payout` or `mobile_money_payout` with amount 0 is `ZERO_AMOUNT_PAYOUT`, for every proposal) → **only if the plan

@@ -85,6 +85,7 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
   }
   if (!Number.isInteger(ctx.settled.approvedCount) || ctx.settled.approvedCount < 0) throw new Error("invalid context: settled.approvedCount");
   if (typeof ctx.milestone.released !== "boolean") throw new Error("invalid context: milestone.released must be a boolean");
+  if (typeof ctx.requestMilestoneId !== "string" || ctx.requestMilestoneId.length === 0) throw new Error("invalid context: requestMilestoneId");
   const proposal_hash = hashProposal(proposal);
 
   // Nothing else can be evaluated safely on a malformed proposal.
@@ -103,6 +104,10 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
 
   const rejected: RejectReason[] = [];
   const escalated: EscalateReason[] = [];
+
+  // The proposal must be about the milestone the authenticated request names: the facts, budget and settled log were
+  // read for that milestone, so a plan naming another one is refused whatever it contains.
+  if (p.milestone_id !== ctx.requestMilestoneId) rejected.push("MILESTONE_ID_MISMATCH");
 
   // One approved settlement per milestone. Once the Policy Service has signed a plan for this milestone, every further
   // plan is refused, whatever it contains (the operator's approval of an escalation is checked the same way).

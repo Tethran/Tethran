@@ -32,9 +32,11 @@ export function makeCtx(overrides: Partial<EvaluationContext> = {}): EvaluationC
     nowUnixSeconds: overrides.nowUnixSeconds ?? 1_800_000_000,
     seenProposalHashes: overrides.seenProposalHashes ?? new Set<string>(),
     settled: overrides.settled ?? { approvedCount: 0, allocated: "0" },
+    requestMilestoneId: overrides.requestMilestoneId ?? GOOD_MILESTONE,
     milestone: aboutAmounts ? { ...overrides.milestone!, released: overrides.milestone!.released ?? true } : { cardFunded: false, releaseEligible: true, released: true, identityMatch: true, ...overrides.milestone, grossAmount: LARGE_GROSS },
   };
 }
+export const GOOD_MILESTONE = "11111111-1111-4111-8111-111111111111";
 // 450 USDT payout + 50 USDT tax reserve: tax is exactly 10% of the 500 USDT total.
 export function goodProposal(): Record<string, unknown> {
   return {
