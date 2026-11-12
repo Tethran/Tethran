@@ -3,6 +3,7 @@
 
 export type TxRef = { txHash: string; chainId: number; idempotencyKey: string };
 export type TxStatus = "pending" | "confirmed" | "failed" | "unknown";
+export type EscrowState = "None" | "Funded" | "Approved" | "Disputed" | "Released" | "Refunded";
 
 export type CreateAndFundParams = {
   milestoneId: string;
@@ -14,6 +15,21 @@ export type CreateAndFundParams = {
   timeout: number; // unix seconds
   cardFunded: boolean;
   holdSeconds: number;
+};
+
+/** A milestone as stored by the escrow contract. */
+export type MilestoneView = {
+  funder: string;
+  client: string;
+  provider: string;
+  arbiter: string;
+  vault: string;
+  amount: string;
+  timeout: number;
+  approvedAt: number;
+  holdSeconds: number;
+  cardFunded: boolean;
+  state: EscrowState;
 };
 
 export type VaultExecuteParams = { vault: string; to: string; amount: string; agentSig: string; policySig: string };
@@ -51,12 +67,14 @@ export interface ChainClient {
   ): Promise<TxRef>;
   release(milestoneId: string, idempotencyKey: string): Promise<TxRef>;
   refund(milestoneId: string, idempotencyKey: string): Promise<TxRef>;
+  refundApproved(milestoneId: string, idempotencyKey: string): Promise<TxRef>;
   // vault and guard
   vaultExecute(p: VaultExecuteParams, idempotencyKey: string): Promise<TxRef>;
   setPolicy(p: SetPolicyParams, idempotencyKey: string): Promise<TxRef>;
   // receipt
   mintReceipt(p: MintReceiptParams, idempotencyKey: string): Promise<TxRef>;
   // reads
+  milestone(milestoneId: string): Promise<MilestoneView>;
   txStatus(txHash: string): Promise<TxStatus>;
   balance(address: string): Promise<string>;
 }
