@@ -24,7 +24,7 @@ async function call(method: string, path: string, body?: unknown): Promise<any> 
 }
 
 function scenarioId(name: string): string {
-  const s = JSON.parse(readFileSync(join(ROOT, ".demo-data/seed-summary.json"), "utf8"));
+  const s = JSON.parse(readFileSync(join(ROOT, process.env.DEMO_DATA_DIR || ".demo-data", "seed-summary.json"), "utf8"));
   const hit = s.scenarios.find((x: any) => x.scenario === name);
   if (!hit) throw new Error(`no seeded scenario "${name}" (run the seed first)`);
   return hit.milestone;

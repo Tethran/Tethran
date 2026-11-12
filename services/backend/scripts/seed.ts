@@ -33,7 +33,11 @@ import { openDb } from "../src/db";
 import { policyDocumentTypes, policyDocumentValue, policyDomain } from "../../policy/src/typed";
 
 const ROOT = resolve(__dirname, "../../..");
-const DATA = join(ROOT, ".demo-data");
+// DEMO_DATA_DIR picks another directory directly under the repo root whose name starts with ".demo-data" (for
+// example when an old run still holds files open); anything else is refused.
+const DATA_NAME = process.env.DEMO_DATA_DIR || ".demo-data";
+if (!/^\.demo-data[A-Za-z0-9_-]*$/.test(DATA_NAME)) throw new Error("DEMO_DATA_DIR must be a name like .demo-data or .demo-data-2");
+const DATA = join(ROOT, DATA_NAME);
 const fileEnv = existsSync(join(ROOT, ".env")) ? parse(readFileSync(join(ROOT, ".env"))) : {};
 // The API-key RPC (Alchemy) is the primary for this process too; the public RPC in chains.json becomes its fallback.
 for (const [k, v] of Object.entries(fileEnv)) if (k.startsWith("RPC_URL_") && process.env[k] === undefined) process.env[k] = v;
@@ -200,7 +204,7 @@ async function main() {
   }
 
   // ---- 0. from nothing: this directory only ----
-  if (basename(DATA) !== ".demo-data") throw new Error("refusing to wipe an unexpected directory");
+  if (!/^\.demo-data[A-Za-z0-9_-]*$/.test(basename(DATA)) || resolve(DATA, "..") !== ROOT) throw new Error("refusing to wipe an unexpected directory");
   rmSync(DATA, { recursive: true, force: true });
   mkdirSync(DATA, { recursive: true });
   const internalToken = randomBytes(24).toString("hex");
