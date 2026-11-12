@@ -14,9 +14,21 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 ///           agentSigner + policySigner  together co-sign each transfer (two of two)
 ///           operator                    signs limits, payees, signer rotation and the escape withdrawal
 ///
+///         THE OPERATOR KEY IS EFFECTIVELY THE OWNER OF THE VAULT. It can rotate both co-signers to keys
+///         it controls, allow any payee and raise the caps, and then pay anyone. A compromised operator
+///         key can drain the vault. The two-signature rule and the limits protect against a compromised
+///         agent or Policy Service, and against mistakes; they do not protect against the operator.
+///         The operator is the provider or agency admin, whose funds these are.
+///
+///         The operator address is immutable. If that key is lost, policy, payees and signers can never
+///         change again and the escape withdrawal is gone; if a co-signer key is then also lost, the funds
+///         are stranded. To pause payouts the operator signs setPolicy with zero caps.
+///
 ///         The spending guard is built in. Every transfer must pass the operator's limits, so a transfer
 ///         signed by both co-signers still fails if it breaks a limit:
-///           payee allowlist, per-transaction cap, daily cap (UTC day), vault balance floor.
+///           payee allowlist, per-transaction cap, daily cap, vault balance floor.
+///         The daily cap counts per UTC calendar day (block.timestamp / 1 days) and resets at 00:00 UTC,
+///         so up to twice the cap can leave within a few minutes around midnight.
 ///
 ///         A new vault has policy version 0 and all limits 0: nothing can be paid until the operator
 ///         signs a policy. Only USDT moves. There are no arbitrary calls.
@@ -24,7 +36,7 @@ contract ProviderVault is EIP712 {
     using SafeERC20 for IERC20;
 
     bytes32 public constant TRANSFER_TYPEHASH =
-        keccak256("Transfer(address to,uint256 amount,bytes32 proposalHash,bytes32 actionId)");
+        keccak256("Transfer(address to,uint256 amount,bytes32 proposalHash,bytes32 actionId,uint256 deadline)");
     bytes32 public constant SET_POLICY_TYPEHASH =
         keccak256("SetPolicy(uint256 version,uint256 perTxCap,uint256 dailyCap,uint256 minReserve)");
     bytes32 public constant SET_PAYEES_TYPEHASH =
@@ -72,6 +84,7 @@ contract ProviderVault is EIP712 {
     error KeysNotDistinct();
     error ZeroAmount();
     error ActionAlreadyUsed();
+    error Expired(uint256 deadline);
     error InvalidAgentSignature();
     error InvalidPolicySignature();
     error InvalidOperatorSignature();
@@ -99,7 +112,8 @@ contract ProviderVault is EIP712 {
     // ---------------------------------------------------------------- transfers
 
     /// @notice Pay `amount` USDT to `to`. Needs both co-signatures over the same Transfer typed data
-    ///         and must pass every guard limit. `actionId` can be used once.
+    ///         and must pass every guard limit. `actionId` can be used once. The co-signatures stop
+    ///         working after `deadline` (unix time), so an approval cannot be held back and used much later.
     /// @param proposalHash hash of the settlement proposal the Policy Service approved (for the audit trail)
     /// @param actionId     keccak256(abi.encode(proposalHash, index of the action in the proposal))
     function execute(
@@ -107,13 +121,17 @@ contract ProviderVault is EIP712 {
         uint256 amount,
         bytes32 proposalHash,
         bytes32 actionId,
+        uint256 deadline,
         bytes calldata agentSig,
         bytes calldata policySig
     ) external {
         if (amount == 0) revert ZeroAmount();
+        if (block.timestamp > deadline) revert Expired(deadline);
         if (actionUsed[actionId]) revert ActionAlreadyUsed();
 
-        bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(TRANSFER_TYPEHASH, to, amount, proposalHash, actionId)));
+        bytes32 digest = _hashTypedDataV4(
+            keccak256(abi.encode(TRANSFER_TYPEHASH, to, amount, proposalHash, actionId, deadline))
+        );
         if (ECDSA.recover(digest, agentSig) != agentSigner) revert InvalidAgentSignature();
         if (ECDSA.recover(digest, policySig) != policySigner) revert InvalidPolicySignature();
 
@@ -159,7 +177,8 @@ contract ProviderVault is EIP712 {
         emit PolicyUpdated(version, perTxCap_, dailyCap_, minReserve_);
     }
 
-    /// @notice Add (`allowed` true) or remove (`allowed` false) payees.
+    /// @notice Add (`allowed` true) or remove (`allowed` false) payees. The zero address, this vault and
+    ///         the token contract can never be listed: funds sent there would be lost.
     function setPayees(uint256 version, address[] calldata payees, bool allowed, bytes calldata operatorSig) external {
         _useOperatorSignature(
             version,
@@ -168,7 +187,9 @@ contract ProviderVault is EIP712 {
             operatorSig
         );
         for (uint256 i = 0; i < payees.length; i++) {
-            allowedPayee[payees[i]] = allowed;
+            address payee = payees[i];
+            if (payee == address(0) || payee == address(this) || payee == address(usdt)) revert InvalidAddress();
+            allowedPayee[payee] = allowed;
         }
         emit PayeesSet(version, payees, allowed);
     }
@@ -190,8 +211,10 @@ contract ProviderVault is EIP712 {
     }
 
     /// @notice Escape hatch: send `amount` to the provider's payout address fixed at deployment.
-    ///         Not subject to the limits and does not count towards the daily cap. It can pay no
-    ///         other address, so the operator key alone can never send funds to a third party.
+    ///         Not subject to the limits and does not count towards the daily cap.
+    ///         The fixed address constrains THIS FUNCTION ONLY. It does not limit the operator: the
+    ///         operator can still reach any address through rotateSigners, setPayees and setPolicy
+    ///         followed by execute (see the contract notice).
     function withdrawToProvider(uint256 version, uint256 amount, bytes calldata operatorSig) external {
         if (amount == 0) revert ZeroAmount();
         _useOperatorSignature(version, keccak256(abi.encode(WITHDRAW_TYPEHASH, version, amount)), operatorSig);

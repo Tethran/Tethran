@@ -9,11 +9,13 @@ const PER_TX = USDT(500);
 const DAILY = USDT(1200);
 const RESERVE = USDT(100);
 const reason = (s: string) => ethers.encodeBytes32String(s);
+const FAR = 2n ** 40n; // a deadline far in the future, for tests that are not about expiry
 
 const TYPES = {
   Transfer: [
     { name: "to", type: "address" }, { name: "amount", type: "uint256" },
     { name: "proposalHash", type: "bytes32" }, { name: "actionId", type: "bytes32" },
+    { name: "deadline", type: "uint256" },
   ],
   SetPolicy: [
     { name: "version", type: "uint256" }, { name: "perTxCap", type: "uint256" },
@@ -47,14 +49,17 @@ describe("ProviderVault (two-signature vault with built-in spending guard)", () 
     const actionId = (i: number, p = proposalHash) =>
       ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["bytes32", "uint256"], [p, i]));
 
-    type T = { to: string; amount: bigint; proposalHash: string; actionId: string };
+    type T = { to: string; amount: bigint; proposalHash: string; actionId: string; deadline?: bigint };
     const signTransfer = (who: HardhatEthersSigner, t: T, d: object = domain) =>
-      who.signTypedData(d, only("Transfer"), t);
+      who.signTypedData(d, only("Transfer"), { ...t, deadline: t.deadline ?? FAR });
     /** Submits a transfer with both honest signatures unless `over` replaces something. */
-    const pay = async (to: string, amount: bigint, index: number, over: { agentSig?: string; policySig?: string } = {}) => {
-      const t = { to, amount, proposalHash, actionId: actionId(index) };
+    const pay = async (
+      to: string, amount: bigint, index: number,
+      over: { agentSig?: string; policySig?: string; deadline?: bigint } = {},
+    ) => {
+      const t = { to, amount, proposalHash, actionId: actionId(index), deadline: over.deadline ?? FAR };
       return vault.connect(relayer).execute(
-        t.to, t.amount, t.proposalHash, t.actionId,
+        t.to, t.amount, t.proposalHash, t.actionId, t.deadline,
         over.agentSig ?? await signTransfer(agent, t), over.policySig ?? await signTransfer(policy, t));
     };
 
@@ -163,6 +168,39 @@ describe("ProviderVault (two-signature vault with built-in spending guard)", () 
       await expect(pay(payee1.address, 0n, 0)).to.be.revertedWithCustomError(vault, "ZeroAmount");
     });
 
+    describe("deadline", () => {
+      it("works up to and including the deadline second, and is refused one second later", async () => {
+        const { payee1, usdt, vault, pay } = await setup();
+        const deadline = BigInt(await time.latest()) + 900n; // 15 minutes, as the Policy Service sets it
+        await time.setNextBlockTimestamp(deadline);
+        await pay(payee1.address, USDT(10), 0, { deadline });
+        await time.setNextBlockTimestamp(deadline + 1n);
+        await expect(pay(payee1.address, USDT(10), 1, { deadline }))
+          .to.be.revertedWithCustomError(vault, "Expired").withArgs(deadline);
+        expect(await usdt.balanceOf(payee1.address)).to.equal(USDT(10));
+      });
+
+      it("the deadline is part of what is signed: it cannot be pushed out by the submitter", async () => {
+        const { agent, policy, payee1, vault, relayer, proposalHash, actionId, signTransfer } = await setup();
+        const deadline = BigInt(await time.latest()) + 900n;
+        const t = { to: payee1.address, amount: USDT(10), proposalHash, actionId: actionId(0), deadline };
+        const sigs = [await signTransfer(agent, t), await signTransfer(policy, t)];
+        await time.increaseTo(deadline + 1n);
+        await expect(vault.connect(relayer).execute(t.to, t.amount, t.proposalHash, t.actionId, deadline, sigs[0], sigs[1]))
+          .to.be.revertedWithCustomError(vault, "Expired");
+        await expect(vault.connect(relayer).execute(t.to, t.amount, t.proposalHash, t.actionId, deadline + 3600n, sigs[0], sigs[1]))
+          .to.be.revertedWithCustomError(vault, "InvalidAgentSignature");
+      });
+
+      it("an expired transfer does not consume its action id", async () => {
+        const { payee1, vault, actionId, pay } = await setup();
+        const deadline = BigInt(await time.latest()) - 1n;
+        await expect(pay(payee1.address, USDT(10), 0, { deadline })).to.be.revertedWithCustomError(vault, "Expired");
+        expect(await vault.actionUsed(actionId(0))).to.equal(false);
+        await pay(payee1.address, USDT(10), 0); // a fresh approval for the same action still works
+      });
+    });
+
     describe("needs both co-signers", () => {
       it("one key signing both slots is not enough (agent twice, policy twice)", async () => {
         const { agent, policy, payee1, vault, proposalHash, actionId, signTransfer, pay } = await setup();
@@ -201,6 +239,7 @@ describe("ProviderVault (two-signature vault with built-in spending guard)", () 
           { ...honest, amount: USDT(2) },
           { ...honest, proposalHash: ethers.id("other proposal") },
           { ...honest, actionId: actionId(1) },
+          { ...honest, deadline: FAR + 1n },
         ]) {
           await expect(pay(honest.to, honest.amount, 0, { policySig: await signTransfer(policy, signed) }))
             .to.be.revertedWithCustomError(vault, "InvalidPolicySignature");
@@ -291,6 +330,41 @@ describe("ProviderVault (two-signature vault with built-in spending guard)", () 
         expect(await vault.check(payee1.address, USDT(2000) + 1n)).to.deep.equal([false, reason("BELOW_VAULT_RESERVE")]);
       });
 
+      it("check() gives exactly the verdict execute() enforces, for every guard case", async () => {
+        const { payee1, payee2, stranger, vault, pay, setPolicy } = await setup();
+        await setPolicy(PER_TX, DAILY, USDT(1500)); // vault holds 2000, so only 500 may leave
+        await pay(payee2.address, USDT(100), 99); // some spend today, so the daily sum is not trivial
+        const cases: [string, string, bigint][] = [
+          ["allowed, small", payee1.address, USDT(1)],
+          ["not on the allowlist", stranger.address, USDT(1)],
+          ["at the per-tx cap but over the reserve", payee1.address, PER_TX],
+          ["over the per-tx cap", payee1.address, PER_TX + 1n],
+          ["exactly what the reserve allows", payee1.address, USDT(400)],
+          ["one unit over the reserve", payee1.address, USDT(400) + 1n],
+          ["more than the balance", payee1.address, USDT(5000)],
+        ];
+        let index = 0;
+        for (const [label, to, amount] of cases) {
+          const snapshot = await ethers.provider.send("evm_snapshot", []);
+          const [ok, why] = await vault.check(to, amount);
+          if (ok) {
+            await pay(to, amount, index);
+          } else {
+            await expect(pay(to, amount, index), label)
+              .to.be.revertedWithCustomError(vault, "GuardBlocked").withArgs(why);
+          }
+          await ethers.provider.send("evm_revert", [snapshot]);
+          index++;
+        }
+        // and the daily cap case, which needs more balance than the reserve case allows
+        await setPolicy(PER_TX, USDT(300), 0n);
+        expect(await vault.check(payee1.address, USDT(200))).to.deep.equal([true, ethers.ZeroHash]);
+        expect(await vault.check(payee1.address, USDT(200) + 1n)).to.deep.equal([false, reason("OVER_DAILY_CAP")]);
+        await expect(pay(payee1.address, USDT(200) + 1n, 50))
+          .to.be.revertedWithCustomError(vault, "GuardBlocked").withArgs(reason("OVER_DAILY_CAP"));
+        await pay(payee1.address, USDT(200), 50);
+      });
+
       it("a blocked transfer does not consume its action id or count towards the day", async () => {
         const { payee1, vault, actionId, pay } = await setup();
         await expect(pay(payee1.address, PER_TX + 1n, 0)).to.be.revertedWithCustomError(vault, "GuardBlocked");
@@ -326,6 +400,62 @@ describe("ProviderVault (two-signature vault with built-in spending guard)", () 
       await setPayees([payee1.address], false);
       expect(await vault.allowedPayee(payee1.address)).to.equal(false);
       expect(await vault.allowedPayee(payee2.address)).to.equal(true);
+    });
+
+    it("setPayees rejects the zero address, the vault itself and the token, and changes nothing", async () => {
+      const { payee1, usdt, vault, vaultAddr, setPayees } = await setup();
+      for (const bad of [ethers.ZeroAddress, vaultAddr, await usdt.getAddress()]) {
+        await expect(setPayees([payee1.address, bad], true)).to.be.revertedWithCustomError(vault, "InvalidAddress");
+        await expect(setPayees([bad], false)).to.be.revertedWithCustomError(vault, "InvalidAddress");
+        expect(await vault.allowedPayee(bad)).to.equal(false);
+      }
+      expect(await vault.policyVersion()).to.equal(2n); // no version consumed by a rejected update
+    });
+
+    it("the payee list is hashed exactly as ethers encodes address[] typed data (0, 1 and 3 payees)", async () => {
+      const { operator, relayer, payee1, payee2, stranger, vault, domain } = await setup(false);
+      let version = 1n;
+      for (const payees of [[], [payee1.address], [payee1.address, payee2.address, stranger.address]]) {
+        const value = { version, payees, allowed: true };
+        const sig = await operator.signTypedData(domain, only("SetPayees"), value);
+        // the digest ethers signed, recovered independently, must be the operator: then the contract must agree
+        const digest = ethers.TypedDataEncoder.hash(domain, only("SetPayees"), value);
+        expect(ethers.recoverAddress(digest, sig)).to.equal(operator.address);
+        await vault.connect(relayer).setPayees(version, payees, true, sig);
+        version++;
+      }
+      expect(await vault.policyVersion()).to.equal(3n);
+      expect(await vault.allowedPayee(stranger.address)).to.equal(true);
+    });
+
+    it("an operator signature made for another chain is rejected", async () => {
+      const { operator, relayer, vault, domain } = await setup(false);
+      const sig = await operator.signTypedData({ ...domain, chainId: 84532 }, only("SetPolicy"),
+        { version: 1n, perTxCap: 1n, dailyCap: 1n, minReserve: 0n });
+      await expect(vault.connect(relayer).setPolicy(1n, 1n, 1n, 0n, sig))
+        .to.be.revertedWithCustomError(vault, "InvalidOperatorSignature");
+    });
+
+    it("the operator is effectively the owner: it can rotate signers, allow a payee, raise caps and pay anyone", async () => {
+      // This is by design and is documented. The limits protect against the co-signers, not the operator.
+      const { stranger, usdt, vault, relayer, proposalHash, actionId, signTransfer, setPolicy, setPayees, rotate } = await setup();
+      const [, , , , , , , , , , , mine1, mine2] = await ethers.getSigners(); // two keys the operator controls
+      await rotate(mine1.address, mine2.address);
+      await setPayees([stranger.address], true);
+      await setPolicy(USDT(2000), USDT(2000), 0n);
+      const t = { to: stranger.address, amount: USDT(2000), proposalHash, actionId: actionId(0) };
+      await vault.connect(relayer).execute(
+        t.to, t.amount, t.proposalHash, t.actionId, FAR, await signTransfer(mine1, t), await signTransfer(mine2, t));
+      expect(await usdt.balanceOf(stranger.address)).to.equal(USDT(2000));
+    });
+
+    it("pause: setPolicy with zero caps stops every payout until the operator sets limits again", async () => {
+      const { payee1, vault, pay, setPolicy } = await setup();
+      await setPolicy(0n, 0n, 0n);
+      await expect(pay(payee1.address, 1n, 0))
+        .to.be.revertedWithCustomError(vault, "GuardBlocked").withArgs(reason("OVER_PER_TX_CAP"));
+      await setPolicy(PER_TX, DAILY, 0n);
+      await pay(payee1.address, 1n, 0);
     });
 
     it("nobody but the operator can sign: agent, policy signer, provider, stranger, or both co-signers", async () => {
@@ -410,10 +540,10 @@ describe("ProviderVault (two-signature vault with built-in spending guard)", () 
 
       await expect(rotate(newAgent.address, newPolicy.address))
         .to.emit(vault, "SignersRotated").withArgs(3n, newAgent.address, newPolicy.address);
-      await expect(vault.connect(relayer).execute(t.to, t.amount, t.proposalHash, t.actionId, oldSigs[0], oldSigs[1]))
+      await expect(vault.connect(relayer).execute(t.to, t.amount, t.proposalHash, t.actionId, FAR, oldSigs[0], oldSigs[1]))
         .to.be.revertedWithCustomError(vault, "InvalidAgentSignature");
       await vault.connect(stranger).execute(
-        t.to, t.amount, t.proposalHash, t.actionId, await signTransfer(newAgent, t), await signTransfer(newPolicy, t));
+        t.to, t.amount, t.proposalHash, t.actionId, FAR, await signTransfer(newAgent, t), await signTransfer(newPolicy, t));
       expect(await usdt.balanceOf(payee1.address)).to.equal(USDT(10));
     });
 
