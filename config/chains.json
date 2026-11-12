@@ -20,7 +20,7 @@
       "confirmations": 2,
       "usdt": "0xE2D587DD9ad01C91DFf0baABc120192C516b9879",
       "escrow": "0x172AE76568ba8F83dc7584D2a161713200d9b278",
-      "receiptNft": "",
+      "receiptNft": "0x596B49052701d5B83F2098b055C10c08f314d209",
       "minTimeoutSeconds": 600,
       "demoVault": "0xeE59D8994620A9125641b36848A636E04e24feA8"
     },

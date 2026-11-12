@@ -71,6 +71,18 @@ export type SetPolicyParams = {
   operatorSig: string;
 };
 
+export type ReceiptView = {
+  tokenId: number;
+  holder: string;
+  milestoneId: string; // bytes32 on-chain id
+  invoiceHash: string;
+  settlementHash: string;
+  amount: string;
+  chainId: number;
+  releaseTx: string;
+  mintedAt: number;
+};
+
 export type MintReceiptParams = {
   milestoneId: string;
   holder: string;
@@ -105,6 +117,7 @@ export interface ChainClient {
   // receipt
   mintReceipt(p: MintReceiptParams, idempotencyKey: string): Promise<TxRef>;
   // reads
+  receiptOf(milestoneId: string): Promise<ReceiptView | undefined>;
   vaultState(vault: string): Promise<VaultState>;
   vaultCheck(vault: string, to: string, amount: string): Promise<{ ok: boolean; reason: string }>;
   milestone(milestoneId: string): Promise<MilestoneView>;

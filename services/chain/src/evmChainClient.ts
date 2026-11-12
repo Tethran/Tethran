@@ -10,6 +10,7 @@ import type {
   EscrowState,
   MilestoneView,
   MintReceiptParams,
+  ReceiptView,
   RotateSignersParams,
   SetPayeesParams,
   SetPolicyParams,
@@ -62,6 +63,12 @@ const VAULT_ABI = [
   "function policySigner() view returns (address)",
   "function operator() view returns (address)",
   "function providerPayout() view returns (address)",
+];
+const RECEIPT_ABI = [
+  "function mint(bytes32 milestoneId, address holder, bytes32 invoiceHash, bytes32 settlementHash, uint256 amount, uint256 chainId, bytes32 releaseTx) returns (uint256)",
+  "function receiptOf(bytes32 milestoneId) view returns (uint256)",
+  "function ownerOf(uint256 tokenId) view returns (address)",
+  "function receipt(uint256 tokenId) view returns (tuple(bytes32 milestoneId, bytes32 invoiceHash, bytes32 settlementHash, uint256 amount, uint256 chainId, bytes32 releaseTx, uint64 mintedAt))",
 ];
 const ERC20_ABI = [
   "function balanceOf(address) view returns (uint256)",
@@ -192,6 +199,7 @@ export class EvmChainClient implements ChainClient {
   private readonly escrow = new Interface(ESCROW_ABI);
   private readonly erc20 = new Interface(ERC20_ABI);
   private readonly vaultAbi = new Interface(VAULT_ABI);
+  private readonly receiptAbi = new Interface(RECEIPT_ABI);
   private chainChecked?: Promise<void>;
   private queue: Promise<unknown> = Promise.resolve();
   private senderAddress?: Promise<string>;
@@ -382,8 +390,31 @@ export class EvmChainClient implements ChainClient {
 
   // ---- receipt: contract not built yet ----
 
-  async mintReceipt(_p: MintReceiptParams, _idempotencyKey: string): Promise<TxRef> {
-    throw new NotBuiltYetError("mintReceipt", "the ReceiptNFT contract");
+  /** MINTER only (the treasury), after the vault payout is confirmed. The contract allows one per milestone. */
+  mintReceipt(p: MintReceiptParams, idempotencyKey: string): Promise<TxRef> {
+    if (!this.config.receiptNft) return Promise.reject(new NotBuiltYetError("mintReceipt", `a ReceiptNFT deployment on chain "${this.config.key}"`));
+    return this.send(
+      this.config.receiptNft,
+      this.receiptAbi.encodeFunctionData("mint", [
+        milestoneIdToBytes32(p.milestoneId), p.holder, p.invoiceHash, p.settlementHash, BigInt(p.amount), this.chainId, p.releaseTx,
+      ]),
+      idempotencyKey,
+    );
+  }
+
+  async receiptOf(milestoneId: string): Promise<ReceiptView | undefined> {
+    await this.ready();
+    if (!this.config.receiptNft) return undefined;
+    const [id] = await this.read(this.config.receiptNft, this.receiptAbi, "receiptOf", [milestoneIdToBytes32(milestoneId)]);
+    const tokenId = Number(id as bigint);
+    if (tokenId === 0) return undefined;
+    const [owner] = await this.read(this.config.receiptNft, this.receiptAbi, "ownerOf", [tokenId]);
+    const [r] = await this.read(this.config.receiptNft, this.receiptAbi, "receipt", [tokenId]);
+    return {
+      tokenId, holder: owner as string, milestoneId: r.milestoneId, invoiceHash: r.invoiceHash,
+      settlementHash: r.settlementHash, amount: (r.amount as bigint).toString(), chainId: Number(r.chainId),
+      releaseTx: r.releaseTx, mintedAt: Number(r.mintedAt),
+    };
   }
 
   // ---- reads ----

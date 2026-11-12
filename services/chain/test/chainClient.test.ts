@@ -396,9 +396,13 @@ test("refundApproved is sent to the escrow with its own selector", async () => {
 
 test("calls whose contracts are not built yet fail loudly", async () => {
   const { client } = setup();
-  await assert.rejects(
+  await assert.rejects( // no ReceiptNFT address in this config
     client.mintReceipt({ milestoneId: "m", holder: ALICE, invoiceHash: "0x", settlementHash: "0x", amount: "1", releaseTx: "0x" }, "k"),
     NotBuiltYetError);
+  const withNft = new EvmChainClient({ ...CONFIG, receiptNft: "0x00000000000000000000000000000000000000c3" }, fakeSender(),
+    new InMemoryIdempotencyStore(), { provider: fakeNode().reader });
+  const h = "0x" + "11".repeat(32);
+  await withNft.mintReceipt({ milestoneId: "m-1", holder: BOB, invoiceHash: h, settlementHash: h, amount: "5", releaseTx: h }, "k");
 });
 
 test("vault calls go to the vault address with the right function and arguments", async () => {
