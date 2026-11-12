@@ -1,26 +1,18 @@
 // The whole demo, one take, against the live demo on Sepolia (test network). Signing uses the DEMO_MODE
 // "Sign with demo key" buttons (labelled in the UI); the client acts through its WDK wallet.
 //   Freelancer: creates and signs a contract -> invoice
-//   Client:     pays the invoice (simulated card checkout) -> escrow funded on-chain -> approves on-chain
+//   Client:     pays the invoice in test USDT from the WDK wallet -> escrow funded on-chain -> approves on-chain
+//   Clean delivery: the platform releases the escrow to the vault and settles: the agent proposes, the Policy
+//               Service decides (with its reasons), the vault pays, the receipt is minted; the receipt page verifies it
+//   Card:       a second contract paid by card (simulated checkout) -> funded on-chain, chargeback hold shown
 //   Operator:   lowers the per-payment limit (relayed to the vault) -> the vault refuses an over-limit payout ->
 //               restores it; decides an escalation (new plan) and an identity hold (release)
 //   Arbiter:    votes on the dispute; the client votes the same way -> the escrow decides on-chain
 //   Handled failure: send on the wrong network is blocked; the duplicate send is refused
 import { expect, test, type Page } from "@playwright/test";
-import { api, settled, shot } from "./helpers";
+import { api, caption, createContract, pay, settled, shot } from "./helpers";
 
 const step = (name: string, fn: () => Promise<void>) => test.step(name, fn);
-const caption = async (page: Page, text: string) => {
-  // A visible caption for the recording (removed before the next step).
-  await page.evaluate((t) => {
-    document.getElementById("e2e-caption")?.remove();
-    const d = document.createElement("div");
-    d.id = "e2e-caption";
-    d.textContent = t;
-    Object.assign(d.style, { position: "fixed", left: "16px", bottom: "16px", zIndex: "9999", background: "#0A1F1B", color: "#C6F24E", padding: "8px 14px", borderRadius: "999px", font: "600 14px system-ui", pointerEvents: "none" });
-    document.body.appendChild(d);
-  }, text);
-};
 
 test("the whole journey", async ({ page }) => {
   let invoiceId = "";
@@ -34,27 +26,15 @@ test("the whole journey", async ({ page }) => {
   });
 
   await step("Freelancer: create and sign a contract", async () => {
-    await page.goto("/app/contracts/new");
     await caption(page, "Freelancer: a contract with one milestone");
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.getByRole("checkbox").check();
-    await shot(page, "journey-02-contract-sign");
-    await page.getByTestId("demo-Sign and send").click();
-    await page.waitForURL(/\/app\/invoice\//, { timeout: 5 * 60_000 });
-    invoiceId = page.url().split("/app/invoice/")[1]!.split(/[?#]/)[0]!;
-    const inv = await api(`/invoices/${invoiceId}`);
-    milestoneId = inv.escrow_milestone_id;
+    ({ invoiceId, milestoneId } = await createContract(page, () => shot(page, "journey-02-contract-sign")));
     await settled(page);
     await shot(page, "journey-03-invoice");
   });
 
-  await step("Client: pay the invoice (simulated card checkout; the escrow is funded on-chain)", async () => {
-    await page.goto(`/pay/${invoiceId}`);
-    await caption(page, "Client: pays by card (simulated checkout)");
-    await page.getByRole("button", { name: /Confirm and pay/ }).click();
-    await expect(page.getByText("Funds locked.")).toBeVisible({ timeout: 10 * 60_000 });
+  await step("Client: pays in test USDT from the WDK wallet (the escrow is funded on-chain)", async () => {
+    await pay(page, invoiceId, "Stablecoin");
+    await caption(page, "Client: paid in test USDT from the WDK wallet; funds locked in escrow");
     await shot(page, "journey-04-funds-locked");
   });
 
@@ -67,11 +47,41 @@ test("the whole journey", async ({ page }) => {
     await shot(page, "journey-05-approved");
   });
 
+  await step("Clean delivery: release, agent proposal, Policy decision, vault payout, receipt", async () => {
+    await caption(page, "Platform: releases the escrow to the vault; the AI proposes; the Policy Service decides");
+    await page.getByTestId("demo-settle").click();
+    await expect(page.getByTestId("view-receipt")).toBeVisible({ timeout: 15 * 60_000 });
+    await expect(page.getByTestId("policy-approved")).toBeVisible();
+    await expect(page.getByTestId("vault-payouts")).toContainText("to ");
+    await caption(page, "Approved by the Policy Service; the vault paid; receipt minted");
+    await shot(page, "journey-06-settled");
+  });
+
+  await step("Receipt: verified against the chain", async () => {
+    await page.getByTestId("view-receipt").click();
+    await page.waitForURL(/\/receipt\//);
+    await settled(page);
+    await caption(page, "Receipt: verify it against the test network");
+    await page.getByRole("button", { name: "Verify" }).click();
+    await expect(page.getByText("Matches the record on the test network")).toBeVisible({ timeout: 2 * 60_000 });
+    await shot(page, "journey-07-receipt-verified");
+  });
+
+  await step("Client: a second contract paid by card (simulated checkout); the chargeback hold", async () => {
+    await caption(page, "A second contract, paid by card (simulated checkout)");
+    const card = await createContract(page);
+    await pay(page, card.invoiceId, "Card");
+    await page.goto(`/app/milestone/${card.milestoneId}`);
+    await settled(page);
+    await caption(page, "Card payments wait out a chargeback hold before release");
+    await shot(page, "journey-08-card-hold");
+  });
+
   await step("Operator: lower the limit; the vault refuses an over-limit payout; restore", async () => {
     await page.goto("/app/operator");
     await settled(page);
     await caption(page, "Operator: lowers the per-payment limit to $5");
-    await shot(page, "journey-06-operator");
+    await shot(page, "journey-09-operator");
     await page.getByLabel("New per-payment limit").fill("5");
     await page.getByTestId("change-limit").click();
     await expect(page.getByTestId("per-tx-cap")).toHaveText("$5", { timeout: 10 * 60_000 });
@@ -80,7 +90,7 @@ test("the whole journey", async ({ page }) => {
     await page.getByTestId("vault-check").click();
     await expect(page.getByTestId("vault-check-result")).toContainText("Refused by the vault", { timeout: 2 * 60_000 });
     await expect(page.getByTestId("vault-check-result")).toContainText("OVER_PER_TX_CAP");
-    await shot(page, "journey-07-vault-refuses");
+    await shot(page, "journey-10-vault-refuses");
     await caption(page, "Operator: restores the limit to $1,000");
     await page.getByLabel("New per-payment limit").fill("1000");
     await page.getByTestId("change-limit").click();
@@ -95,7 +105,7 @@ test("the whole journey", async ({ page }) => {
       await caption(page, "Operator: requests a new plan (it pays nobody, so it can't be approved)");
       await button.click();
       await expect(page.getByText(/New plan requested/).first()).toBeVisible({ timeout: 3 * 60_000 });
-      await shot(page, "journey-08-new-plan");
+      await shot(page, "journey-11-new-plan");
     }
   });
 
@@ -105,7 +115,7 @@ test("the whole journey", async ({ page }) => {
       await caption(page, "Operator: releases a held milestone (simulated identity check)");
       await button.click();
       await expect(page.getByText(/Released to the provider's vault/).first()).toBeVisible({ timeout: 10 * 60_000 });
-      await shot(page, "journey-09-identity-released");
+      await shot(page, "journey-12-identity-released");
     }
   });
 
@@ -119,7 +129,7 @@ test("the whole journey", async ({ page }) => {
       await caption(page, "Arbiter: votes to release");
       await vote.click();
       await expect(page.getByText(/vote is recorded|Settled on-chain/).first()).toBeVisible({ timeout: 5 * 60_000 });
-      await shot(page, "journey-10-arbiter-vote");
+      await shot(page, "journey-13-arbiter-vote");
       await page.goto(`/app/milestone/${disputed}`);
       await settled(page);
       await caption(page, "Client: votes the same way (WDK wallet); the escrow decides");
@@ -130,7 +140,7 @@ test("the whole journey", async ({ page }) => {
       }
       await page.reload();
       await settled(page);
-      await shot(page, "journey-11-dispute-decided");
+      await shot(page, "journey-14-dispute-decided");
     }
   });
 
@@ -139,7 +149,7 @@ test("the whole journey", async ({ page }) => {
     await settled(page);
     await caption(page, "Send: the wallet is on the wrong network");
     await expect(page.getByRole("alert").filter({ hasText: "Wrong network" })).toBeVisible({ timeout: 2 * 60_000 });
-    await shot(page, "journey-12-wrong-network");
+    await shot(page, "journey-15-wrong-network");
     await page.getByRole("button", { name: "Switch to the wallet's network" }).click();
     await expect(page.getByRole("button", { name: /Confirm and send/ })).toBeEnabled({ timeout: 2 * 60_000 });
     await caption(page, "Send once, then try to send the same payment again");
@@ -147,6 +157,6 @@ test("the whole journey", async ({ page }) => {
     await expect(page.getByText(/Sent to the network/)).toBeVisible({ timeout: 5 * 60_000 });
     await page.getByRole("button", { name: /Send again/ }).click();
     await expect(page.getByText(/will not be sent twice|not be sent again/).first()).toBeVisible({ timeout: 2 * 60_000 });
-    await shot(page, "journey-13-duplicate-refused");
+    await shot(page, "journey-16-duplicate-refused");
   });
 });

@@ -47,3 +47,39 @@ export async function settled(page: Page) {
   await page.waitForLoadState("networkidle").catch(() => {});
   await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 90_000 });
 }
+
+/** A caption at the bottom left of the recording (hidden in full-page screenshots). */
+export async function caption(page: Page, text: string) {
+  await page.evaluate((t) => {
+    document.getElementById("e2e-caption")?.remove();
+    const d = document.createElement("div");
+    d.id = "e2e-caption";
+    d.textContent = t;
+    Object.assign(d.style, { position: "fixed", left: "16px", bottom: "16px", zIndex: "9999", background: "#0A1F1B", color: "#C6F24E", padding: "10px 16px", borderRadius: "999px", font: "600 16px system-ui", pointerEvents: "none", maxWidth: "calc(100vw - 32px)" });
+    document.body.appendChild(d);
+  }, text);
+}
+
+/** Freelancer: the contract wizard with its defaults, signed with the provider's demo key. Returns the new ids. */
+export async function createContract(page: Page, beforeSign?: () => Promise<void>) {
+  await page.goto("/app/contracts/new");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("checkbox").check();
+  if (beforeSign) await beforeSign();
+  await page.getByTestId("demo-Sign and send").click();
+  await page.waitForURL(/\/app\/invoice\//, { timeout: 5 * 60_000 });
+  const invoiceId = page.url().split("/app/invoice/")[1]!.split(/[?#]/)[0]!;
+  const inv = await api(`/invoices/${invoiceId}`);
+  return { invoiceId, milestoneId: inv.escrow_milestone_id as string };
+}
+
+/** Client: pays the invoice with the chosen method; resolves when the escrow is funded on-chain. */
+export async function pay(page: Page, invoiceId: string, method: "Card" | "Stablecoin", wait: (fn: () => Promise<void>) => Promise<void> = (fn) => fn()) {
+  await page.goto(`/pay/${invoiceId}`);
+  await settled(page);
+  if (method !== "Card") await page.locator("label", { hasText: method }).click();
+  await page.getByRole("button", { name: /Confirm and pay/ }).click();
+  await wait(() => expect(page.getByText("Funds locked.")).toBeVisible({ timeout: 10 * 60_000 }));
+}

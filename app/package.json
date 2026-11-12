@@ -16,7 +16,8 @@
     "start": "node .output/server/index.mjs",
     "e2e": "playwright test",
     "e2e:tour": "playwright test --project=tour-360 --project=tour-768 --project=tour-1440",
-    "e2e:journey": "playwright test --project=journey-1440"
+    "e2e:journey": "playwright test --project=journey-1440",
+    "e2e:demo-short": "playwright test --project=demo-short-1440 --output=e2e-artifacts/demo-short && node e2e/cut-video.mjs"
   },
   "overrides": {
     "rolldown": "1.2.1"
