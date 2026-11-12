@@ -21,10 +21,11 @@ Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer tra
 | Part | Status |
 |---|---|
 | `TestUSDT` (6 decimals, EIP-3009) | Built, tested |
-| `MilestoneEscrow`: createAndFund, approve, dispute, decide (2-of-3 EIP-712), release, refund | Built, tested, deployed on Sepolia |
+| `MilestoneEscrow`: createAndFund, approve, dispute, decide (2-of-3 EIP-712), release, refund, refundApproved | Built, tested, deployed on Sepolia |
 | Vault, spending guard, receipt NFT | Not built yet |
-| `ChainClient` (escrow calls, idempotency keys) | Built, tested |
-| Policy Service, treasury service, app, agent | Not built yet |
+| `ChainClient` (escrow calls, idempotency keys, operator resolve) | Built, tested |
+| Policy Service rule engine, reason codes, audit log | Built, tested |
+| Policy Service API and co-signing, treasury service, app, agent | Not built yet |
 
 ## Layout
 
@@ -32,6 +33,7 @@ Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer tra
 config/chains.json   per-chain config (chain id, RPC, contract addresses); test networks only
 contracts/           Solidity contracts, tests and deploy scripts (Hardhat, ethers v6)
 services/chain/      ChainClient: the only code that talks to a chain
+services/policy/     Policy Service: deterministic rule engine and append-only audit log
 app/                 web app (not built yet)
 docs/                whitepaper, PRD, architecture, plan, INTERFACES.md, TASKS.md
 Development.md       log of every change and why

@@ -881,6 +881,288 @@
         "Then Policy Service HTTP API and co-signing, ReceiptNFT, treasury service"
       ],
       "notes": "The escrow deployed on Sepolia predates any fix for R1 to R4; it will need a redeploy. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
+    },
+    {
+      "session_id": "session_006",
+      "timestamp": "2026-11-12T00:39:10Z",
+      "ai_agent": "Executing engineer (Person A workstream)",
+      "current_phase": "Phase 1 - Wallets and chain core (escrow awaiting approval)",
+      "progress": {
+        "completed": [
+          "Escrow fixes for R1, R2, R3, R4, R9 with tests (68 contract tests passing)",
+          "ChainClient fixes for R5 (all five), R8, R10, plus milestone read and refundApproved (27 tests passing)",
+          "Script hardening for R7 and R8",
+          "Policy engine: tax reserve on the gross milestone amount; BELOW_VAULT_RESERVE rule (59 tests passing)",
+          "INTERFACES.md v0.4",
+          "Redeployed TestUSDT and MilestoneEscrow to Sepolia; proof passed on the new escrow",
+          "Vault and guard design notes (no code)"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "Vault and SpendingGuard code waits for the lead to approve the escrow and decide the seven design points"
+        ]
+      },
+      "last_session_summary": "Session 005 logged the read-only contract review (findings R1 to R12) and fixed the wallet script so it can never overwrite a key.",
+      "changes_made": [
+        "contracts/contracts/MilestoneEscrow.sol: FUNDER role, refundApproved, MIN_TIMEOUT, MAX_HOLD, RELEASE_GRACE, timeout checks in approve and dispute, reserved-address check",
+        "contracts/test: escrow, decide and token tests extended",
+        "contracts/scripts: lib/safety.ts; deploy, fund-gas, balances and hardhat.config use it; deploy sets nonces explicitly",
+        "config/mainnet-chain-ids.json added",
+        "services/chain: idempotency store and client rewritten for call-bound, sender-scoped keys and resolve; errors.ts; chain id check; milestone read; proof script updated",
+        "services/policy: engine, types and tests for the gross tax base and the vault reserve",
+        "docs/INTERFACES.md v0.4; docs/notes/vault-guard-design.md; README status; config/chains.json Sepolia addresses"
+      ],
+      "file_module_map": [
+        {
+          "file": "contracts/contracts/MilestoneEscrow.sol",
+          "purpose": "Milestone escrow after the review fixes. Needs line-by-line review",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "contracts/test/MilestoneEscrow.test.ts",
+          "purpose": "Escrow tests including refundApproved and boundaries",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "contracts/test/MilestoneEscrow.decide.test.ts",
+          "purpose": "decide tests including boundaries and signature forms",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "contracts/test/TestUSDT.test.ts",
+          "purpose": "Token tests including the validity window",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "contracts/scripts/lib/safety.ts",
+          "purpose": "Test-network guard and sanitised error output for scripts",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "contracts/scripts/deploy.ts",
+          "purpose": "Deploy with explicit nonces and the new constructor",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "config/mainnet-chain-ids.json",
+          "purpose": "Deny-list of mainnet chain ids",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "config/chains.json",
+          "purpose": "New Sepolia addresses",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "services/chain/src/evmChainClient.ts",
+          "purpose": "ChainClient with the stricter idempotency rules and resolve. Worth a careful read",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "services/chain/src/idempotency.ts",
+          "purpose": "Stores now keep call hash, nonce at reserve and time",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "services/chain/src/errors.ts",
+          "purpose": "safeErrorMessage",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "services/chain/src/config.ts",
+          "purpose": "Deny-list check",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "services/chain/src/types.ts",
+          "purpose": "MilestoneView, refundApproved, milestone",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "services/chain/test/chainClient.test.ts",
+          "purpose": "27 unit tests",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "services/chain/scripts/prove-fund-release.ts",
+          "purpose": "Proof script with the post-funding check",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "services/policy/src/engine.ts",
+          "purpose": "Rule engine: gross tax base, vault reserve. Needs line-by-line review",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "services/policy/src/types.ts",
+          "purpose": "BELOW_VAULT_RESERVE, grossAmount, vaultBalance",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "services/policy/test/engine.test.ts",
+          "purpose": "59 unit tests",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "docs/INTERFACES.md",
+          "purpose": "Workstream contract, v0.4",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "docs/notes/vault-guard-design.md",
+          "purpose": "Design notes and open decisions for the vault and guard",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "Development.md",
+          "purpose": "Change log",
+          "last_modified": "2026-11-12T00:39:10Z"
+        },
+        {
+          "file": "README.md",
+          "purpose": "Status table",
+          "last_modified": "2026-11-12T00:39:10Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Decisions: lead accepted R1 to R5 and R7 to R10, skipped R12, left R11 to Person B; tax-reserve base is the gross milestone payout amount; vault_min_reserve enforced in the Policy Service and the guard",
+          "reason": "Relayed by the lead developer after the contract review",
+          "alternatives_considered": "Tax base of the proposal total (dropped); guard-only reserve (dropped)"
+        },
+        {
+          "decision": "refundApproved is a separate function from refund",
+          "reason": "The two have different callers and conditions; keeping them apart makes each one short to review",
+          "alternatives_considered": "One refund function with more branches"
+        },
+        {
+          "decision": "MIN_TIMEOUT is 1 day",
+          "reason": "The lead asked for an on-chain minimum without a value; a day gives the provider time to act",
+          "alternatives_considered": "1 hour; a constructor parameter"
+        },
+        {
+          "decision": "New reason code BELOW_VAULT_RESERVE (rejected), checked after the daily cap",
+          "reason": "The lead asked for vault_min_reserve to be enforced in the Policy Service; it needed a code",
+          "alternatives_considered": "Reusing an existing code"
+        },
+        {
+          "decision": "A key is also released on NONCE_EXPIRED and REPLACEMENT_UNDERPRICED",
+          "reason": "The node refused the transaction, so nothing was broadcast; a claimed key with no hash could not be resolved once the sender mines anything else",
+          "alternatives_considered": "Keep the key claimed for every error except a revert"
+        },
+        {
+          "decision": "resolve frees a hashless key only if the sender has mined nothing since the key was claimed, or the operator supplies the matching transaction hash",
+          "reason": "Without a hash there is no other way to prove the send never landed",
+          "alternatives_considered": "Free after a time limit"
+        },
+        {
+          "decision": "Unlimited one-time allowance from the funder to the escrow",
+          "reason": "The lead asked for a larger allowance approved once; the escrow is our own contract and only pulls what createAndFund names",
+          "alternatives_considered": "A large fixed number"
+        },
+        {
+          "decision": "ethers response cache turned off for the ChainClient provider; no NonceManager",
+          "reason": "The cache returned a stale account nonce to a second send a few milliseconds later",
+          "alternatives_considered": "Keeping NonceManager in the proof script"
+        },
+        {
+          "decision": "Deny-list of mainnet chain ids kept in one JSON file used by both the scripts and the services",
+          "reason": "One list to maintain",
+          "alternatives_considered": "A list in each package"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "R1, R2, R3, R4, R5, R7, R8, R9, R10 from the contract review",
+          "severity": "medium",
+          "status": "resolved"
+        },
+        {
+          "issue": "Arbiter and vault selection in the backend, with tests, is not done: the treasury service does not exist yet",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "MIN_TIMEOUT of 1 day means a timeout refund cannot be shown live on Sepolia, only on the local chain",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Confirm: keys released on NONCE_EXPIRED and REPLACEMENT_UNDERPRICED",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "With the treasury as funder and RELEASER, it can let an Approved milestone lapse and take it back after the grace period; the provider relies on the platform to release",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Public Sepolia RPC is load-balanced: stale reads and stale nonces right after a transaction. Mitigated with confirmations and explicit nonces; a dedicated RPC URL would be more reliable for the demo",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "The first Sepolia escrow (0x55CC...A513) and one orphan TestUSDT from a failed deploy are abandoned on-chain",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "R11: TestUSDT EIP-3009 surface versus the x402 facilitator (Person B)",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "ChainClient vaultExecute, setPolicy and mintReceipt still throw NotBuiltYetError",
+          "severity": "medium",
+          "status": "in-progress"
+        },
+        {
+          "issue": "docs/03 and PRD FR-4.5, FR-14.5 still describe the pre-v0.2 design",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Base Sepolia wallets hold no test ETH yet",
+          "severity": "medium",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "ECDSAInvalidSignatureLength(64)",
+          "context": "A new test assumed compact signatures are accepted",
+          "resolution": "They are not; the test now asserts that, and INTERFACES says 65-byte signatures only"
+        },
+        {
+          "error": "nonce has already been used [NONCE_EXPIRED] on the local chain",
+          "context": "Proof script after NonceManager was removed: ethers caches RPC responses for about 250 ms, so two sends close together read the same account nonce",
+          "resolution": "Provider created with cacheTimeout -1"
+        },
+        {
+          "error": "replacement transaction underpriced on the Sepolia deploy",
+          "context": "The second deployment got the same nonce as the first because the public RPC reported a stale count; the proof then ran against the old escrow",
+          "resolution": "deploy.ts sets nonces explicitly and waits for confirmations; redeployed and reran the proof on the new escrow"
+        },
+        {
+          "error": "Patch scripts failed on CRLF line endings in services/policy",
+          "context": "Files merged from the helper agent worktree were checked out with CRLF",
+          "resolution": "Patch scripts strip carriage returns before matching"
+        },
+        {
+          "error": "Shell heredocs containing an apostrophe fail in this Git Bash",
+          "context": "Several attempts to write files inline",
+          "resolution": "Files are written with the editor tool instead"
+        }
+      ],
+      "next_steps": [
+        "Lead: approve MilestoneEscrow.sol (final review) and decide the seven points in docs/notes/vault-guard-design.md",
+        "Lead: confirm MIN_TIMEOUT 1 day and the two extra release-on-refusal error codes",
+        "Then: ProviderVault with the spending guard and tests; stop for review",
+        "Then: Policy Service HTTP API and co-signing, ReceiptNFT, treasury service (with arbiter and vault selection and the post-funding check), WDK account as TxSender",
+        "Get Base Sepolia test ETH; consider a dedicated Sepolia RPC URL for the demo"
+      ],
+      "notes": "Stopped for the lead review before the vault and guard, as instructed. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
     }
   ]
 }

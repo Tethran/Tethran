@@ -238,3 +238,87 @@ exact timeout.
 - `TETHRAN_ENV_FILE` lets a test point it at a scratch file.
 - Checked on a scratch file: a key with trailing whitespace and a last line without a newline were both kept;
   a bad value stopped the script and left the file unchanged. The real `.env` hash was the same before and after.
+
+---
+
+## 2026-11-12 — Session 006: review fixes (R1 to R10), interfaces v0.4, Sepolia redeploy
+
+The lead accepted R1 to R5 and R7 to R10, skipped R12, and left R11 to Person B. Also decided: the tax-reserve
+base is the gross milestone payout amount, and `vault_min_reserve` is enforced by the Policy Service as well as
+the guard.
+
+### 1. MilestoneEscrow
+| Finding | Change |
+|---|---|
+| R1 stranded funds | New `refundApproved`: (1) the RELEASER may refund to the funder only while the card hold runs (chargeback); (2) the funder may refund once `approvedAt + hold + RELEASE_GRACE` (3 days) has passed without a release. `holdSeconds` is capped at `MAX_HOLD` (30 days). |
+| R2 late approve or dispute | `approve` and `dispute` revert with `TimeoutReached` once `now >= timeout`. |
+| R3 front-running | `createAndFund` needs the new `FUNDER_ROLE` (the treasury). Constructor is now `(usdt, admin, releaser, funder)`. |
+| R4 funder-chosen timeout | `timeout` must be at least `now + MIN_TIMEOUT` (1 day). |
+| R9 unusable addresses | Vault and parties may not be the escrow or the token (`InvalidAddress`). |
+
+- In case (2) and in `release`, the hold counts as 0 unless the milestone is card-funded.
+- `refund`, `decide(false)` and `refundApproved` share one private `_refund`.
+- Mine, for the lead to confirm: `MIN_TIMEOUT` is 1 day. A live timeout refund can therefore only be shown on
+  the local chain (where the clock can be moved), not on Sepolia.
+- Tests: 68 passing (was 38). New: every reviewer-listed gap for the contracts (exact boundaries of timeout,
+  hold, grace and decide window; each zero address; each party overlap; role grant and revoke; the revoke-all
+  rescue; decide on missing, Released and Refunded milestones; high-s and compact signatures; a balance
+  invariant across three milestones; TestUSDT `AuthorizationNotYetValid`, window boundaries, per-authorizer
+  nonces, wrong domain).
+- Found by a test: OpenZeppelin `ECDSA.recover` accepts only 65-byte signatures. Compact 64-byte signatures are
+  rejected. Documented in INTERFACES.
+
+### 2. ChainClient (R5, R8, R10)
+- **R5a** each key stores a hash of the call; the same key with a different call throws `IdempotencyKeyReuseError`.
+- **R5b/c** `resolve(key, { txHash? })`: frees a key only when the chain shows the transaction reverted, or that
+  it never landed (not mined, not in the mempool, key older than 2 minutes, nothing pending from the sender).
+  A key with no recorded hash is freed only if the sender has mined nothing since it was claimed; otherwise
+  the operator must supply the hash, which is accepted only if it is that sender's exact call.
+- **R5d** the escrow allowance is approved once without a limit.
+- **R5e** keys are scoped to the sending address.
+- Sends from one client run one at a time.
+- Mine, for the lead to confirm: a key is also released when the node answers `NONCE_EXPIRED` or
+  `REPLACEMENT_UNDERPRICED`. In both cases the node refused the transaction, so nothing was broadcast; keeping
+  the key claimed would leave it stuck with no hash to resolve.
+- **R8** the client checks `eth_chainId` against the config before any read or write, and a deny-list of
+  mainnet chain ids (`config/mainnet-chain-ids.json`) overrides `"testnet": true`. Same guard in the Hardhat
+  config and the scripts.
+- **R10** no `NonceManager` anywhere now, including the proof script. The provider is created with the ethers
+  response cache off (see errors below).
+- New: `milestone()` read and `assertMilestoneMatches` (the backend check after each funding), `refundApproved`.
+- Tests: 27 passing (was 9).
+
+### 3. Scripts (R7)
+- `contracts/scripts/lib/safety.ts`: errors are printed as a short message with URLs removed; the same helper
+  is exported from `services/chain`.
+- `deploy.ts`: refuses the in-process Hardhat network, sets nonces explicitly and waits `confirmations` blocks.
+
+### 4. Policy Service
+- Tax reserve: `tax_reserve total * 10000 >= min_tax_reserve_bps * grossAmount`, where `grossAmount` is the gross
+  milestone payout amount supplied in the context.
+- New rejected code `BELOW_VAULT_RESERVE`: `vaultBalance - payouts >= vault_min_reserve`. Tax reserve and
+  conversion amounts stay in the vault. Rule order: ... daily cap -> vault reserve -> tax reserve.
+- The engine throws on a non-numeric context amount.
+- Tests: 59 passing (was 55).
+
+### 5. INTERFACES.md v0.3 -> v0.4
+FUNDER role and constants; `refundApproved`; `milestone()`; approve and dispute before the timeout; the stablecoin
+deposit-address demo simplification; backend duties (choose arbiter and vault, verify after funding); 65-byte
+signatures; `BELOW_VAULT_RESERVE` and the new rule order; the tax-reserve base; `ChainClient.refundApproved`,
+`milestone`, the idempotency rules, `resolve`, and the chain-id check.
+
+### 6. Sepolia redeploy
+- TestUSDT (test token) `0x6DF2B5Ff896df820EDC0C563b0DA2ABD93228aeB`, MilestoneEscrow
+  `0xb6225C0478d26EF07C7F2F95E82603dd385a61Ed`. The earlier escrow `0x55CC…A513` is abandoned.
+- Proof passed on the new escrow: createAndFund `0xf00a0e8a…`, approve `0xb43f8f21…`, release `0x4ab91a9c…`.
+  One progress line showed the old state right after approve (a lagging RPC node on a display read); the final
+  check read Released and the correct balance.
+
+### 7. Not done in this pass
+- "Arbiter and vault chosen in the backend with tests": the backend (treasury service) does not exist yet. The
+  check it must run after funding exists and is tested (`assertMilestoneMatches`); choosing the arbiter and vault
+  is logged as a requirement for the treasury service.
+- R11 (TestUSDT surface for x402) is Person B's; R12 skipped.
+
+### 8. Vault and guard
+Design notes only, no code: `docs/notes/vault-guard-design.md`, with seven points marked for decision.
