@@ -20,7 +20,7 @@ describe("MilestoneEscrow.decide (two of three EIP-712 attestations)", () => {
     const [admin, treasury, client, provider, arbiter, vault, stranger] = await ethers.getSigners();
     const usdt = await ethers.deployContract("TestUSDT");
     const escrow = await ethers.deployContract("MilestoneEscrow", [
-      await usdt.getAddress(), admin.address, treasury.address,
+      await usdt.getAddress(), admin.address, treasury.address, treasury.address,
     ]);
     await usdt.mint(treasury.address, 100_000_000n);
     await usdt.connect(treasury).approve(await escrow.getAddress(), ethers.MaxUint256);
@@ -120,6 +120,104 @@ describe("MilestoneEscrow.decide (two of three EIP-712 attestations)", () => {
       .to.be.revertedWithCustomError(escrow, "DisputeWindowOver");
     await escrow.refund(id);
     expect(await usdt.balanceOf(treasury.address)).to.equal(100_000_000n);
+  });
+
+  it("exact boundary: works one second before the timeout, closed at the timeout", async () => {
+    const { provider, arbiter, escrow, id, fund, attest } = await setup();
+    const sigs = [await attest(provider, KIND.provider, true), await attest(arbiter, KIND.arbiter, true)];
+    const signers = [provider.address, arbiter.address];
+    const timeout = Number((await escrow.milestone(id)).timeout);
+    await time.setNextBlockTimestamp(timeout - 1);
+    await escrow.decide(id, true, sigs, signers);
+    expect(await escrow.state(id)).to.equal(State.Approved);
+
+    const id2 = ethers.id("milestone-2");
+    await fund(id2);
+    await escrow.connect(provider).dispute(id2);
+    const sigs2 = [
+      await attest(provider, KIND.provider, true, { milestoneId: id2 }),
+      await attest(arbiter, KIND.arbiter, true, { milestoneId: id2 }),
+    ];
+    await time.setNextBlockTimestamp(Number((await escrow.milestone(id2)).timeout));
+    await expect(escrow.decide(id2, true, sigs2, signers)).to.be.revertedWithCustomError(escrow, "DisputeWindowOver");
+  });
+
+  it("uses the extended timeout: a dispute raised near the timeout can still be decided days later", async () => {
+    const { client, provider, arbiter, escrow, fund, attest } = await setup();
+    const id2 = ethers.id("milestone-2");
+    await fund(id2);
+    const original = Number((await escrow.milestone(id2)).timeout);
+    await time.setNextBlockTimestamp(original - 60);
+    await escrow.connect(client).dispute(id2);
+    await time.increaseTo(original + 3 * 24 * 3600); // past the original timeout, inside the dispute window
+    const sigs = [
+      await attest(provider, KIND.provider, true, { milestoneId: id2 }),
+      await attest(arbiter, KIND.arbiter, true, { milestoneId: id2 }),
+    ];
+    await escrow.decide(id2, true, sigs, [provider.address, arbiter.address]);
+    expect(await escrow.state(id2)).to.equal(State.Approved);
+  });
+
+  it("a refund decision on a card-funded milestone pays the funder at once; nothing is left to refund", async () => {
+    const { treasury, client, arbiter, usdt, escrow, id, attest } = await setup(true);
+    const sigs = [await attest(client, KIND.client, false), await attest(arbiter, KIND.arbiter, false)];
+    await escrow.decide(id, false, sigs, [client.address, arbiter.address]);
+    expect(await usdt.balanceOf(treasury.address)).to.equal(100_000_000n);
+    await expect(escrow.refund(id)).to.be.revertedWithCustomError(escrow, "WrongState");
+    await expect(escrow.connect(treasury).refundApproved(id)).to.be.revertedWithCustomError(escrow, "WrongState");
+    await expect(escrow.connect(treasury).release(id)).to.be.revertedWithCustomError(escrow, "WrongState");
+  });
+
+  it("after a decision for the provider, refund() is closed even past the timeout", async () => {
+    const { provider, arbiter, escrow, id, attest } = await setup();
+    const sigs = [await attest(provider, KIND.provider, true), await attest(arbiter, KIND.arbiter, true)];
+    await escrow.decide(id, true, sigs, [provider.address, arbiter.address]);
+    await time.increaseTo((await escrow.milestone(id)).timeout);
+    await expect(escrow.refund(id)).to.be.revertedWithCustomError(escrow, "WrongState");
+  });
+
+  it("cannot decide a milestone that is missing, Released or Refunded", async () => {
+    const { treasury, client, provider, arbiter, escrow, fund, attest } = await setup();
+    const signers = [provider.address, arbiter.address];
+    const sigsFor = async (m: string) => [
+      await attest(provider, KIND.provider, true, { milestoneId: m }),
+      await attest(arbiter, KIND.arbiter, true, { milestoneId: m }),
+    ];
+    const missing = ethers.id("missing");
+    await expect(escrow.decide(missing, true, await sigsFor(missing), signers))
+      .to.be.revertedWithCustomError(escrow, "WrongState");
+
+    const released = ethers.id("released");
+    await fund(released);
+    await escrow.connect(client).approve(released);
+    await escrow.connect(treasury).release(released);
+    await expect(escrow.decide(released, true, await sigsFor(released), signers))
+      .to.be.revertedWithCustomError(escrow, "WrongState");
+
+    const refunded = ethers.id("refunded");
+    await fund(refunded);
+    await time.increaseTo((await escrow.milestone(refunded)).timeout);
+    await escrow.refund(refunded);
+    await expect(escrow.decide(refunded, true, await sigsFor(refunded), signers))
+      .to.be.revertedWithCustomError(escrow, "WrongState");
+  });
+
+  it("only the 65-byte signature form is accepted: compact (64-byte) and high-s (malleated) are rejected", async () => {
+    const { provider, arbiter, escrow, id, attest } = await setup();
+    const p = ethers.Signature.from(await attest(provider, KIND.provider, true));
+    const a = await attest(arbiter, KIND.arbiter, true);
+    // secp256k1 group order; (r, n - s, flipped v) is the other valid encoding of the same signature
+    const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+    const highS = ethers.concat([p.r, ethers.toBeHex(N - BigInt(p.s), 32), p.v === 27 ? "0x1c" : "0x1b"]);
+    await expect(escrow.decide(id, true, [highS, a], [provider.address, arbiter.address])).to.be.reverted;
+    expect(await escrow.state(id)).to.equal(State.Disputed);
+
+    await expect(escrow.decide(id, true, [p.compactSerialized, a], [provider.address, arbiter.address]))
+      .to.be.reverted;
+    expect(await escrow.state(id)).to.equal(State.Disputed);
+
+    await escrow.decide(id, true, [p.serialized, a], [provider.address, arbiter.address]);
+    expect(await escrow.state(id)).to.equal(State.Approved);
   });
 
   describe("rejects", () => {
