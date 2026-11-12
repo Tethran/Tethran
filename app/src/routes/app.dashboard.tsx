@@ -26,7 +26,7 @@ function Dashboard() {
       <div className="dark relative overflow-hidden rounded-[var(--radius-sheet)] bg-ink p-6 text-on-dark md:p-10">
         <Object3D name="coin" className="absolute -right-6 -bottom-6 size-44 md:size-64" decorative />
         <p className="text-sm text-muted-dark">Available balance</p>
-        <p className="mt-2 font-display text-6xl font-semibold tracking-[-0.05em] md:text-8xl">{balance.data === undefined ? "…" : usd(balance.data)}<span className="ml-2 text-xl text-muted-dark">test USDT</span></p>
+        <p className="mt-2 font-display text-6xl font-semibold tracking-[-0.05em] md:text-8xl">{balance.data !== undefined ? usd(balance.data) : balance.isError ? "unavailable" : "…"}<span className="ml-2 text-xl text-muted-dark">test USDT</span></p>
         <p className="mt-2 text-sm text-muted-dark">{usd(held)} more held in escrow or the vault</p>
         <div className="relative mt-8 flex flex-wrap gap-3">
           <Link to="/app/send" className={pill({ variant: "lime" })}>Send to phone<span className="grid size-8 place-items-center rounded-full bg-lime-ink text-lime"><Send className="size-4" aria-hidden /></span></Link>

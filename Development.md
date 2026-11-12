@@ -821,3 +821,62 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   with CORS on every response.
 - Open: limits are read-only in the app (changing them needs the operator's signatures on the policy and the vault
   update); release and settle stay platform actions (not in the app).
+
+---
+
+## Session 015 — 2026-11-13 — Push, demo-key signing, review findings (v0.9), Playwright
+
+### Push
+- The remote is public; the lead said to push anyway. `main` only, `--force-with-lease` on the last known remote
+  commit (c9f4ec5, checked with ls-remote), no tags. Remote main is now the rewritten history. Backup tags stay local.
+
+### Demo-key signing (DEMO_MODE only)
+- `services/backend/scripts/demo-signer.ts`, started by the seed's serve modes in the presenter's process: the
+  operator, arbiter and provider TEST keys sign there, never in the backend or the Policy Service. It signs only the
+  typed data each role needs; the operator's limit change signs the policy document and the vault SetPolicy and
+  submits them to the Policy Service, which relays the vault update on-chain.
+- App: every signing action offers "Sign with demo key" (only when the demo signer answers) next to "Sign with your
+  wallet" (the real path); results are labelled "Demo: signed with a test key". Operator limits can be changed; "Ask
+  the vault" reads the vault contract's own `check` (the same rule `execute` applies) and shows its refusal. The
+  client votes on a dispute from the milestone page (WDK wallet).
+
+### Review findings (lead), all with tests
+1. Policy: payouts need the escrow milestone Released on-chain, any funding source (`MILESTONE_NOT_RELEASED`).
+2. Policy: the milestone budget is cumulative over the Policy Service's own signed-proposal log (milestone id and
+   allocation now recorded per signed proposal, with a migration); after an approved settlement every further plan is
+   `ALREADY_SETTLED`. Two different proposals for one milestone are never both approved, also through the approval
+   queue.
+3. Webhook: a permanent funding refusal (already funded, payment in progress, wrong amount) records the event, opens a
+   `refund_needed` treasury issue (listed in the reconciliation queue) and answers 200; a transient failure (5xx) is not
+   recorded, so Stripe retries.
+4. Funding: a second payment while another is pending is `FUNDING_IN_PROGRESS`.
+5. Deposits: only our token's Transfer logs, a successful tx on this chain (already so) and now after the milestone
+   was created (block time, two minutes of slack); tests with a fake-token Transfer.
+6. Startup: outside DEMO_MODE the backend refuses a missing, placeholder, short or simulated webhook secret; the
+   simulated checkout exists only in DEMO_MODE. The seed and slice pass DEMO_MODE=1.
+7. Amounts: safe whole cents, at most MAX_MILESTONE_USD_CENTS (default $100,000), `AMOUNT_TOO_LARGE`.
+8. Identity hold: idempotent per milestone (a retried release keeps one hold, first opened time).
+9. Traces: treasury traces record the milestone id only; a test checks no raw body or signature reaches a trace.
+10. Release, refund and settle were public routes; they now need `x-platform-token` (PLATFORM_TOKEN, separate from the
+    Policy-backend internal token). Card funding has no public route but the verified webhook (plus the DEMO_MODE
+    simulated checkout); stablecoin funding needs a deposit proven on-chain. Tests for each.
+- vaultActions: at most 10 actions per request and 50 payees per action; policy signatures have no expiry
+  (documented). INTERFACES v0.9; the app explains MILESTONE_NOT_RELEASED and ALREADY_SETTLED, and a test keeps the
+  app's code lists equal to the Policy Service's types.
+
+### Tests
+- contracts 122, chain 36, policy 153, llm 61, backend 130, app 9.
+
+### Playwright (app/e2e, against the live Sepolia demo)
+- Tour (every screen at 360, 768 and 1440 px: screenshots, video, a sideways-scroll check) and the journey (1440 px,
+  video): freelancer contract (demo key) -> client pays (simulated card) and the escrow is funded on-chain -> client
+  approves on-chain -> operator lowers the limit to $5, the vault contract refuses $6 (OVER_PER_TX_CAP), limit
+  restored -> new plan for a no-payout escalation -> identity hold released -> arbiter and client decide the dispute
+  on-chain -> wrong network blocked and duplicate send refused. Journey passes in about 4 to 6 minutes.
+- Fixes it found: the simulated checkout "complete" was posted without `outcome: "paid"` (the app could not pay);
+  grid columns widened phone screens (dashboard, ledger) and the tablet header overflowed; hidden table labels
+  escaped the ledger's scroll box; the explanation under every sign button made the operator page very long (one
+  note per page now); "To Nobody" wording; a balance that stayed "…" when the wallet RPC timed out.
+- Recordings and screenshots: app/e2e-artifacts/ (git-ignored). Playwright 1.65.0 (its Chromium build was installed).
+- Open: WDK wallet reads (balance) use the WDK provider without our retry/fallback and time out on Sepolia now and
+  then.

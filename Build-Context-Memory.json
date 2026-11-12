@@ -2333,6 +2333,67 @@
         "Lead: line-by-line review of the Policy v0.8 engine and the approval rule"
       ],
       "notes": "App: cd app && npm install && npm run dev (http://localhost:3000), with npm run demo running."
+    },
+    {
+      "session_id": "session_015",
+      "timestamp": "2026-11-12T19:17:39Z",
+      "ai_agent": "Executing engineer (main session)",
+      "current_phase": "Pushed; demo-key signing; review findings v0.9; Playwright tour and journey",
+      "progress": {
+        "completed": [
+          "Pushed main (public remote, lead approved), no tags",
+          "Demo-key signing (DEMO_MODE) and operator limit change through the Policy relay; vault check in the UI",
+          "Review findings 1-10 and vault action limits, with tests; INTERFACES v0.9",
+          "Playwright tour at 360/768/1440 and the full journey on Sepolia, both passing; visual fixes"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "Second chain: Base Sepolia test ETH",
+          "Push of this round: waiting for the lead"
+        ]
+      },
+      "last_session_summary": "Session 014: Policy v0.8, RPC reliability, all nine on Sepolia, web app wired to the API.",
+      "changes_made": [
+        "services/policy: MILESTONE_NOT_RELEASED, ALREADY_SETTLED, cumulative budget, vault action limits",
+        "services/backend: webhook refund queue, pending funding guard, deposit time check, webhook secret startup check, amount bounds, platform token, vault check route, demo signer",
+        "services/chain: deposit transfers carry block time",
+        "app: demo-key signing, limit change, client dispute vote, layout fixes, e2e"
+      ],
+      "file_module_map": [
+        {
+          "file": "services/backend/scripts/demo-signer.ts",
+          "purpose": "DEMO_MODE one-click signing with test keys in the presenter process"
+        },
+        {
+          "file": "services/backend/src/issues.ts",
+          "purpose": "Treasury issues (refund needed)"
+        },
+        {
+          "file": "app/e2e/",
+          "purpose": "Playwright tour and journey"
+        }
+      ],
+      "decisions_log": [
+        "Push even though the remote is public (lead)",
+        "Platform token separate from the internal token for release/refund/settle",
+        "Demo keys never in the backend or Policy Service"
+      ],
+      "known_issues": [
+        "WDK wallet reads time out on Sepolia now and then (no retry/fallback)",
+        "Policy Service trusts the proposal milestone id (backend pins it today)",
+        "Orphaned processes from earlier runs hold ports 3000, 18787, 18788, 18797, 18798"
+      ],
+      "errors_encountered": [
+        "Simulated checkout complete posted without outcome (fixed)",
+        "Playwright browser build mismatch (switched to 1.65.0)",
+        "Playwright clears its output folder each run (journey re-recorded into its own folder)"
+      ],
+      "next_steps": [
+        "Lead: say when to push",
+        "Base Sepolia deploy when test ETH arrives",
+        "Lead review of Policy v0.9 and the treasury changes"
+      ],
+      "notes": "Recordings: app/e2e-artifacts/recordings/."
     }
   ]
 }

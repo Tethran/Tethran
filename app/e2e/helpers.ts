@@ -11,7 +11,8 @@ export async function api<T = any>(path: string): Promise<T> {
 /** A full-page screenshot under e2e-artifacts/screens/<width>/<name>.png. */
 export async function shot(page: Page, name: string) {
   const w = page.viewportSize()?.width ?? 0;
-  await page.screenshot({ path: `e2e-artifacts/screens/${w}/${name}.png`, fullPage: true });
+  // The recording caption belongs in the video, not over the content of a full-page screenshot.
+  await page.screenshot({ style: "#e2e-caption { display: none !important; }", path: `e2e-artifacts/screens/${w}/${name}.png`, fullPage: true });
 }
 
 /** Visual check: nothing may scroll the page sideways. Returns the offending elements for the report. */

@@ -197,7 +197,8 @@ ${label}: ${xs.join("; ")}` : "");
       return { paymentId: sent.tx_hash as string, simulated: false };
     }
     const s = await post<any>("/checkout/sessions", { milestone_id: milestoneId, method: CHECKOUT_METHOD[method] ?? "card" });
-    await post(`/checkout/sessions/${s.session_id}/complete`, {});
+    // SIMULATED checkout: the client completes the payment ("paid"); the backend signs the event into its webhook.
+    await post(`/checkout/sessions/${s.session_id}/complete`, { outcome: "paid" });
     return { paymentId: s.session_id as string, simulated: true };
   },
 
@@ -245,7 +246,7 @@ ${label}: ${xs.join("; ")}` : "");
       const total = payoutTotal(a.proposal);
       return {
         id: a.id, milestoneId: a.milestone_id, proposal: p, amount: dollars(total.toString()),
-        payee: p.payouts.map((x) => x.to).join(", ") || "Nobody", createdAt: a.created_at,
+        payee: p.payouts.map((x) => x.to).join(", "), createdAt: a.created_at,
         movesNoMoney: total === 0n || (a.reasons ?? []).includes("NO_PAYOUTS"),
       };
     });

@@ -110,7 +110,7 @@ function Approval({ a, onDone }: { a: ApprovalItem; onDone: () => void }) {
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-2"><DecisionChip decision={a.proposal.decision} /><span className="font-display text-3xl font-semibold tracking-[-0.04em]">{usd(a.amount)}</span></div>
       <p className="mt-3">{a.proposal.summary}</p>
-      <p className="mt-2 text-sm text-muted-foreground">To {a.payee} · milestone {a.milestoneId.slice(0, 8)}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{a.payee ? `To ${a.payee}` : "Pays no one"} · milestone {a.milestoneId.slice(0, 8)}</p>
       <ReasonList codes={a.proposal.reasons} className="mt-3" />
       {done ? <p className="mt-4 text-sm font-medium">{done.msg} <DemoSigned via={done.via} /></p> : (
         <div className="mt-4 grid gap-3">
