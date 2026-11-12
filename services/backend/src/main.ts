@@ -13,10 +13,12 @@ import { Wallet } from "ethers";
 import { EvmChainClient, SqliteIdempotencyStore, createWdkWallets, loadChain, loadEnvOnly, newProvider } from "../../chain/src/index";
 import { createWalletLayer } from "./wallets";
 import { createOperator } from "./operator";
+import { createX402Client, createX402Server } from "./x402";
+import { getCountryProfile } from "./countryProfiles";
 import { migratePayouts } from "./payouts";
 import { migratePhoneRegistry } from "./phoneRegistry";
 import { migrateReconciliation } from "./reconciliation";
-import { configFromEnv, createLlmProvider, createTracerFromEnv } from "../../llm/src/index";
+import { configFromEnv, createLlmProvider, createTracerFromEnv, traceTool } from "../../llm/src/index";
 import { createAgentSigner } from "./agentSigner";
 import { openDb } from "./db";
 import { createHttpServer, listen } from "./http";
@@ -34,7 +36,7 @@ loadEnvOnly(resolve(__dirname, "../../../.env"), [
   "CHAIN", "RPC_URL_*", "TREASURY_PRIVATE_KEY", "AGENT_SIGNER_PRIVATE_KEY", "ARBITER_ADDRESS", "POLICY_URL", "INTERNAL_TOKEN",
   "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
   "BACKEND_DATA_DIR", "BACKEND_PORT", "HOST", "CARD_HOLD_SECONDS", "MILESTONE_TIMEOUT_SECONDS",
-  "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED", "PHONE_HASH_SALT",
+  "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED", "PHONE_HASH_SALT", "X402_CAP_PER_RUN",
 ]);
 
 function need(name: string): string {
@@ -80,7 +82,38 @@ const agentSigner = createAgentSigner(
 );
 const policyClient = createPolicyClient(need("POLICY_URL"));
 const llm = createLlmProvider(configFromEnv(process.env), { fetch: globalThis.fetch as never, tracer });
+const port = Number(process.env.BACKEND_PORT ?? process.env.PORT ?? 8788);
+const host = process.env.HOST ?? "127.0.0.1";
+
+// x402: this backend sells corridor data and proofs; the agent's purchase tool pays from a WDK budget wallet.
+const x402 = createX402Server({ db, chain, payTo: treasuryWallet.address, now });
+const wdkWallets = process.env.DEMO_WALLET_SEED
+  ? createWdkWallets({ chain: chainCfg, seed: process.env.DEMO_WALLET_SEED, maxTransfer: 10_000_000_000n })
+  : undefined;
+const capPerRun = BigInt(process.env.X402_CAP_PER_RUN ?? "50000"); // 0.05 test USDT per settlement run
+const buyPaidData = wdkWallets
+  ? async (m: { id: string }) => {
+      const inv = db.prepare("SELECT country FROM invoices WHERE escrow_milestone_id = ? LIMIT 1").get(m.id) as { country: string } | undefined;
+      const profile = inv ? getCountryProfile(inv.country) : undefined;
+      if (!profile) return [];
+      const budget = await wdkWallets.account("agent_budget");
+      const client = createX402Client({
+        baseUrl: `http://127.0.0.1:${port}`, capPerRun, now,
+        payer: { address: () => budget.getAddress(), signTypedData: (t) => budget.signTypedData(t) },
+      });
+      const rules = await traceTool("buy_corridor_rules", { input: { corridor: `US-${profile.code}` }, output: (x) => ({ paid: x.paid, tx: x.transaction }) },
+        () => client.get(`/x402/corridor-rules?corridor=US-${profile.code}`));
+      const fx = await traceTool("buy_fx_quote", { input: { to: profile.currency }, output: (x) => ({ paid: x.paid, tx: x.transaction }) },
+        () => client.get(`/x402/fx-quote?to=${profile.currency}`));
+      return [
+        { tool: "buy_corridor_rules", simulated: false, data: { ...rules.data, paid_via: "x402", paid: rules.paid, tx: rules.transaction } },
+        { tool: "buy_fx_quote", simulated: false, data: { ...fx.data, paid_via: "x402", paid: fx.paid, tx: fx.transaction } },
+      ];
+    }
+  : undefined;
+
 const orchestrator = createOrchestrator({
+  buyPaidData,
   db, chain, agentSigner, tracer, now, chainName: chainCfg.name,
   policy: policyClient,
   agent: createAgent(llm, loadSavedProposals()),
@@ -90,9 +123,6 @@ const simulatedCheckout = stripeEnabled ? undefined : createSimulatedCheckout({ 
 const checkout = stripeEnabled ? createStripeCheckout({ secretKey: process.env.STRIPE_SECRET_KEY! }) : simulatedCheckout!.provider;
 
 // WDK user wallets (client, payees, subcontractor) for the wallet-layer API; demo custody of a test seed.
-const wdkWallets = process.env.DEMO_WALLET_SEED
-  ? createWdkWallets({ chain: chainCfg, seed: process.env.DEMO_WALLET_SEED, maxTransfer: 10_000_000_000n })
-  : undefined;
 const wallets = wdkWallets
   ? createWalletLayer({
       db, now,
@@ -104,10 +134,8 @@ const wallets = wdkWallets
   : undefined;
 const operator = createOperator({ db, chain, treasury, policy: policyClient, now });
 
-const port = Number(process.env.BACKEND_PORT ?? process.env.PORT ?? 8788);
-const host = process.env.HOST ?? "127.0.0.1";
 listen(createHttpServer({
-  db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets, phoneHashSalt: process.env.PHONE_HASH_SALT, operator,
+  db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets, phoneHashSalt: process.env.PHONE_HASH_SALT, operator, x402,
 }), port, host).then(
   (p) => console.log(`backend listening on ${host}:${p} (chain ${chainCfg.name} ${chainCfg.chainId}; checkout ${checkout.name}; agent ${process.env.AGENT_MODE ?? "live+replay"})`),
   (e) => {

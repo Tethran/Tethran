@@ -28,6 +28,8 @@ export interface OrchestratorDeps {
   agent: Agent;
   /** Default agent mode when a request does not choose one. */
   defaultAgentMode: AgentMode;
+  /** Paid data bought over x402 for the agent's input (optional). Runs inside the settlement trace. */
+  buyPaidData?: (m: MilestoneRow) => Promise<{ tool: string; simulated: boolean; data: unknown }[]>;
   tracer: Tracer;
   chainName: string;
   now: () => Date;
@@ -162,6 +164,15 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         async (run) => {
           const { policy } = await traceTool("get_policy_summary", { output: () => ({ ok: true }) }, () => deps.policy.getPolicy());
           const input = await traceTool("build_agent_input", { input: { milestone_id: m.id } }, async () => agentInput(m, policy));
+          if (deps.buyPaidData) {
+            try {
+              const paid = await deps.buyPaidData(m);
+              if (paid.length > 0) input.paid_data = paid;
+            } catch (e) {
+              // A failed or over-cap purchase never blocks a settlement; it is recorded in the trace.
+              run.span({ name: "x402.purchase_failed", type: "tool", error: (e as Error)?.message?.slice(0, 160) ?? "error" });
+            }
+          }
           const proposed = await deps.agent.propose(input, mode, m.scenario ?? "clean_delivery");
           const agent = { agent_mode: proposed.agent_mode, ...(proposed.replay_source ? { replay_source: proposed.replay_source } : {}) };
           if (proposed.agent_mode !== "live") run.span({ name: "agent.replay", type: "general", output: agent });

@@ -14,6 +14,7 @@ import { contractRoutes } from "./contractRoutes";
 import { parseAgentMode } from "./replay";
 import { relayVaultActions } from "./vaultRelay";
 import type { WalletLayer } from "./wallets";
+import type { createX402Server } from "./x402";
 import { operatorRoutes, type Operator } from "./operator";
 import { recordIdentity } from "./identity";
 import { payoutRoutes, processConfirmedPayouts } from "./payouts";
@@ -39,6 +40,7 @@ export interface HttpDeps {
   wallets?: WalletLayer;
   phoneHashSalt?: string;
   operator?: Operator;
+  x402?: ReturnType<typeof createX402Server>;
 }
 
 type Handler = (ctx: { params: Record<string, string>; body: any; raw: string; req: IncomingMessage; url: URL }) => Promise<unknown>;
@@ -177,6 +179,7 @@ export function createHttpServer(deps: HttpDeps): Server {
       return recordIdentity(db, params[1], body ?? {});
     }],
     ...(deps.operator ? operatorRoutes(deps.operator) : []),
+    ...(deps.x402 ? deps.x402.routes() : []),
     ["POST", /^\/webhooks\/stripe$/, async ({ raw, req }) => treasury.handleStripeWebhook(raw, req.headers["stripe-signature"] as string | undefined)],
     // Public receipt verification: read from the chain, not from the database.
     ["GET", /^\/receipts\/([^/]+)$/, async ({ params }) => {
@@ -217,8 +220,8 @@ export function createHttpServer(deps: HttpDeps): Server {
       const params = route[1].exec(url.pathname)!.map((p) => decodeURIComponent(p));
       const out = await route[2]({ params: params as unknown as Record<string, string>, body, raw, req, url });
       if (out && typeof out === "object" && (out as RawResponse).__raw === true) {
-        const r = out as RawResponse;
-        res.writeHead(200, { "content-type": r.contentType, ...(r.filename ? { "content-disposition": `attachment; filename="${r.filename}"` } : {}) });
+        const r = out as RawResponse & { status?: number; headers?: Record<string, string> };
+        res.writeHead(r.status ?? 200, { "content-type": r.contentType, ...(r.headers ?? {}), ...(r.filename ? { "content-disposition": `attachment; filename="${r.filename}"` } : {}) });
         return res.end(r.body);
       }
       send(res, 200, out);

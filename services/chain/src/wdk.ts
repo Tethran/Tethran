@@ -24,7 +24,7 @@ import type { ChainConfig } from "./types";
 export const WALLET_ID = "tethran-evm";
 
 /** Which seed account each demo role uses. */
-export const WALLET_ROLES = { client: 0, payee_amara: 1, subcontractor: 2, client_b: 3 } as const;
+export const WALLET_ROLES = { client: 0, payee_amara: 1, subcontractor: 2, client_b: 3, agent_budget: 4 } as const;
 export type WalletRole = keyof typeof WALLET_ROLES;
 
 export interface WdkAccountLike {
@@ -55,7 +55,10 @@ export function createWdkWallets(opts: {
   seed: string;
   /** Largest single USDT transfer the wallet policy allows, base units. */
   maxTransfer: bigint;
+  /** Largest single EIP-3009 authorization (x402 data payment) the wallet policy allows to sign, base units. */
+  maxAuthorization?: bigint;
 }): WdkWallets {
+  const maxAuthorization = opts.maxAuthorization ?? 1_000_000n; // 1 test USDT
   const { chain } = opts;
   assertTestNetwork(chain.chainId, chain.testnet, `WDK wallets on "${chain.key}"`);
   if (!chain.usdt || !chain.escrow) throw new Error(`chain "${chain.key}" has no usdt or escrow address yet`);
@@ -90,10 +93,21 @@ export function createWdkWallets(opts: {
         },
         {
           name: "typed-data-signing",
-          reason: "dispute attestations are EIP-712 signatures",
+          reason: "only escrow attestations, contract signatures, and small test-USDT x402 authorizations may be signed",
           operation: "signTypedData",
           action: "ALLOW",
-          conditions: [() => true],
+          conditions: [({ args }: { args: readonly any[] }) => {
+            const t = args[0] ?? {};
+            const types = Object.keys(t.types ?? {}).filter((k) => k !== "EIP712Domain");
+            const contract = String(t.domain?.verifyingContract ?? "").toLowerCase();
+            if (types.length !== 1) return false;
+            if (types[0] === "Attestation") return contract === escrow;
+            if (types[0] === "ContractSignature") return t.domain?.name === "TethranContract";
+            if (types[0] === "TransferWithAuthorization") {
+              return contract === usdt && BigInt(t.message?.value ?? 0) > 0n && BigInt(t.message.value) <= maxAuthorization;
+            }
+            return false;
+          }],
         },
       ],
     } as never);
