@@ -22,6 +22,8 @@ export interface TreasuryChain {
   };
   milestone(milestoneId: string): Promise<MilestoneView>;
   vaultState(vault: string): Promise<VaultState>;
+  /** The vault contract's own guard (the same rule execute enforces), as a view call. */
+  vaultCheck?(vault: string, to: string, amount: string): Promise<{ ok: boolean; reason: string }>;
   receiptOf(milestoneId: string): Promise<ReceiptView | undefined>;
   balance(address: string): Promise<string>;
   waitConfirmed(txHash: string): Promise<void>;

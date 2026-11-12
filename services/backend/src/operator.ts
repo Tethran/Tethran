@@ -102,6 +102,20 @@ export function createOperator(deps: {
      * Service. The Policy Service verifies the operator signature itself; this backend cannot decide for it.
      */
     policy: () => deps.policy.getPolicy(),
+
+    /** Would the provider's vault pay this amount to this payee right now? Asks the vault contract itself. */
+    async vaultCheck(providerId: string, payeeId: unknown, amount: unknown) {
+      if (!chain.vaultCheck) throw new ApiError(404, "vault checks are not available");
+      if (typeof amount !== "string" || !/^[0-9]+$/.test(amount)) throw new ApiError(400, "amount must be base units");
+      const v = db.prepare("SELECT vault FROM vaults WHERE provider_id = ?").get(providerId) as { vault: string } | undefined;
+      const p = db.prepare("SELECT address FROM payees WHERE provider_id = ? AND payee_id = ?").get(providerId, String(payeeId)) as { address: string } | undefined;
+      if (!v || !p) throw new ApiError(404, "unknown provider or payee");
+      const [r, s] = await Promise.all([chain.vaultCheck(v.vault, p.address, amount), chain.vaultState(v.vault)]);
+      return {
+        ...r, vault: v.vault, payee_id: payeeId, amount, per_tx_cap: s.perTxCap, daily_cap: s.dailyCap,
+        policy_version: s.policyVersion, checked_by: "vault contract (view call, same rule as execute)",
+      };
+    },
     async audit(milestoneId?: string) {
       if (!deps.policy.getAudit) throw new ApiError(404, "the audit log is not available");
       return deps.policy.getAudit(milestoneId);
@@ -186,6 +200,8 @@ export function operatorRoutes(op: Operator): [string, RegExp, (ctx: any) => Pro
     ["POST", /^\/operator\/identity-holds\/([^/]+)\/decision$/, async ({ params, body }) => op.decideIdentity(params[1], body ?? {})],
     // Read-only relays so the web app can show the Policy Service's policy and audit log (it has no CORS of its own).
     ["GET", /^\/operator\/policy$/, async () => op.policy()],
+    ["GET", /^\/operator\/vault-check$/, async ({ url }) =>
+      op.vaultCheck(url.searchParams.get("provider_id") ?? "prov-demo", url.searchParams.get("payee_id"), url.searchParams.get("amount"))],
     ["GET", /^\/operator\/audit$/, async ({ url }) => op.audit(url.searchParams.get("milestone_id") ?? undefined)],
     ["GET", /^\/operator\/approvals\/([^/]+)\/typed-data$/, async ({ params, url }) => op.approvalTypedData(params[1], url.searchParams.get("decision"))],
     ["POST", /^\/operator\/approvals\/([^/]+)\/decision$/, async ({ params, body }) => op.decideApproval(params[1], body ?? {})],

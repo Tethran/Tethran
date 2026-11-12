@@ -34,3 +34,47 @@ export async function signTyped(typed: Typed): Promise<{ signer: string; signatu
     throw new ApiError("SIGNATURE_DECLINED", (e as Error)?.message || "The wallet did not sign.");
   }
 }
+
+// ---------- DEMO MODE ONLY: one-click signing with server-side TEST keys ----------
+// The demo signer runs in the presenter's process (`npm run demo`), never in the backend. Every action signed this
+// way is labelled "Demo: signed with a test key" in the UI. The browser wallet above is the real path.
+
+export type SignRole = "operator" | "arbiter" | "provider";
+export type Via = "wallet" | "demo";
+export const DEMO_LABEL = "Demo: signed with a test key";
+
+export const DEMO_SIGNER: string =
+  (import.meta.env?.["VITE_TETHRAN_DEMO_SIGNER_URL"] as string | undefined) ?? "http://127.0.0.1:18789";
+
+/** The demo signer's roles and addresses, or null when it is not running (then only the wallet path is offered). */
+export async function demoSignerInfo(): Promise<{ roles: Record<SignRole, string>; label: string } | null> {
+  try {
+    const r = await fetch(`${DEMO_SIGNER}/health`, { signal: AbortSignal.timeout(2500) });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function demoPost<T>(path: string, body: unknown): Promise<T> {
+  let r: Response;
+  try {
+    r = await fetch(`${DEMO_SIGNER}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  } catch {
+    throw new ApiError("DEMO_SIGNER_DOWN", "The demo signer isn't running. Start the demo with `npm run demo`, or sign with your wallet.");
+  }
+  const j: any = await r.json().catch(() => ({}));
+  if (!r.ok) throw new ApiError("DEMO_SIGNER", j.error ?? `The demo signer answered ${r.status}.`, r.status);
+  return j as T;
+}
+
+/** Signs as `role`: with the user's wallet (real) or, in demo mode, with that role's test key. */
+export async function signAs(role: SignRole, typed: Typed, via: Via): Promise<{ signer: string; signature: string; demo: boolean }> {
+  if (via === "wallet") return { ...(await signTyped(typed)), demo: false };
+  const r = await demoPost<{ signer: string; signature: string }>("/sign", { role, typed });
+  return { signer: r.signer, signature: r.signature, demo: true };
+}
+
+/** DEMO MODE: the operator changes the spending limits (base units); relayed to the vault by the Policy Service. */
+export const demoSetLimits = (limits: { per_tx_cap: string; per_tx_soft_limit?: string; daily_cap?: string }) =>
+  demoPost<{ policy_version: number; vault_policy_version: number; per_tx_cap: string; vault_transactions: { type: string; version: number; tx: string }[] }>("/operator/limits", limits);

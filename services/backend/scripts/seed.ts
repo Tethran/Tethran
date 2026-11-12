@@ -30,6 +30,7 @@ import { Wallet, id as keccakUtf8 } from "ethers";
 import { parse } from "dotenv";
 import { EvmChainClient, InMemoryIdempotencyStore, VAULT_TYPES, createWdkWallets, loadChain, newProvider, safeErrorMessage } from "../../chain/src/index";
 import { openDb } from "../src/db";
+import { startDemoSigner } from "./demo-signer";
 import { policyDocumentTypes, policyDocumentValue, policyDomain } from "../../policy/src/typed";
 
 const ROOT = resolve(__dirname, "../../..");
@@ -55,6 +56,9 @@ const POLICY_PORT = Number(env("DEMO_POLICY_PORT") || 18787);
 const BACKEND_PORT = Number(env("DEMO_BACKEND_PORT") || 18788);
 const POLICY = `http://127.0.0.1:${POLICY_PORT}`;
 const BACKEND = `http://127.0.0.1:${BACKEND_PORT}`;
+const SIGNER_PORT = Number(env("DEMO_SIGNER_PORT") || 18789);
+// Origins of the web app (the backend's CORS and the demo signer's): CORS_ORIGINS, else the dev server on port 3000.
+const APP_ORIGINS = (env("CORS_ORIGINS") || "http://localhost:3000,http://127.0.0.1:3000").split(",").map((o) => o.trim()).filter(Boolean);
 
 function start(name: string, entry: string, allowed: Record<string, string>, quiet: boolean): ChildProcess {
   const base: Record<string, string> = {};
@@ -164,9 +168,21 @@ function serviceEnv(chainKey: string, internalToken: string) {
       ...rpcEnv, ...llmEnv, LLM_TIMEOUT_MS: "90000", CHAIN: chainKey, TREASURY_PRIVATE_KEY: env("TREASURY_PRIVATE_KEY"),
       AGENT_SIGNER_PRIVATE_KEY: env("AGENT_SIGNER_PRIVATE_KEY"), ARBITER_ADDRESS: wallet("ARBITER").address,
       POLICY_URL: POLICY, INTERNAL_TOKEN: internalToken, BACKEND_DATA_DIR: DATA, BACKEND_PORT: String(BACKEND_PORT),
-      DEMO_WALLET_SEED: env("DEMO_WALLET_SEED"), AGENT_MODE: env("AGENT_MODE") || "replay", X402_CAP_PER_RUN: env("X402_CAP_PER_RUN") || "50000",
+      CORS_ORIGINS: APP_ORIGINS.join(","), DEMO_WALLET_SEED: env("DEMO_WALLET_SEED"), AGENT_MODE: env("AGENT_MODE") || "replay", X402_CAP_PER_RUN: env("X402_CAP_PER_RUN") || "50000",
     },
   };
+}
+
+/** DEMO MODE ONLY: one-click test-key signing for the web app (see demo-signer.ts). */
+function demoSigner(chain: ReturnType<typeof loadChain>, vault: string) {
+  const provider = newProvider(chain);
+  const relay = new EvmChainClient(chain, wallet("TREASURY").connect(provider), new InMemoryIdempotencyStore(), { provider });
+  startDemoSigner({
+    port: SIGNER_PORT, origins: APP_ORIGINS, relay, vault, escrow: chain.escrow, policyUrl: POLICY,
+    keys: { operator: wallet("OPERATOR"), arbiter: wallet("ARBITER"), provider: wallet("PROVIDER") },
+    log: (l) => console.log("  " + l),
+  });
+  console.log(`Demo signer (test keys, DEMO_MODE only): http://127.0.0.1:${SIGNER_PORT}`);
 }
 
 async function main() {
@@ -199,6 +215,7 @@ async function main() {
     children.push(start("backend", join(ROOT, "services/backend/src/main.ts"), se.backend, false));
     await waitHealthy(`${POLICY}/v1/policy`, "Policy Service");
     await waitHealthy(`${BACKEND}/health`, "backend");
+    demoSigner(chain, vault);
     console.log(`Demo services running on the seeded state: backend ${BACKEND}, Policy Service ${POLICY}. Ctrl+C to stop.`);
     await new Promise(() => {});
   }
@@ -437,6 +454,7 @@ async function main() {
   if (queue.ok) console.log(`  operator queue: ${JSON.stringify(queue.body).length > 2 ? "has items (identity hold, escalations, dispute)" : "empty"}`);
   console.log(`  details: .demo-data/seed-summary.json`);
   if (SERVE) {
+    demoSigner(chain, vault);
     console.log(`\nServices stay up: backend ${BACKEND}, Policy Service ${POLICY}. Ctrl+C to stop.`);
     await new Promise(() => {});
   }

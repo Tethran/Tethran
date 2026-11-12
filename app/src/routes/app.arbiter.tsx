@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/api";
+import { api, ApiError, DEMO_LABEL, type Via } from "@/api";
+import { SignChoice } from "@/components/app/SignChoice";
 import type { Dispute } from "@/api/types";
 import { PageHead } from "@/components/app/AppShell";
 import { Async, EmptyBlock, useApi } from "@/components/app/demo-state";
@@ -20,11 +21,11 @@ function Case({ d, onDone }: { d: Dispute; onDone: () => void }) {
   const [summary, setSummary] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
-  const vote = async (release: boolean) => {
+  const vote = async (release: boolean, via: Via) => {
     setBusy(true);
     try {
-      const r = await api.arbiterVote(d.milestoneId, release);
-      const msg = r.decided ? `Settled on-chain: ${r.outcome}.` : "Your vote is recorded. One more party with the same outcome settles the case.";
+      const r = await api.arbiterVote(d.milestoneId, release, via);
+      const msg = (r.decided ? `Settled on-chain: ${r.outcome}.` : "Your vote is recorded. One more party with the same outcome settles the case.") + (via === "demo" ? ` ${DEMO_LABEL}.` : "");
       setResult(msg); toast.success(msg); onDone();
     } catch (e) { toast.error((e as ApiError).message); } finally { setBusy(false); }
   };
@@ -62,9 +63,9 @@ function Case({ d, onDone }: { d: Dispute; onDone: () => void }) {
           <div className="mt-4 text-center animate-stamp"><p className="inline-block rounded-xl border-2 border-lime px-4 py-2 font-display text-xl text-lime">{result}</p></div>
         ) : (
           <div className="mt-6 grid gap-3">
-            <button disabled={busy} onClick={() => vote(true)} className="min-h-12 rounded-full bg-lime font-medium text-lime-ink disabled:opacity-50">Release to provider</button>
-            <button disabled={busy} onClick={() => vote(false)} className="min-h-12 rounded-full border border-line-dark hover:bg-ink-2 disabled:opacity-50">Refund client</button>
-            <p className="text-center text-xs text-muted-dark">Signed with your arbiter wallet. The escrow checks the signatures itself.</p>
+            <SignChoice label="Release to provider" tone="lime" busy={busy} onSign={(via) => vote(true, via)} />
+            <SignChoice label="Refund client" tone="danger" busy={busy} onSign={(via) => vote(false, via)} />
+            <p className="text-center text-xs text-muted-dark">Signed by the arbiter. The escrow checks the signatures itself.</p>
           </div>
         )}
       </div>

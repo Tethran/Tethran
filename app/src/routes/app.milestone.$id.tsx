@@ -86,6 +86,16 @@ function MilestonePage() {
                 <Card dark className="flex items-center gap-3"><Clock className="size-5 text-progress" aria-hidden /><div className="flex-1 text-sm">Card protection hold ends in</div><Countdown until={m.cardHoldEndsAt} /></Card>
               )}
               {!m.live && <Card><p className="text-sm">Not funded yet. Share the invoice so the client can pay.</p></Card>}
+              {st === "Disputed" && (
+                <Card>
+                  <h2 className="text-xl">Client's vote</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Two of client, provider and arbiter decide. Signed by the client's WDK wallet.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button data-testid="client-vote-release" disabled={busy} onClick={() => run(() => api.clientVote(m.id, true), "Your vote is recorded.")} className="min-h-11 rounded-full bg-ink px-5 text-sm text-on-dark disabled:opacity-40">Release to provider</button>
+                    <button disabled={busy} onClick={() => run(() => api.clientVote(m.id, false), "Your vote is recorded.")} className="min-h-11 rounded-full border px-5 text-sm hover:border-danger disabled:opacity-40">Refund me</button>
+                  </div>
+                </Card>
+              )}
               {m.live && (st === "In review" || st === "Funded") && (
                 <div className="grid gap-2">
                   <PillButton variant="ink" size="lg" className="justify-between" disabled={busy} onClick={() => run(() => api.setMilestoneStatus(m.id, "Approved"), "Work approved on-chain by the client's wallet.")}>Approve work</PillButton>

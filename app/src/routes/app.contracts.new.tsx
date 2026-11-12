@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api";
 import type { Country } from "@/api/types";
+import { SignChoice } from "@/components/app/SignChoice";
 import { PageHead } from "@/components/app/AppShell";
 import { Object3D } from "@/components/tethran/Object3D";
 import { PillButton, usd } from "@/components/tethran/ui";
@@ -83,14 +84,14 @@ function Builder() {
       <div className="mt-6 flex justify-between">
         <button disabled={step === 0} onClick={() => setStep(step - 1)} className="min-h-11 rounded-full px-5 text-sm disabled:opacity-40">Back</button>
         {step < 3 ? <PillButton disabled={!valid} onClick={() => setStep(step + 1)}>Continue</PillButton>
-          : <PillButton variant="ink" disabled={!valid || busy} onClick={async () => {
+          : <SignChoice label={busy ? "Signing…" : "Sign and send"} busy={!valid || busy} onSign={async (via) => {
             setBusy(true);
             try {
-              const r = await api.createContract({ clientName: client, clientEmail: email, country: country as Country, milestones: ms.map((m) => ({ title: m.title, amountUsd: Number(m.amount), criteria: m.criteria })) });
-              toast.success("Contract signed by both parties", { description: "The invoice is ready to share.", icon: <Check className="size-4" /> });
+              const r = await api.createContract({ clientName: client, clientEmail: email, country: country as Country, milestones: ms.map((m) => ({ title: m.title, amountUsd: Number(m.amount), criteria: m.criteria })) }, via);
+              toast.success("Contract signed by both parties", { description: via === "demo" ? "Provider: demo, signed with a test key. The invoice is ready to share." : "The invoice is ready to share.", icon: <Check className="size-4" /> });
               if (r.invoiceId) nav({ to: "/app/invoice/$id", params: { id: r.invoiceId } }); else nav({ to: "/app/dashboard" });
             } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
-          }}>{busy ? "Signing…" : "Sign with your wallet and send"}</PillButton>}
+          }} />}
       </div>
     </div>
   );

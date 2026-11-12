@@ -2,7 +2,8 @@
 // responses are mapped into the screen types in ./types. Anything the backend labels simulated stays labelled.
 import { ApiError, API_BASE, centsToDollars, dollars, get, post } from "./http";
 import { POLICY_ESCALATE_CODES, POLICY_REJECT_CODES } from "./reasons";
-import { signTyped } from "./wallet";
+import { demoSetLimits, demoSignerInfo, signAs, type Via } from "./wallet";
+export { DEMO_LABEL, type Via } from "./wallet";
 import type {
   ApprovalItem, AuditEntry, Contract, Country, Decision, Dispute, IdentityHold, Invoice, Limits, Milestone, MilestoneStatus,
   Proposal, Receipt, ReconRow, WalletReview,
@@ -258,15 +259,15 @@ ${label}: ${xs.join("; ")}` : "");
    * The vault operator decides an escalated plan: approve, reject, or request a new plan. The operator signs with their
    * own wallet; the Policy Service checks the signature. A plan that moves no money cannot be approved.
    */
-  decideApproval: async (item: ApprovalItem, decision: "approve" | "reject" | "new_plan") => {
+  decideApproval: async (item: ApprovalItem, decision: "approve" | "reject" | "new_plan", via: Via = "wallet") => {
     if (decision === "approve" && item.movesNoMoney) throw new ApiError("NO_PAYOUTS", "This plan pays nobody. Request a new plan or reject it.");
     const typed = await get<any>(`/operator/approvals/${item.id}/typed-data?decision=${decision}`);
-    const { signature } = await signTyped(typed);
+    const { signature } = await signAs("operator", typed, via);
     return post<any>(`/milestones/${item.milestoneId}/escalations/${item.id}/execute`, { decision, operator_signature: signature });
   },
-  decideIdentity: async (milestoneId: string, decision: "release" | "hold") => {
+  decideIdentity: async (milestoneId: string, decision: "release" | "hold", via: Via = "wallet") => {
     const typed = await get<any>(`/operator/identity-holds/${milestoneId}/typed-data?decision=${decision}`);
-    const { signature } = await signTyped(typed);
+    const { signature } = await signAs("operator", typed, via);
     return post<any>(`/operator/identity-holds/${milestoneId}/decision`, { decision, operator_signature: signature });
   },
   listAudit: async (): Promise<AuditEntry[]> => {
@@ -292,14 +293,14 @@ ${label}: ${xs.join("; ")}` : "");
     attestations: (d.attestations ?? []).map((a: any) => ({ signer: a.signer, kind: a.kind, releaseToProvider: a.release_to_provider === 1 || a.release_to_provider === true, at: a.at })),
   })),
   /** The arbiter's vote, signed with the arbiter's own wallet. Two matching votes settle the escrow on-chain. */
-  arbiterVote: async (milestoneId: string, release: boolean) => {
+  arbiterVote: async (milestoneId: string, release: boolean, via: Via = "wallet") => {
     const typed = await get<any>(`/arbiter/disputes/${milestoneId}/typed-data?kind=arbiter&release_to_provider=${release}`);
-    const { signer, signature } = await signTyped(typed);
+    const { signer, signature } = await signAs("arbiter", typed, via);
     return post<any>(`/arbiter/disputes/${milestoneId}/attestations`, { signer, signature, release_to_provider: release });
   },
 
   /** Creates and signs a contract: the provider signs with their own wallet, the client with its WDK wallet. */
-  createContract: async (input: { clientName: string; clientEmail: string; country: Country; milestones: { title: string; amountUsd: number; criteria: string }[] }) => {
+  createContract: async (input: { clientName: string; clientEmail: string; country: Country; milestones: { title: string; amountUsd: number; criteria: string }[] }, via: Via = "wallet") => {
     const [prov, wallets] = await Promise.all([provider(), get<any>("/wallets")]);
     const client = wallets.wallets.find((w: any) => w.role === "client")?.address;
     if (!client) throw new ApiError("NO_CLIENT_WALLET", "The demo client wallet is not configured.");
@@ -310,7 +311,7 @@ ${label}: ${xs.join("; ")}` : "");
       milestones: input.milestones.map((m) => ({ title: m.title, amount_usd_cents: Math.round(m.amountUsd * 100), acceptance_criteria: m.criteria || m.title, due_date: due })),
     });
     const typed = await get<any>(`/contracts/${c.id}/typed-data?party=provider`);
-    const { signer, signature } = await signTyped(typed);
+    const { signer, signature } = await signAs("provider", typed, via);
     await post(`/contracts/${c.id}/sign`, { party: "provider", signer, signature });
     await post(`/wallets/client/contracts/${c.id}/sign`);
     let firstInvoice: string | null = null;
@@ -320,6 +321,33 @@ ${label}: ${xs.join("; ")}` : "");
       firstInvoice ??= (await get<any>(`/contracts/${c.id}/milestones`)).milestones.find((x: any) => x.id === m.id)?.invoice_id ?? null;
     }
     return { contractId: c.id as string, invoiceId: firstInvoice };
+  },
+
+  /** The client's own dispute vote (2-of-3), signed by the client's WDK wallet (demo custody). */
+  clientVote: async (milestoneId: string, release: boolean) => {
+    const a = await post<any>(`/wallets/client/attestations/${milestoneId}`, { kind: "client", release_to_provider: release });
+    return post<any>(`/arbiter/disputes/${milestoneId}/attestations`, { signer: a.signer, signature: a.signature, release_to_provider: release });
+  },
+
+  /** DEMO MODE: is the one-click demo signer running? (null when not; then only the wallet path is shown) */
+  demoSigner: demoSignerInfo,
+  /**
+   * The operator changes the spending limits (dollars). DEMO MODE only: signed with the operator's test key and relayed
+   * to the vault by the Policy Service. (With a real wallet the operator would sign the same two messages.)
+   */
+  setLimits: async (l: { perPayment: number; softLimit?: number; daily?: number }) => {
+    const base = (usd: number) => (BigInt(Math.round(usd * 100)) * 10_000n).toString();
+    return demoSetLimits({
+      per_tx_cap: base(l.perPayment),
+      ...(l.softLimit !== undefined ? { per_tx_soft_limit: base(l.softLimit) } : {}),
+      ...(l.daily !== undefined ? { daily_cap: base(l.daily) } : {}),
+    });
+  },
+  /** Asks the vault contract whether it would pay this amount (dollars) to this payee right now. */
+  vaultCheck: async (payeeId: string, usd: number) => {
+    const amount = (BigInt(Math.round(usd * 100)) * 10_000n).toString();
+    const r = await get<any>(`/operator/vault-check?payee_id=${encodeURIComponent(payeeId)}&amount=${amount}`);
+    return { ok: r.ok as boolean, reason: String(r.reason ?? ""), perTxCap: dollars(r.per_tx_cap), policyVersion: r.policy_version as number };
   },
 
   /** Wallet review and send (the client's WDK wallet). Nothing is signed by review. */
