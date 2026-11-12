@@ -1,0 +1,19 @@
+{
+  "name": "tethran-policy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Policy Service rule engine, reason codes and audit log. Pure and deterministic. Test networks only.",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.8.3"
+  }
+}
