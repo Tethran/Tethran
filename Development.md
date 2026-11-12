@@ -647,3 +647,20 @@ block after the relay): both handled, nothing paid wrongly.
 
 ### Test counts
 Contracts 122, ChainClient 29, Policy Service 117, LLM 59, backend 107.
+
+---
+
+## 2026-11-13 — History rewrite (approved exception)
+
+The lead approved one exception to "never edit a previous session object": tool names were neutralised in every
+commit's version of `Build-Context-Memory.json` and `Development.md`, and the ignore entry for the local tool folder
+was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
+- Backup first: tag `pre-rewrite-backup` points at the old history (local; never to be pushed).
+- Rewrite: `git filter-branch --tree-filter` over all 57 commits of `main`; the meaning of every entry is unchanged
+  (for example "executing engineer" and "helper agent" replace the tool and model names).
+- Verified with a full-history grep: no tool or model names in commit messages, in the memory file or in this log,
+  apart from references to the file name the project rules file.
+- Still in history and left as they are (outside the approved scope): the lead's the project rules file and the working guide
+  (the file name and their no-attribution rules) and one early line of the architecture document.
+- Nothing pushed. The remote still has the 39 pre-rewrite commits from the first push; pushing the rewritten
+  history will need a force push when the lead decides.
