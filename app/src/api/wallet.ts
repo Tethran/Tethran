@@ -75,6 +75,10 @@ export async function signAs(role: SignRole, typed: Typed, via: Via): Promise<{ 
   return { signer: r.signer, signature: r.signature, demo: true };
 }
 
+/** DEMO MODE: the platform releases the milestone and runs the settlement (see api.demoSettle). */
+export const demoSettle = (milestoneId: string) =>
+  demoPost<{ release: unknown; settle: { decision: string; reasons: string[] } }>("/platform/settle", { milestone_id: milestoneId });
+
 /** DEMO MODE: the operator changes the spending limits (base units); relayed to the vault by the Policy Service. */
 export const demoSetLimits = (limits: { per_tx_cap: string; per_tx_soft_limit?: string; daily_cap?: string }) =>
   demoPost<{ policy_version: number; vault_policy_version: number; per_tx_cap: string; vault_transactions: { type: string; version: number; tx: string }[] }>("/operator/limits", limits);

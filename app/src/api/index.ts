@@ -2,7 +2,7 @@
 // responses are mapped into the screen types in ./types. Anything the backend labels simulated stays labelled.
 import { ApiError, API_BASE, centsToDollars, dollars, get, post } from "./http";
 import { POLICY_ESCALATE_CODES, POLICY_REJECT_CODES } from "./reasons";
-import { demoSetLimits, demoSignerInfo, signAs, type Via } from "./wallet";
+import { demoSetLimits, demoSettle, demoSignerInfo, signAs, type Via } from "./wallet";
 export { DEMO_LABEL, type Via } from "./wallet";
 import type {
   ApprovalItem, AuditEntry, Contract, Country, Decision, Dispute, IdentityHold, Invoice, Limits, Milestone, MilestoneStatus,
@@ -125,6 +125,10 @@ async function milestoneDetail(id: string) {
     ...base, status: statusOf(m.state), escrowTx: m.escrow_tx, releaseTx: m.release_tx,
     evidence: (t.evidence ?? []).map((e: any) => `Evidence #${e.id} · ${String(e.at).slice(0, 16).replace("T", " ")}`),
     ...(holdEnds ? { cardHoldEndsAt: holdEnds } : {}),
+    payouts: (t.payouts ?? []).map((p: any) => ({
+      to: prov.payees.find((x) => x.payee_id === p.payee_id)?.name ?? p.payee_id, amount: dollars(p.amount), rail: String(p.rail ?? "usdt"),
+      simulated: p.simulated === 1 || p.simulated === true, tx: p.tx ?? null, status: String(p.status ?? ""),
+    })),
   };
   return { milestone, contract, proposal: history.at(-1) ?? null, history };
 }
@@ -332,6 +336,12 @@ ${label}: ${xs.join("; ")}` : "");
 
   /** DEMO MODE: is the one-click demo signer running? (null when not; then only the wallet path is shown) */
   demoSigner: demoSignerInfo,
+  /**
+   * DEMO MODE: the platform's own step after the client approves: release the escrow to the vault, then settle (the
+   * agent proposes, the Policy Service decides, the vault pays, the receipt is minted). Run by the presenter's process
+   * with the platform token; the browser never holds it.
+   */
+  demoSettle: demoSettle,
   /**
    * The operator changes the spending limits (dollars). DEMO MODE only: signed with the operator's test key and relayed
    * to the vault by the Policy Service. (With a real wallet the operator would sign the same two messages.)

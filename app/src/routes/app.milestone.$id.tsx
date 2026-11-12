@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Check, Clock, Paperclip, Sparkles } from "lucide-react";
+import { ArrowUpRight, Check, Clock, FlaskConical, Paperclip, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/api";
 import type { MilestoneStatus } from "@/api/types";
 import { PageHead } from "@/components/app/AppShell";
 import { Async, EmptyBlock, useApi } from "@/components/app/demo-state";
-import { Amount, Card, DecisionChip, PillButton, ReasonList, SimTag, StatusChip } from "@/components/tethran/ui";
+import { useDemoSigner } from "@/components/app/SignChoice";
+import { Amount, Card, DecisionChip, PillButton, ReasonList, SimTag, StatusChip, usd } from "@/components/tethran/ui";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/milestone/$id")({
@@ -35,6 +36,7 @@ function MilestonePage() {
   const q = useApi(["milestone", id], () => api.getMilestone(id));
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const demo = useDemoSigner();
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
     try { await fn(); toast.success(ok); await q.refetch(); } catch (e) { toast.error((e as ApiError).message); } finally { setBusy(false); }
@@ -58,7 +60,21 @@ function MilestonePage() {
               {(m.escrowTx || m.releaseTx) && (
                 <p className="font-mono text-xs text-muted-foreground">{m.escrowTx && <>Escrow funded: {m.escrowTx.slice(0, 14)}… </>}{m.releaseTx && <>· Released: {m.releaseTx.slice(0, 14)}…</>}</p>
               )}
-              {st === "Paid out" && <Link to="/receipt/$id" params={{ id: m.id }} className="mt-4 inline-block text-sm underline">View the receipt</Link>}
+              {m.payouts && m.payouts.length > 0 && (
+                <div data-testid="vault-payouts" className="mt-6"><Card>
+                  <h2 className="text-xl">Paid from the vault</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Each transfer carries the Policy Service's co-signature; the vault checked its own limits before paying.</p>
+                  <ul className="mt-3 grid gap-2">
+                    {m.payouts.map((p, k) => (
+                      <li key={k} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                        <span>{usd(p.amount)} to {p.to}{p.simulated && <SimTag label="Simulated rail" className="ml-2" />}</span>
+                        <span className="font-mono text-xs text-muted-foreground">{p.tx ? <>{p.tx.slice(0, 14)}…</> : p.status}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Card></div>
+              )}
+              {st === "Paid out" && <Link to="/receipt/$id" params={{ id: m.id }} data-testid="view-receipt" className="mt-4 inline-flex items-center gap-1 text-sm underline">View the receipt<ArrowUpRight className="size-4" aria-hidden /></Link>}
             </div>
             <div className="grid content-start gap-4">
               <Card>
@@ -78,12 +94,22 @@ function MilestonePage() {
                   <p className="mt-2">{proposal.summary}</p>
                   <div className="mt-3"><DecisionChip decision={proposal.decision} /></div>
                   <ReasonList codes={proposal.reasons} className="mt-3" />
+                  {proposal.decision === "APPROVED" && <p className="mt-3 text-sm" data-testid="policy-approved">Policy Service: every rule passed, so it co-signed {proposal.payouts.length === 1 ? "the payout" : `${proposal.payouts.length} payouts`}.</p>}
                   {proposal.flags.length > 0 && <p className="mt-3 text-xs text-muted-foreground">The AI flagged: {proposal.flags.map((f) => f.code).join(", ")}</p>}
                   {proposal.traceId && <p className="mt-2 font-mono text-[0.68rem] text-muted-foreground">Trace {proposal.traceId}</p>}
                 </Card>
               )}
               {m.cardHoldEndsAt && st !== "Paid out" && Date.parse(m.cardHoldEndsAt) > Date.now() && (
                 <Card dark className="flex items-center gap-3"><Clock className="size-5 text-progress" aria-hidden /><div className="flex-1 text-sm">Card protection hold ends in</div><Countdown until={m.cardHoldEndsAt} /></Card>
+              )}
+              {demo && m.live && (st === "Approved" || st === "Released") && (
+                <Card className="border-dashed border-progress">
+                  <p className="flex items-center gap-2 text-sm font-medium"><FlaskConical className="size-4" aria-hidden />Platform step (demo)</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Releases the escrow to the provider's vault, then asks the AI for a settlement plan. The Policy Service decides; the vault pays only what it co-signed.</p>
+                  <button data-testid="demo-settle" disabled={busy} onClick={() => run(() => api.demoSettle(m.id), "Settled. The vault paid and the receipt is minted.")} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 text-sm font-medium text-on-dark disabled:opacity-40">
+                    <FlaskConical className="size-4" aria-hidden />{busy ? "Settling…" : "Release and settle"}
+                  </button>
+                </Card>
               )}
               {!m.live && <Card><p className="text-sm">Not funded yet. Share the invoice so the client can pay.</p></Card>}
               {st === "Disputed" && (

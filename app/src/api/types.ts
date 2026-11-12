@@ -20,6 +20,18 @@ export interface Milestone {
   live: boolean;
   escrowTx?: string | null;
   releaseTx?: string | null;
+  /** Transfers out of the provider's vault for this milestone (each co-signed by the Policy Service). */
+  payouts?: VaultPayout[];
+}
+
+export interface VaultPayout {
+  to: string;
+  amount: number;
+  /** usdt (on-chain), or a SIMULATED rail (mobile money, bank) whose off-chain leg is simulated. */
+  rail: string;
+  simulated: boolean;
+  tx: string | null;
+  status: string;
 }
 
 export interface Contract {

@@ -6,12 +6,15 @@
 //   POST /sign                   { role, typed } -> { signer, signature, demo: true }   (only the typed data below)
 //   POST /operator/limits        { per_tx_cap, per_tx_soft_limit?, daily_cap? } (base units) -> the Policy Service
 //                                relays the operator-signed vault update on-chain; waits until the vault shows it
+//   POST /platform/settle        { milestone_id } -> the platform's own step after the client approved: release the
+//                                escrow to the vault, then settle (agent proposes, Policy Service decides, vault pays,
+//                                receipt minted). Uses the platform token held by this process, never by the browser.
 //
 // Allowed typed data, by role (anything else is refused):
 //   operator  TethranOperator.IdentityDecision, TethranPolicy.ApprovalDecision
 //   arbiter   TethranEscrow.Attestation (on the configured escrow)
 //   provider  TethranContract.ContractSignature
-import { createServer, type Server } from "node:http";
+import { createServer, request, type Server } from "node:http";
 import { Wallet } from "ethers";
 import { VAULT_TYPES, type EvmChainClient } from "../../chain/src/index";
 import { policyDocumentTypes, policyDocumentValue, policyDomain } from "../../policy/src/typed";
@@ -32,6 +35,8 @@ export function startDemoSigner(opts: {
   vault: string;
   escrow: string;
   policyUrl: string;
+  /** The backend and the platform token for /platform/settle. */
+  platform: { backendUrl: string; token: string };
   log: (line: string) => void;
 }): Server {
   const send = (res: any, origin: string, status: number, body: unknown) => {
@@ -94,6 +99,34 @@ export function startDemoSigner(opts: {
     };
   }
 
+  async function platformSettle(body: any) {
+    const id = body?.milestone_id;
+    if (typeof id !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(id)) throw Object.assign(new Error("milestone_id is required"), { status: 400 });
+    // node:http rather than fetch: a settlement on a public test network can take longer than fetch's 5-minute
+    // header timeout (several transactions, each waiting for confirmations).
+    const call = (step: "release" | "settle") => new Promise<any>((resolve, reject) => {
+      const req = request(`${opts.platform.backendUrl}/milestones/${id}/${step}`, {
+        method: "POST", headers: { "content-type": "application/json", "x-platform-token": opts.platform.token },
+      }, (res) => {
+        let text = "";
+        res.on("data", (d) => (text += d));
+        res.on("end", () => {
+          let out: any = {};
+          try { out = JSON.parse(text); } catch { /* not JSON */ }
+          const status = res.statusCode ?? 500;
+          if (status >= 400) return reject(Object.assign(new Error(out?.error?.message ?? out?.error ?? `${step} answered ${status}`), { status: status === 409 ? 409 : 502 }));
+          resolve(out);
+        });
+      });
+      req.on("error", (e) => reject(Object.assign(e, { status: 502 })));
+      req.end("{}");
+    });
+    const release = await call("release"); // idempotent: an already released milestone answers { already: true }
+    const settle = await call("settle");
+    opts.log(`demo signer: platform released and settled ${id.slice(0, 8)} -> ${settle?.decision}`);
+    return { release, settle, demo: true, label: "Demo: platform step run by the presenter's process" };
+  }
+
   const server = createServer(async (req, res) => {
     const origin = String(req.headers.origin ?? "");
     if (req.method === "OPTIONS") {
@@ -117,6 +150,7 @@ export function startDemoSigner(opts: {
       const body = raw ? JSON.parse(raw) : {};
       if (req.method === "POST" && url.pathname === "/sign") return send(res, origin, 200, await sign(String(body.role), body.typed));
       if (req.method === "POST" && url.pathname === "/operator/limits") return send(res, origin, 200, await setLimits(body));
+      if (req.method === "POST" && url.pathname === "/platform/settle") return send(res, origin, 200, await platformSettle(body));
       return send(res, origin, 404, { error: "not found" });
     } catch (e: any) {
       return send(res, origin, e?.status ?? 500, { error: String(e?.message ?? "error").replace(/https?:\/\/\S+/g, "[url]") });

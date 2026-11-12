@@ -66,7 +66,10 @@ function start(name: string, entry: string, allowed: Record<string, string>, qui
     if (process.env[k]) base[k] = process.env[k]!;
   }
   const tsx = join(ROOT, "services/backend/node_modules/tsx/dist/cli.mjs");
-  const child = spawn(process.execPath, [tsx, entry], { env: { ...base, ...allowed }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = entry.endsWith("vite.js")
+    // The web app's dev server (no keys; it only gets the backend and demo signer URLs).
+    ? spawn(process.execPath, [entry, "dev", "--port", allowed.APP_PORT, "--strictPort"], { cwd: join(ROOT, "app"), env: { ...base, ...allowed }, stdio: ["ignore", "pipe", "pipe"] })
+    : spawn(process.execPath, [tsx, entry], { env: { ...base, ...allowed }, stdio: ["ignore", "pipe", "pipe"] });
   // Every line goes to .demo-data/logs/<name>.log (URLs removed); in quiet mode only errors reach the console.
   mkdirSync(join(DATA, "logs"), { recursive: true });
   const logFile = join(DATA, "logs", `${name}.log`);
@@ -187,12 +190,32 @@ function platformTokenFor(meta: Record<string, unknown>): string {
   return t;
 }
 
+/**
+ * The web app (app/) on http://localhost:3000 (DEMO_APP_PORT), when it is installed: the one command then starts
+ * everything. DEMO_APP=0 skips it (for example when the app runs elsewhere).
+ */
+async function startApp(children: ChildProcess[]) {
+  const vite = join(ROOT, "app/node_modules/vite/bin/vite.js");
+  if (env("DEMO_APP") === "0") return;
+  if (!existsSync(vite)) { console.log("Web app: not installed (cd app && npm install), skipped"); return; }
+  const port = env("DEMO_APP_PORT") || "3000";
+  const url = `http://localhost:${port}`;
+  if (await fetch(url, { signal: AbortSignal.timeout(1500) }).then(() => true, () => false)) {
+    console.log(`Web app: something already answers at ${url}; not starting another`);
+    return;
+  }
+  children.push(start("app", vite, { APP_PORT: port, VITE_TETHRAN_API_URL: BACKEND, VITE_TETHRAN_DEMO_SIGNER_URL: `http://127.0.0.1:${SIGNER_PORT}` }, true));
+  await waitHealthy(url, "web app");
+  console.log(`Web app: ${url}`);
+}
+
 /** DEMO MODE ONLY: one-click test-key signing for the web app (see demo-signer.ts). */
 function demoSigner(chain: ReturnType<typeof loadChain>, vault: string) {
   const provider = newProvider(chain);
   const relay = new EvmChainClient(chain, wallet("TREASURY").connect(provider), new InMemoryIdempotencyStore(), { provider });
   startDemoSigner({
     port: SIGNER_PORT, origins: APP_ORIGINS, relay, vault, escrow: chain.escrow, policyUrl: POLICY,
+    platform: { backendUrl: BACKEND, token: PLATFORM_TOKEN },
     keys: { operator: wallet("OPERATOR"), arbiter: wallet("ARBITER"), provider: wallet("PROVIDER") },
     log: (l) => console.log("  " + l),
   });
@@ -231,6 +254,7 @@ async function main() {
     await waitHealthy(`${POLICY}/v1/policy`, "Policy Service");
     await waitHealthy(`${BACKEND}/health`, "backend");
     demoSigner(chain, vault);
+    await startApp(children);
     console.log(`Demo services running on the seeded state: backend ${BACKEND}, Policy Service ${POLICY}. Ctrl+C to stop.`);
     await new Promise(() => {});
   }
@@ -472,7 +496,8 @@ async function main() {
   console.log(`  details: .demo-data/seed-summary.json`);
   if (SERVE) {
     demoSigner(chain, vault);
-    console.log(`\nServices stay up: backend ${BACKEND}, Policy Service ${POLICY}. Ctrl+C to stop.`);
+    await startApp(children);
+    console.log(`\nServices stay up: backend ${BACKEND}, Policy Service ${POLICY}, demo signer http://127.0.0.1:${SIGNER_PORT}. Ctrl+C to stop.`);
     await new Promise(() => {});
   }
   stop();
