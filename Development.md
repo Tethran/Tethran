@@ -439,3 +439,16 @@ Interface gaps it found (not changed; for the lead):
   returned 503 high demand; gemini-3.5-flash returned schema-valid JSON and passed all nine eval scenarios
   (1 attempt each). gemma-4-31b-it failed all nine (SCHEMA_INVALID, 626 s). Chosen: gemini-3.5-flash.
 - Not done: ReceiptNFT, treasury service, full slice through the services, Policy Service section 2b, Opik.
+
+---
+
+## 2026-11-12 — Session 009 start
+
+- Added the missing `session_008` object to `Build-Context-Memory.json` (it was not written when session 008 hit
+  the usage limit).
+- Checked for existing work: no remote branches, every commit is ours. Sarah's app and backend are not in this
+  repo, so the backend endpoints the slice needs are built here and listed in `docs/API.md`.
+- Lead decisions: off-chain policy fields (soft limit, tax share, confidence threshold, hold length) are signed
+  by the operator with the Policy Service's existing policy typed data; on-chain limits use vault-format operator
+  signatures relayed by the Policy Service. `gemini-3.5-flash` approved; Groq stays as fallback once its key and
+  model are set. Opik cloud.

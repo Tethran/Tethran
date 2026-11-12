@@ -1425,6 +1425,167 @@
         "Then the treasury service (Stripe webhook, funding, arbiter and vault selection with the post-funding check), then the full vertical slice through ChainClient"
       ],
       "notes": "Stopped for the lead review after the vault, as instructed. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
+    },
+    {
+      "session_id": "session_008",
+      "timestamp": "2026-11-12T02:02:20Z",
+      "ai_agent": "Executing engineer (Person A workstream)",
+      "current_phase": "Phase 1 complete for the vault; Phase 3 groundwork (LLM chosen); preparing Block 1 (full slice)",
+      "progress": {
+        "completed": [
+          "Reworded commit message to 'ignore local worktree directories' before any push",
+          "Vault review fixes: operator-is-owner stated everywhere; transfer deadline; setPayees address checks; documented UTC cap boundary, immutable operator, pause; 45 vault tests (114 contract tests)",
+          "Policy Service: 15-minute co-signature deadline; duplicate rule narrowed to signed or pending hashes; 108 tests",
+          "INTERFACES.md v0.6",
+          "ChainClient vault calls and reads; 29 tests",
+          "Demo ProviderVault deployed on Sepolia; prove:slice passed (escrow -> vault -> payee, over-limit refused)",
+          "Alchemy API-key skill installed; Sepolia RPC via Alchemy; chain-id check kept",
+          "Gemini model chosen from the model list: gemini-3.5-flash; eval:agent 9/9 pass; Gemma 4 31B 0/9"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "Opik keys were not yet supplied at the end of session 008"
+        ]
+      },
+      "last_session_summary": "Session 007 made the escrow minTimeout a constructor parameter, built ProviderVault with the guard inside, published INTERFACES v0.5, and merged the Policy Service HTTP API and the services/llm module built by helper agents.",
+      "changes_made": [
+        "contracts/contracts/ProviderVault.sol and tests: deadline, payee checks, operator-is-owner comments",
+        "services/policy: cosign deadline, signed_proposals table, retry rule, tests",
+        "services/chain: vault calls, vaultActionId, VAULT_TYPES, prove-slice script",
+        "contracts/scripts/deploy-vault.ts",
+        "services/llm/eval/smoke.ts and npm run smoke",
+        "docs/INTERFACES.md v0.6; README trust assumptions; .env.example; .gitignore (.agents/, skills-lock.json)",
+        "config/chains.json: Sepolia demoVault",
+        "Development.md: session 008 entry"
+      ],
+      "file_module_map": [
+        {
+          "file": "contracts/contracts/ProviderVault.sol",
+          "purpose": "Vault with guard, deadline and payee checks",
+          "last_modified": "2026-11-12T02:02:20Z"
+        },
+        {
+          "file": "contracts/test/ProviderVault.test.ts",
+          "purpose": "45 vault tests",
+          "last_modified": "2026-11-12T02:02:20Z"
+        },
+        {
+          "file": "contracts/scripts/deploy-vault.ts",
+          "purpose": "Deploys the demo provider vault",
+          "last_modified": "2026-11-12T02:02:20Z"
+        },
+        {
+          "file": "services/policy/src/cosign.ts",
+          "purpose": "Co-signing with deadline",
+          "last_modified": "2026-11-12T02:02:20Z"
+        },
+        {
+          "file": "services/policy/src/service.ts",
+          "purpose": "Retry rule; COSIGN_VALID_SECONDS",
+          "last_modified": "2026-11-12T02:02:20Z"
+        },
+        {
+          "file": "services/policy/src/stores.ts",
+          "purpose": "signed_proposals table",
+          "last_modified": "2026-11-12T02:02:20Z"
+        },
+        {
+          "file": "services/chain/src/evmChainClient.ts",
+          "purpose": "Vault calls and reads",
+          "last_modified": "2026-11-12T02:02:20Z"
+        },
+        {
+          "file": "services/chain/scripts/prove-slice.ts",
+          "purpose": "Escrow -> vault -> payee proof",
+          "last_modified": "2026-11-12T02:02:20Z"
+        },
+        {
+          "file": "services/llm/eval/smoke.ts",
+          "purpose": "One real LLM call",
+          "last_modified": "2026-11-12T02:02:20Z"
+        },
+        {
+          "file": "docs/INTERFACES.md",
+          "purpose": "v0.6",
+          "last_modified": "2026-11-12T02:02:20Z"
+        },
+        {
+          "file": "README.md",
+          "purpose": "Trust assumptions for the vault operator",
+          "last_modified": "2026-11-12T02:02:20Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Decisions: lead's vault review (operator-is-owner wording, deadline, payee checks, documentation, tests); POST /v1/policy takes vault-format operator signatures; retry allowed when no signatures were produced; release_to_provider added",
+          "reason": "Relayed by the lead developer",
+          "alternatives_considered": "Policy Service typed data for on-chain limits (dropped)"
+        },
+        {
+          "decision": "Alchemy: only the alchemy-api skill kept; the install also added agentic-gateway, alchemy-cli, alchemy-mcp, allium and opensea, which were removed",
+          "reason": "The lead allowed only the API-key path; the wallet-payment skill must not be available",
+          "alternatives_considered": "Keeping all bundled skills"
+        },
+        {
+          "decision": "LLM model gemini-3.5-flash",
+          "reason": "Picked from the model list for the key; 2.5 Flash retired for new users, 3.8 Flash returning 503 high demand, Gemma 4 31B failed all nine scenarios",
+          "alternatives_considered": "gemini-3.8-flash, gemma-4-31b-it"
+        },
+        {
+          "decision": "Proof script makes the co-signatures with test keys",
+          "reason": "The Policy Service chain reader and writer were not wired yet; labelled as such in the script",
+          "alternatives_considered": "Waiting for the wiring before any on-chain vault proof"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "Policy Service still verifies its own policy typed data rather than INTERFACES v0.6 section 2b",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Off-chain policy fields not covered by a vault signature",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Opik never run against a real account",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "ReceiptNFT, treasury service and orchestrator not built",
+          "severity": "high",
+          "status": "open"
+        },
+        {
+          "issue": "Base Sepolia wallets hold no test ETH",
+          "severity": "medium",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "Gemini 404 for gemini-2.5-flash",
+          "context": "Model is no longer available to new users",
+          "resolution": "Chose gemini-3.5-flash from the model list"
+        },
+        {
+          "error": "Gemini 503 high demand for gemini-3.8-flash",
+          "context": "Smoke test",
+          "resolution": "Not retried in a loop; used gemini-3.5-flash"
+        },
+        {
+          "error": "Gemma 4 31B: HTTP 500 and invalid JSON; all nine scenarios SCHEMA_INVALID",
+          "context": "Comparison run the lead asked for",
+          "resolution": "Not chosen"
+        }
+      ],
+      "next_steps": [
+        "Block 1: ReceiptNFT, treasury service, orchestrator through the real Policy Service, Opik tracing",
+        "Then Blocks 2 to 4 as listed by the lead"
+      ],
+      "notes": "This entry was added at the start of session 009; it was missed when session 008 ended at the usage limit."
     }
   ]
 }
