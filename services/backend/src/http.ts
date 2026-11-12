@@ -126,7 +126,11 @@ export function createHttpServer(deps: HttpDeps): Server {
     ["POST", /^\/milestones\/([^/]+)\/refund$/, async ({ params }) => treasury.refund(params[1])],
     ["POST", /^\/milestones\/([^/]+)\/settle$/, async ({ params, body }) => {
       let agentMode;
-      try { agentMode = parseAgentMode(body?.agent_mode, undefined); } catch (e) { throw new ApiError(400, (e as Error).message); }
+      // No mode in the request: the server default (AGENT_MODE) applies. Passing undefined as the fallback would
+      // fall through to parseAgentMode's own default of "live".
+      if (body?.agent_mode !== undefined && body?.agent_mode !== null && body?.agent_mode !== "") {
+        try { agentMode = parseAgentMode(body.agent_mode); } catch (e) { throw new ApiError(400, (e as Error).message); }
+      }
       const result: any = await orchestrator.settle(params[1], { agentMode });
       // Start the off-chain leg (SIMULATED rails) of every payout the vault just confirmed.
       if (result?.decision === "approved") result.offchain = await processConfirmedPayouts(db, deps.now);

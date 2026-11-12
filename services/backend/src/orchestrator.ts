@@ -164,7 +164,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         async (run) => {
           const { policy } = await traceTool("get_policy_summary", { output: () => ({ ok: true }) }, () => deps.policy.getPolicy());
           const input = await traceTool("build_agent_input", { input: { milestone_id: m.id } }, async () => agentInput(m, policy));
-          if (deps.buyPaidData) {
+          if (deps.buyPaidData && mode !== "replay") { // a replay does not read the data, so nothing is bought
             try {
               const paid = await deps.buyPaidData(m);
               if (paid.length > 0) input.paid_data = paid;

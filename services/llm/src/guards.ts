@@ -209,8 +209,10 @@ export function guardInput(input: AgentInput, opts: { boundary?: string } = {}):
   let paidData: string | undefined;
   if (input.paid_data && input.paid_data.length > 0) {
     const parts = input.paid_data.map((d) => {
-      const raw = JSON.stringify({ tool: d.tool, simulated: d.simulated, data: d.data });
-      return clean(raw, LIMITS.paidDataChars, `paid_data:${d.tool}`);
+      // Only the purchased data is untrusted and scanned. The tool label is ours; scanning it would flag every
+      // purchase as a tool request.
+      const data = clean(JSON.stringify(d.data ?? null), LIMITS.paidDataChars, `paid_data:${d.tool}`);
+      return `{"tool":${JSON.stringify(d.tool)},"simulated":${d.simulated === true},"data":${data}}`;
     });
     paidData = parts.join("\n");
   }

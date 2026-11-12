@@ -14,6 +14,8 @@
 // - DEMO SIMPLIFICATION: a client paying in stablecoin sends test USDT to the treasury deposit address and the
 //   treasury funds the escrow.
 import type { DatabaseSync } from "node:sqlite";
+/** Seeded demo scenarios (the saved replay proposals and the Opik dataset use the same names). */
+export const DEMO_SCENARIOS = ["clean_delivery", "disputed_delivery", "prompt_injection", "over_limit_request", "unknown_payee", "low_confidence_plan", "duplicate_send", "wrong_network", "identity_mismatch"] as const;
 import { getAddress, isAddress, isHexString } from "ethers";
 import { assertMilestoneMatches, MilestoneMismatchError } from "../../chain/src/index";
 import type { TreasuryChain } from "./chainPort";
@@ -91,8 +93,9 @@ export function createTreasury(deps: TreasuryDeps) {
      */
     async createMilestone(input: {
       id: string; provider_id: string; title: string; client_address: string; amount_usd_cents: number;
-      timeout_seconds?: number; invoice_ref?: string;
+      timeout_seconds?: number; invoice_ref?: string; scenario?: string;
     }): Promise<MilestoneRow> {
+      if (input.scenario !== undefined && !(DEMO_SCENARIOS as readonly string[]).includes(input.scenario)) bad(`scenario must be one of ${DEMO_SCENARIOS.join(", ")}`);
       if (!/^[0-9a-f-]{36}$/i.test(input.id)) bad("id must be a UUID");
       if (milestones.get(db, input.id)) throw new ApiError(409, "milestone already exists");
       if (!isAddress(input.client_address)) bad("client_address must be an address");
@@ -121,10 +124,10 @@ export function createTreasury(deps: TreasuryDeps) {
       };
       db.prepare(
         `INSERT INTO milestones (id, provider_id, title, client_address, provider_address, arbiter_address, vault, amount,
-          amount_usd_cents, timeout, funding_source, card_funded, hold_seconds, chain_id, state, escrow_tx, release_tx, invoice_ref, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 0, ?, 'draft', NULL, NULL, ?, ?)`,
+          amount_usd_cents, timeout, funding_source, card_funded, hold_seconds, chain_id, state, escrow_tx, release_tx, invoice_ref, created_at, scenario)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 0, ?, 'draft', NULL, NULL, ?, ?, ?)`,
       ).run(row.id, row.provider_id, row.title, row.client_address, row.provider_address, row.arbiter_address, row.vault,
-        row.amount, row.amount_usd_cents, row.timeout, row.chain_id, row.invoice_ref, row.created_at);
+        row.amount, row.amount_usd_cents, row.timeout, row.chain_id, row.invoice_ref, row.created_at, input.scenario ?? null);
       return need(row.id);
     },
 
