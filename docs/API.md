@@ -859,8 +859,10 @@ payee into a payout. `404 NOT_REGISTERED` if unknown or consent withdrawn.
 
 ### Reconciliation (M10)
 
-Built from the existing tables. Country comes from `reconciliation_meta` (set with `setMilestoneCountry`), else from the
-first mobile-money or bank leg, else `UNSPECIFIED`.
+Built from the existing tables. The country comes **only** from the contract's country profile (through the
+milestone's invoice). There is no default: a milestone without one has `country: null` and a `NO_COUNTRY_PROFILE`
+gap, and `export.csv` refuses with `409 NO_COUNTRY_PROFILE` naming the milestones. `reconciliation_meta` now only
+carries a printed invoice number.
 
 #### `GET /reconciliation/milestones/{id}`
 
@@ -914,3 +916,43 @@ INV-001,2026-11-12,KE,2026-11-12T10:00:00.000Z,2026-11-12T10:00:00.000Z,100.0000
 ```
 
 `fee` is the simulated off-chain rail fee; `net_paid` is the on-chain payouts minus that fee; `tax_reserve` comes from the approved plan.
+
+## x402 (pay-per-request data)
+
+Implemented directly from the x402 message format, scheme `exact`. This backend is its own facilitator: it
+verifies the EIP-3009 `TransferWithAuthorization` and settles it on-chain on TestUSDT through ChainClient (the
+treasury pays gas; `payTo` is the treasury). Hosted facilitators settle USDC on their own networks, not our test
+token, so none is used. The payment is real on the test network; **the data served is demo data** and says so
+(`simulated_data: true`).
+
+| Resource | Price (base units) |
+|---|---|
+| `GET /x402/corridor-rules?corridor=US-KE` | 20000 (0.02 tUSDT) |
+| `GET /x402/fx-quote?to=KES` (NGN, KES, ZAR, GHS) | 10000 |
+| `GET /x402/invoices/{id}/status` | 10000 |
+| `GET /x402/milestones/{id}/settlement-proof` | 10000 |
+
+`GET /x402` lists them (free).
+
+Flow: a request without `X-PAYMENT` gets `402` and `{ x402Version: 1, error, accepts: [requirement] }`. The
+requirement has `scheme`, `network` (`eip155:<chainId>`), `maxAmountRequired`, `resource`, `payTo`, `asset`,
+`maxTimeoutSeconds` and `extra: { name, version }` (the token's EIP-712 domain). The client retries with
+`X-PAYMENT`: base64 of `{ x402Version, scheme, network, payload: { signature, authorization: { from, to, value,
+validAfter, validBefore, nonce } } }`. The server checks network, payee, amount, validity window, signature and
+nonce, settles, waits for the receipt and answers `200` with the data and an `X-PAYMENT-RESPONSE` header (base64
+`{ success, transaction, network, payer }`). The same authorization sent again is answered from the record and
+never settled twice; a nonce already used on-chain is refused.
+
+**Agent purchase tool.** During a settlement in `live` or `live+replay` mode, the orchestrator (not the model)
+buys corridor rules and an FX quote for the contract's country and passes them to the agent as untrusted
+`paid_data`. It pays from the WDK `agent_budget` wallet (account 4 of the demo seed). Two caps: the client refuses
+before signing when a purchase would pass `X402_CAP_PER_RUN` (default 50000 = 0.05 tUSDT per settlement run), and
+the WDK signing policy refuses any authorization above 1 tUSDT or for another token. A failed or over-cap purchase
+never blocks a settlement; it is recorded in the trace. Nothing is bought in `replay` mode.
+
+## Demo seed
+
+`DEMO_MODE=1 CHAIN=<chain> npm run seed` (in `services/backend`) rebuilds the demo state; see `docs/DEMO.md`.
+`POST /milestones` accepts an optional `scenario` (one of the nine seeded names), which selects the saved proposal
+in `replay` mode. `POST /milestones/{id}/settle` without `agent_mode` uses the server's `AGENT_MODE` (it used to
+fall back to `live`).

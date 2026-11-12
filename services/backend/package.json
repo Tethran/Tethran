@@ -10,7 +10,8 @@
     "start": "tsx src/main.ts",
     "slice": "tsx scripts/run-slice.ts",
     "seed": "tsx scripts/seed.ts",
-    "demo:serve": "tsx scripts/seed.ts --serve-only"
+    "demo:serve": "tsx scripts/seed.ts --serve-only",
+    "demo:act": "tsx scripts/demo-act.ts"
   },
   "dependencies": {
     "dotenv": "^18.0.10",

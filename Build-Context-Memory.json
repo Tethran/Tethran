@@ -2124,6 +2124,80 @@
         "Then B (evaluation runs, replace replay proposals), D (hygiene), E (DEMO.md)"
       ],
       "notes": "Final submission is Fri 13 Nov 2026 at 22:59 WAT."
+    },
+    {
+      "session_id": "session_012",
+      "timestamp": "2026-11-12T10:11:57Z",
+      "ai_agent": "Executing engineer (main session)",
+      "current_phase": "Block 4: seed, x402, README and DEMO built; second chain blocked on test ETH",
+      "progress": {
+        "completed": [
+          "Approved history rewrite (tool names neutralised in the memory file and Development.md; backup tag pre-rewrite-backup; not pushed)",
+          "Reconciliation country from the contract's country profile only; CSV refuses rows without one",
+          "x402 endpoints with on-chain EIP-3009 settlement; agent purchase tool on a WDK budget wallet with caps",
+          "Seed script (nine scenarios, duplicate-send handled failure, wrong-network block); demo:serve; demo:act helper",
+          "README rewrite with exact WDK modules; docs/DEMO.md; docs/API.md x402 and seed sections"
+        ],
+        "in_progress": [
+          "Seed run on Sepolia (live+replay)"
+        ],
+        "blocked": [
+          "Second chain deploy: treasury has 0 Base Sepolia ETH"
+        ]
+      },
+      "last_session_summary": "Session 011 completed Block 3: WDK wallets, strict identity, payouts, phone registry, reconciliation, operator and arbiter endpoints.",
+      "changes_made": [
+        "services/backend: x402.ts, scripts/seed.ts, scripts/demo-act.ts, reconciliation.ts (country), treasury.ts (scenario tag), http.ts (settle default mode, raw status and headers), orchestrator.ts (paid data hook), main.ts (x402 wiring)",
+        "services/chain: evmChainClient.ts (submitTransferWithAuthorization, authorizationUsed, usdtDomain), wdk.ts (agent_budget role, signTypedData policy)",
+        "services/llm: guards.ts (paid data scanning)",
+        "README.md, docs/DEMO.md, docs/API.md, Development.md, .gitignore (.demo-data/)"
+      ],
+      "file_module_map": [
+        {
+          "file": "services/backend/src/x402.ts",
+          "purpose": "x402 server (402, verify, settle via ChainClient) and x402 client with spending cap"
+        },
+        {
+          "file": "services/backend/scripts/seed.ts",
+          "purpose": "Rebuilds the nine-scenario demo from nothing; DEMO_MODE only; --serve, --serve-only"
+        },
+        {
+          "file": "services/backend/scripts/demo-act.ts",
+          "purpose": "Presenter helper: operator identity decision, 2-of-3 dispute attestations, scenario ids"
+        },
+        {
+          "file": "docs/DEMO.md",
+          "purpose": "Demo journey, reset commands, real vs simulated, fallback plan"
+        }
+      ],
+      "decisions_log": [
+        "Reconciliation country: contract country profile only, explicit error when missing (lead)",
+        "x402: own facilitator settling EIP-3009 on TestUSDT; hosted facilitators settle USDC, not our token",
+        "The orchestrator buys paid data, never the model; nothing bought in replay mode",
+        "Demo ports 18787/18788 (8787 is used by another program on the lead's machine)",
+        "Seed defaults to replay mode for a deterministic demo; live+replay on request"
+      ],
+      "known_issues": [
+        "Policy engine puts rejections before escalations: empty plans are rejected TAX_RESERVE_TOO_LOW instead of escalated (decision for the lead)",
+        "Replay proposals are still curated; replace with real outputs after the evaluation runs",
+        "Base Sepolia not deployed (no test ETH)",
+        "Remote still holds pre-rewrite history; pushing needs a force push when the lead decides",
+        "Lead's own the project rules file and the working guide still name the tool (outside the approved rewrite)"
+      ],
+      "errors_encountered": [
+        "Settle route ignored AGENT_MODE (undefined fallback hit the default parameter) - fixed",
+        "Paid-data guard flagged its own tool label as a tool request - fixed",
+        "Port 8787 held by a WSL relay: the seed mistook it for the Policy Service - ports moved, busy-port check added",
+        "Shell expanded backticks in an inline doc patch - restored from git, redone from a script file"
+      ],
+      "next_steps": [
+        "Finish the Sepolia seed run and record the summary",
+        "Lead decides the Policy rule ordering for empty plans",
+        "Fund the treasury on Base Sepolia, then deploy with --network baseSepolia",
+        "Evaluation runs (prompt_injection, identity_mismatch, then the rest) and real replay proposals",
+        "Push when the lead says so (force push after the rewrite)"
+      ],
+      "notes": "WDK modules used: @tetherto/wdk 1.0.0-beta.22 and @tetherto/wdk-wallet-evm 1.0.0-beta.26 (wdk-wallet and wdk-failover-provider are transitive only)."
     }
   ]
 }

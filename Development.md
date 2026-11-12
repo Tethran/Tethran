@@ -664,3 +664,58 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   (the file name and their no-attribution rules) and one early line of the architecture document.
 - Nothing pushed. The remote still has the 39 pre-rewrite commits from the first push; pushing the rewritten
   history will need a force push when the lead decides.
+
+---
+
+## Session 012 — 2026-11-13 — Reconciliation country, Block 4 (seed, x402, README, DEMO)
+
+### Reconciliation country (lead's decision)
+- The country now comes only from the contract's country profile, through the escrow milestone's invoice. No
+  fallback to a payout leg, no `UNSPECIFIED`. A milestone without one has `country: null` and an info gap
+  `NO_COUNTRY_PROFILE`; `export.csv` refuses with `409 NO_COUNTRY_PROFILE` naming the milestones. Tests: 2 new.
+
+### x402 (timeboxed; real settlement, demo data)
+- `services/backend/src/x402.ts`: four paid resources (corridor rules, FX quote, invoice status, settlement proof),
+  402 with an exact-scheme requirement, X-PAYMENT verification (network, payee, amount, window, signature, nonce),
+  settlement through ChainClient `submitTransferWithAuthorization` on TestUSDT, X-PAYMENT-RESPONSE, replay-safe.
+- The x402 npm SDK and hosted facilitators are not used: they settle USDC on their own networks, not our test
+  token. This backend is its own facilitator. The data served is demo data and labelled.
+- Agent purchase tool: the orchestrator (never the model) buys corridor rules and an FX quote before the model call,
+  paying from the WDK `agent_budget` wallet. Caps: 0.05 tUSDT per run in the client (refuses before signing) and
+  1 tUSDT per authorization in the WDK signing policy. Failures never block a settlement. Nothing bought in replay.
+- WDK `signTypedData` policy tightened: only escrow attestations, contract signatures and small test-USDT EIP-3009
+  authorizations (it allowed anything before). Tests: 4 backend x402 tests, 1 WDK policy test.
+
+### Seed script
+- `npm run seed` (DEMO_MODE=1 only): wipes `.demo-data/` only, deploys the contracts on a fresh local node, seeds
+  the vault and payees, operator-signed policy, starts both services, signs a KE contract (provider key and WDK
+  client wallet), and drives the nine scenarios through the API. Handled failure: duplicate deposit send refused
+  (`DUPLICATE_PENDING`), second settle pays nothing. Wrong network: review for the other configured test network is
+  blocked (`WRONG_NETWORK`). Prints a summary; `--serve` keeps the services up; `demo:serve` restarts them.
+- `npm run demo:act`: presenter helper that signs the operator's identity decision and the 2-of-3 dispute
+  attestations with test keys (no web app in this repo).
+- Demo ports 18787/18788: 8787 is taken by another program on the lead's machine; the seed refuses busy ports.
+
+### Bugs found by the seed and fixed
+- `POST /milestones/{id}/settle` without `agent_mode` always ran `live`: the route passed `undefined` as the fallback,
+  so `parseAgentMode`'s default parameter applied. Now the server's `AGENT_MODE` applies.
+- The paid-data guard scanned its own wrapper, whose tool name matches the TOOL_REQUEST injection pattern, so any
+  paid data flagged the input and dropped the agent's confidence. Now only the purchased data is scanned. Test added.
+- `POST /milestones` accepts an optional `scenario` tag (selects the saved proposal in replay mode).
+
+### Results
+- Local chain, from nothing: 9 scenarios, 0 seed problems, in replay and in live+replay. Live: clean delivery
+  approved, 2 vault payouts, receipt, x402 purchases settled on-chain.
+- Every other settlement is `rejected TAX_RESERVE_TOO_LOW`: the Policy engine puts rejections before escalations, so
+  a plan with no payouts and no tax reserve is rejected rather than escalated. Nothing is paid either way. Left
+  for the lead (Policy rule, human review).
+
+### Second chain
+- Base Sepolia is in `config/chains.json`; the same deploy scripts take `--network baseSepolia`. Not deployed: the
+  treasury has 0 Base Sepolia ETH (checked on two public RPCs). The wrong-network scenario uses the configured
+  second chain's id.
+
+### README and DEMO
+- README rewritten: what it is, one-command run, architecture, simulated parts, trust assumptions, tests, WDK
+  modules used and what WDK could not do. `docs/DEMO.md`: step-by-step journey, handled failure, reset commands,
+  real versus simulated, fallback plan. `docs/API.md`: x402, seed, reconciliation country.
