@@ -289,7 +289,8 @@ if (isMain) {
     })
     .catch((e) => {
       const msg = String((e as Error)?.message ?? e).replace(/\b(?:https?):\/\/[^\s"']+/g, "[url removed]");
-      console.error(`FAILED: ${(e as Error)?.name ?? "Error"}: ${msg.slice(0, 300)}`);
+      const cause = String((e as { cause?: { code?: string } })?.cause?.code ?? "").replace(/\b(?:https?):\/\/[^\s"']+/g, "[url removed]");
+      console.error(`FAILED: ${(e as Error)?.name ?? "Error"}: ${msg.slice(0, 300)}${cause ? ` (cause: ${cause})` : ""}`);
       process.exit(1);
     });
 }
