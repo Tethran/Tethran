@@ -3,12 +3,22 @@ import assert from "node:assert/strict";
 import { ApiError } from "../src/errors";
 import { migratePayouts, processConfirmedPayouts } from "../src/payouts";
 import { migrateReconciliation, reconciliationRoutes, setMilestoneCountry } from "../src/reconciliation";
+
+/** The contract country profile reaches reconciliation through the milestone's invoice (as in the product). */
+function contractCountry(h: { db: any }, escrowId: string, country: string) {
+  h.db.prepare("DELETE FROM invoices WHERE escrow_milestone_id = ?").run(escrowId);
+  h.db.prepare(`INSERT INTO invoices (id, provider_id, contract_id, milestone_id, occurrence, escrow_milestone_id, number, seq, year, country, currency,
+    provider_name, client_name, provider_tax_ids_json, missing_fields_json, line_items_json, subtotal_cents, fee_cents, total_cents, payout_cents,
+    fee_payer, issue_date, due_date, status, created_at) VALUES (?, 'prov-1', 'c-1', ?, 0, ?, ?, 1, 2026, ?, 'USD', 'P', 'C', '{}', '[]', '[]', 10000, 130, 10000, 9870, 'provider', '2026-11-12', '2026-11-20', 'unpaid', '2026-11-12')`)
+    .run(`inv-${escrowId}`, escrowId, escrowId, `INV-2026-${escrowId.slice(0, 4)}`, country);
+}
 import { CLIENT, M1, fundedAndReleased, harness } from "./helpers";
 
 type H = ReturnType<typeof harness>;
 const setup = () => {
   const h = harness();
   migrateReconciliation(h.db);
+  contractCountry(h, M1, "KE");
   return h;
 };
 const call = (h: H, method: string, path: string) => {
@@ -137,11 +147,12 @@ test("list: filters by date and country; counts complete", async () => {
   const h = setup();
   await fullySettled(h);
   const all: any = await call(h, "GET", "/reconciliation");
-  assert.deepEqual([all.count, all.complete, all.items[0].country], [1, 1, "KE"]); // derived from the M-Pesa leg
+  assert.deepEqual([all.count, all.complete, all.items[0].country], [1, 1, "KE"]); // from the contract's country profile
   assert.equal(((await call(h, "GET", "/reconciliation?country=ng")) as any).count, 0);
   assert.equal(((await call(h, "GET", "/reconciliation?country=ke&from=2026-11-12&to=2026-11-12")) as any).count, 1);
   assert.equal(((await call(h, "GET", "/reconciliation?from=2027-01-01")) as any).count, 0);
-  setMilestoneCountry(h.db, M1, "gh", "INV-GH-1");
+  contractCountry(h, M1, "GH");
+  setMilestoneCountry(h.db, M1, "GH", "INV-GH-1"); // printed invoice number only; the country is the contract's
   assert.equal(((await call(h, "GET", "/reconciliation?country=GH")) as any).items[0].invoice_number, "INV-GH-1");
   await assert.rejects(call(h, "GET", "/reconciliation?from=yesterday"), (e: unknown) => e instanceof ApiError && e.status === 400);
 });
@@ -149,7 +160,7 @@ test("list: filters by date and country; counts complete", async () => {
 test("CSV: raw text/csv response with the tax columns and proper escaping", async () => {
   const h = setup();
   await fullySettled(h);
-  setMilestoneCountry(h.db, M1, "KE", '=HYPERLINK("x"),"quoted"\nline');
+  setMilestoneCountry(h.db, M1, "KE", '=HYPERLINK("x"),"quoted"\nline'); // invoice number used to test escaping
   const res: any = await call(h, "GET", "/reconciliation/export.csv?country=KE");
   assert.equal(res.__raw, true);
   assert.equal(res.contentType, "text/csv");
@@ -161,4 +172,21 @@ test("CSV: raw text/csv response with the tax columns and proper escaping", asyn
   assert.ok(lines.trimEnd().endsWith(",true"));
   const empty: any = await call(h, "GET", "/reconciliation/export.csv?country=NG");
   assert.equal(empty.body.trim().split("\r\n").length, 1);
+});
+
+test("no contract country profile: an info gap in the ledger, and the CSV export refuses with an explicit error", async () => {
+  const h = setup();
+  h.db.prepare("DELETE FROM invoices").run();
+  await fullySettled(h);
+  const l = await ledger(h);
+  assert.equal(l.country, null);
+  assert.ok(codes(l).includes("NO_COUNTRY_PROFILE"));
+  await assert.rejects(call(h, "GET", "/reconciliation/export.csv"), (e: unknown) => e instanceof ApiError && e.code === "NO_COUNTRY_PROFILE");
+});
+
+test("an unknown country code on the invoice is not accepted as a profile", async () => {
+  const h = setup();
+  contractCountry(h, M1, "XX");
+  await fullySettled(h);
+  assert.equal((await ledger(h)).country, null);
 });

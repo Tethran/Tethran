@@ -6,6 +6,7 @@
 // Amounts are strings in USDT base units; sums use BigInt, never floating point. The CSV prints decimals with 6
 // places, derived from the base units.
 import type { DatabaseSync } from "node:sqlite";
+import { getCountryProfile } from "./countryProfiles";
 import { ApiError } from "./errors";
 import { formatMicro, legOf, migratePayouts, refreshLeg, type OffchainRow } from "./payouts";
 
@@ -42,10 +43,16 @@ export interface ReconciliationDeps { db: DatabaseSync; now: () => Date }
 export function createReconciliation(deps: ReconciliationDeps) {
   const { db, now } = deps;
 
-  function countryOf(m: M, legs: OffchainRow[]): string {
-    const meta = db.prepare("SELECT country FROM reconciliation_meta WHERE milestone_id = ?").get(m.id) as { country: string } | undefined;
-    if (meta) return meta.country;
-    return legs.find((l) => l.rail !== "usdt")?.country ?? "UNSPECIFIED";
+  /**
+   * The country comes from the contract's country profile only (through the invoice of this escrow milestone,
+   * which records it). No default: a milestone without a contract country profile has country null and a
+   * NO_COUNTRY_PROFILE gap, and the CSV export refuses it.
+   */
+  function countryOf(m: M, _legs: OffchainRow[]): string | null {
+    const hasInvoices = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'invoices'").get();
+    if (!hasInvoices) return null;
+    const inv = db.prepare("SELECT country FROM invoices WHERE escrow_milestone_id = ? ORDER BY occurrence LIMIT 1").get(m.id) as { country: string } | undefined;
+    return inv?.country ? getCountryProfile(inv.country)?.code ?? null : null;
   }
 
   function ledger(m: M) {
@@ -73,6 +80,7 @@ export function createReconciliation(deps: ReconciliationDeps) {
       if (f.status === "failed") gap("FUNDING_FAILED", `funding ${f.reference} failed`, "fundings", f.id);
       if (f.status === "mismatch") gap("FUNDING_MISMATCH", `funding ${f.reference} does not match the milestone`, "fundings", f.id);
     }
+    if (!countryOf(m, legs)) gap("NO_COUNTRY_PROFILE", "milestone has no contract country profile (needed for the tax export)", "milestones", m.id, "info");
     if (funded && !funded.escrow_tx) gap("ESCROW_TX_MISSING", "funded but no escrow transaction is recorded", "fundings", funded.id);
     const terminal = m.state === "refunded";
     if (funded && !m.release_tx && !terminal) gap("PAID_NOT_RELEASED", "paid and escrowed but not released to the vault", "milestones", m.id, "info");
@@ -189,7 +197,12 @@ export function createReconciliation(deps: ReconciliationDeps) {
 
   function csv(q: { from?: string | null; to?: string | null; country?: string | null }) {
     const lines = [CSV_COLUMNS.join(",")];
-    for (const l of filtered(q)) {
+    const rows = filtered(q);
+    const missing = rows.filter((l) => !l.country).map((l) => l.milestone_id);
+    if (missing.length > 0) {
+      throw new ApiError(409, `no contract country profile for milestone(s) ${missing.join(", ")}; a tax export needs one for every row`, "NO_COUNTRY_PROFILE");
+    }
+    for (const l of rows) {
       const m = getMilestone(l.milestone_id)!;
       lines.push([
         csvCell(l.invoice.number, true), l.invoice.issued_at.slice(0, 10), csvCell(l.country), l._times.funded_at ?? "", l._times.settled_at ?? "",

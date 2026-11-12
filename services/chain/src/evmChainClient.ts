@@ -1,5 +1,5 @@
 import {
-  AbiCoder, Interface, JsonRpcProvider, MaxUint256, concat, decodeBytes32String, id as keccakUtf8, isError, keccak256,
+  AbiCoder, Interface, JsonRpcProvider, Signature, MaxUint256, concat, decodeBytes32String, id as keccakUtf8, isError, keccak256,
 } from "ethers";
 import { assertTestNetwork } from "./config";
 import type { IdempotencyRecord, IdempotencyStore } from "./idempotency";
@@ -78,6 +78,8 @@ const ERC20_ABI = [
   "function mint(address to, uint256 amount)",
   "function transfer(address to, uint256 amount) returns (bool)",
   "event Transfer(address indexed from, address indexed to, uint256 value)",
+  "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
+  "function authorizationState(address authorizer, bytes32 nonce) view returns (bool)",
 ];
 
 /**
@@ -513,6 +515,31 @@ export class EvmChainClient implements ChainClient {
       });
   }
 
+
+  /**
+   * Settles an EIP-3009 transferWithAuthorization signed by `auth.from` (the x402 "exact" scheme). This client only
+   * submits it and pays gas; the token checks the signature, the validity window and the nonce.
+   */
+  submitTransferWithAuthorization(
+    auth: { from: string; to: string; value: string; validAfter: string; validBefore: string; nonce: string },
+    signature: string,
+    idempotencyKey: string,
+  ): Promise<TxRef> {
+    const sig = Signature.from(signature);
+    return this.send(this.config.usdt, this.erc20.encodeFunctionData("transferWithAuthorization", [
+      auth.from, auth.to, BigInt(auth.value), BigInt(auth.validAfter), BigInt(auth.validBefore), auth.nonce, sig.v, sig.r, sig.s,
+    ]), idempotencyKey);
+  }
+
+  async authorizationUsed(from: string, nonce: string): Promise<boolean> {
+    await this.ready();
+    return (await this.read(this.config.usdt, this.erc20, "authorizationState", [from, nonce]))[0] as boolean;
+  }
+
+  /** EIP-712 domain of the test USDT token (for EIP-3009 authorizations). */
+  usdtDomain() {
+    return { name: "Tethran Test USDT", version: "1", chainId: this.chainId, verifyingContract: this.config.usdt };
+  }
 
   /** Sends USDT from this client's own account (used for a client wallet paying a deposit). */
   transferUsdt(to: string, amount: string, idempotencyKey: string): Promise<TxRef> {
