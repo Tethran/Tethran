@@ -5,6 +5,7 @@
 import { ethers, network } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
+import { assertTestNetwork, fail } from "./lib/safety";
 
 const CHAINS_PATH = path.resolve(__dirname, "../../config/chains.json");
 const ROLES = ["TREASURY", "CLIENT", "PROVIDER", "ARBITER", "AGENT_SIGNER", "POLICY_SIGNER", "OPERATOR"];
@@ -13,7 +14,9 @@ async function main() {
   const chains = JSON.parse(fs.readFileSync(CHAINS_PATH, "utf8"));
   const chainId = Number((await ethers.provider.getNetwork()).chainId);
   const key = Object.keys(chains.chains).find((k) => chains.chains[k].chainId === chainId);
-  if (!key || chains.chains[key].testnet !== true) throw new Error(`chain ${chainId} is not a configured test network`);
+  if (network.name === "hardhat") throw new Error("pick a network: --network localhost | sepolia | baseSepolia");
+  if (!key) throw new Error(`chain ${chainId} is not in config/chains.json`);
+  assertTestNetwork(chainId, chains.chains[key].testnet, `chains.json "${key}"`);
 
   const treasuryKey = process.env.TREASURY_PRIVATE_KEY;
   if (!treasuryKey) throw new Error("TREASURY_PRIVATE_KEY is not set (run: npm run wallets)");
@@ -28,12 +31,16 @@ async function main() {
   }
 
   console.log(`Deploying to ${network.name} (${chainId}) from treasury ${treasury.address}`);
-  const usdt = await (await ethers.getContractFactory("TestUSDT", treasury)).deploy();
-  await usdt.waitForDeployment();
-  // admin and RELEASER are both the treasury in this demo deployment
+  // Nonces are set by hand and each deployment is awaited `confirmations` deep: a load-balanced public
+  // RPC can report a stale account nonce right after a transaction, which makes the next one collide.
+  const confirmations: number = chains.chains[key].confirmations ?? 1;
+  const nonce = await ethers.provider.getTransactionCount(treasury.address, "latest");
+  const usdt = await (await ethers.getContractFactory("TestUSDT", treasury)).deploy({ nonce });
+  await usdt.deploymentTransaction()!.wait(confirmations);
+  // Demo deployment: the treasury is admin, RELEASER and FUNDER. Constructor: (usdt, admin, releaser, funder).
   const escrow = await (await ethers.getContractFactory("MilestoneEscrow", treasury)).deploy(
-    await usdt.getAddress(), treasury.address, treasury.address);
-  await escrow.waitForDeployment();
+    await usdt.getAddress(), treasury.address, treasury.address, treasury.address, { nonce: nonce + 1 });
+  await escrow.deploymentTransaction()!.wait(confirmations);
 
   chains.chains[key].usdt = await usdt.getAddress();
   chains.chains[key].escrow = await escrow.getAddress();
@@ -43,4 +50,4 @@ async function main() {
   console.log(`Written to config/chains.json under "${key}"`);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch(fail);

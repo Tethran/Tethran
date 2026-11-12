@@ -3,6 +3,7 @@ import { JsonRpcProvider, Wallet, formatEther } from "ethers";
 import * as dotenv from "dotenv";
 import * as path from "path";
 import chainsFile from "../../config/chains.json";
+import { assertTestNetwork, fail } from "./lib/safety";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 const ROLES = ["TREASURY", "CLIENT", "PROVIDER", "ARBITER", "AGENT_SIGNER", "POLICY_SIGNER", "OPERATOR"];
@@ -10,6 +11,7 @@ const ROLES = ["TREASURY", "CLIENT", "PROVIDER", "ARBITER", "AGENT_SIGNER", "POL
 async function main() {
   for (const [key, c] of Object.entries(chainsFile.chains)) {
     if (key === "localhost") continue;
+    assertTestNetwork(c.chainId, c.testnet, `chains.json "${key}"`);
     const provider = new JsonRpcProvider(process.env[`RPC_URL_${c.chainId}`] || c.rpcUrl, c.chainId);
     console.log(`\n${c.name} (${c.chainId})`);
     for (const role of ROLES) {
@@ -21,4 +23,4 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error(e.message); process.exit(1); });
+main().catch(fail);

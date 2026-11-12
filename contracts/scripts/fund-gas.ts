@@ -3,11 +3,14 @@
 // Sends only what is missing up to TARGET, and only to roles that send transactions themselves.
 // TEST NETWORKS ONLY.
 import { ethers, network } from "hardhat";
+import { assertTestNetwork, fail } from "./lib/safety";
 
 const TARGET = ethers.parseEther("0.004");
 const ROLES = ["CLIENT", "PROVIDER"];
 
 async function main() {
+  // hardhat.config.ts only defines test networks; check the chain the RPC actually reports as well.
+  assertTestNetwork(Number((await ethers.provider.getNetwork()).chainId), true, `network ${network.name}`);
   const treasuryKey = process.env.TREASURY_PRIVATE_KEY;
   if (!treasuryKey) throw new Error("TREASURY_PRIVATE_KEY is not set");
   const treasury = new ethers.Wallet(treasuryKey, ethers.provider);
@@ -25,4 +28,4 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch(fail);

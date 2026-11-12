@@ -1,0 +1,4 @@
+{
+  "comment": "Chain IDs that are never allowed, whatever chains.json says. Tethran runs on test networks only.",
+  "denied": [1, 10, 25, 56, 100, 130, 137, 146, 250, 324, 480, 1101, 1329, 5000, 8453, 34443, 42161, 42220, 43114, 57073, 59144, 81457, 534352, 728126428]
+}
