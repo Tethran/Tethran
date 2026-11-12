@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { ServiceError, type PolicyService } from "./service";
+import { ServiceError, safeErrorMessage, type PolicyService } from "./service";
 
 // Thin node:http layer over the service. JSON in, JSON out. No framework.
 
@@ -73,7 +73,9 @@ export function createHttpServer(service: PolicyService): Server {
       if (e instanceof BodyTooLarge) return send(res, 413, { error: "body too large" });
       if (e instanceof BadJson) return send(res, 400, { error: "malformed JSON" });
       if (e instanceof ServiceError) return send(res, e.status, { error: e.message });
-      send(res, 500, { error: "internal error" }); // never echo unknown errors
+      // Never echo unknown errors to the caller; log them for the operator with URLs and keys stripped.
+      console.error(`internal error on ${req.method} ${(req.url ?? "").split("?")[0]}: ${safeErrorMessage(e)}`);
+      send(res, 500, { error: "internal error" });
     }
   });
 }
