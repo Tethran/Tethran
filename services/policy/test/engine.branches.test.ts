@@ -128,3 +128,56 @@ test("payouts within all limits, confident, no flags, no human: approved with no
   // A non-injection flag alone does not escalate a paying plan.
   assert.deepEqual(pick(evaluateProposal({ ...goodProposal(), flags: [{ code: "EVIDENCE_PARTIAL", detail: "x" }] }, makeCtx())), ["approved", []]);
 });
+
+// ---- v0.8 (lead's review, 13 Nov 2026) ----
+test("ZERO_AMOUNT_PAYOUT: a zero-amount payout is never approved, alone or next to a real one", () => {
+  // Alone: payout total is zero, so it moves no money, but the zero payout itself is rejected (not escalated, not approved).
+  const alone = evaluateProposal(withActions([payout("0")]), makeCtx());
+  assert.deepEqual(pick(alone), ["rejected", ["ZERO_AMOUNT_PAYOUT"]]);
+  // A zero-amount mobile money payout too.
+  const mm = evaluateProposal(withActions([{ type: "mobile_money_payout", payee_id: "payee-2", amount: "0", asset: "USDT", phone_hash: "h" }]), makeCtx());
+  assert.equal(mm.decision === "approved", false);
+  // Next to a valid payout, inside every limit.
+  const mixed = evaluateProposal(withActions([payout("100"), payout("0", "payee-2")]), makeCtx());
+  assert.deepEqual(pick(mixed), ["rejected", ["ZERO_AMOUNT_PAYOUT"]]);
+  // Even with needs_human: rejected wins.
+  assert.equal(evaluateProposal(withActions([payout("0")], { needs_human: true }), makeCtx()).decision, "rejected");
+});
+
+test("OVER_MILESTONE_AMOUNT: a payout above the milestone amount but under every cap is rejected", () => {
+  // Milestone 100 USDT; caps are 1000 per tx (soft 500) and 2000 a day; the vault holds 10,000.
+  const ctx = makeCtx({ milestone: milestoneOf("100000000"), policy: { ...policy, min_tax_reserve_bps: 0 } });
+  const r = evaluateProposal(withActions([payout("100000001")]), ctx);
+  assert.deepEqual(pick(r), ["rejected", ["OVER_MILESTONE_AMOUNT"]]);
+});
+
+test("OVER_MILESTONE_AMOUNT counts the tax reserve: payouts + tax may not exceed the milestone (exact boundary)", () => {
+  const ctx = makeCtx({ milestone: milestoneOf("100000000") }); // 10% tax rule applies
+  assert.deepEqual(pick(evaluateProposal(withActions([payout("90000000"), tax("10000000")]), ctx)), ["approved", []]);
+  assert.deepEqual(pick(evaluateProposal(withActions([payout("90000001"), tax("10000000")]), ctx)), ["rejected", ["OVER_MILESTONE_AMOUNT"]]);
+  assert.deepEqual(pick(evaluateProposal(withActions([payout("90000000"), tax("10000001")]), ctx)), ["rejected", ["OVER_MILESTONE_AMOUNT"]]);
+  // Split across payees: the total counts, not each payout.
+  const split = withActions([payout("50000000"), payout("45000000", "payee-2"), tax("10000000")]);
+  assert.deepEqual(pick(evaluateProposal(split, ctx)), ["rejected", ["OVER_MILESTONE_AMOUNT"]]);
+});
+
+test("OVER_MILESTONE_AMOUNT is reported with the other hard failures, and does not apply to plans that move no money", () => {
+  const ctx = makeCtx({ milestone: milestoneOf("100000000") });
+  const r = evaluateProposal(withActions([payout("1000000001")]), ctx); // above the cap and the milestone, no tax
+  assert.equal(r.decision, "rejected");
+  for (const code of ["OVER_PER_TX_CAP", "OVER_MILESTONE_AMOUNT", "TAX_RESERVE_TOO_LOW"]) assert.ok(r.reasons.includes(code as never), code);
+  // A tax-reserve-only plan above the milestone moves no money: escalated for a human, not rejected.
+  assert.deepEqual(pick(evaluateProposal(withActions([tax("200000000")]), ctx)), ["escalated", ["NO_PAYOUTS"]]);
+});
+
+test("movesMoney is payoutTotal > 0: only a positive payout total switches the hard rules on", () => {
+  // A positive payout to a non-allowlisted payee: hard rules run.
+  assert.deepEqual(pick(evaluateProposal(withActions([payout("1", "payee-x")]), makeCtx())), ["rejected", ["PAYEE_NOT_ALLOWED"]]);
+  // A zero payout to a non-allowlisted payee: the hard rules do not run; only the zero payout is rejected.
+  assert.deepEqual(pick(evaluateProposal(withActions([payout("0", "payee-x")]), makeCtx())), ["rejected", ["ZERO_AMOUNT_PAYOUT"]]);
+});
+
+test("grossAmount must be a numeric base-unit string; the engine refuses any other context", () => {
+  assert.throws(() => evaluateProposal(goodProposal(), makeCtx({ milestone: { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount: "" } })));
+  assert.throws(() => evaluateProposal(goodProposal(), makeCtx({ milestone: { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount: "1.5" } })));
+});

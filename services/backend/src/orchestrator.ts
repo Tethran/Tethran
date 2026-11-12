@@ -231,7 +231,9 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         return { decision: "approved", resumed: true, trace_id: plan.trace_id, payouts, receipt };
       }
       if (plan.decision !== "escalated") throw new ApiError(409, `this settlement was ${plan.decision}, not escalated`);
-      if (body.decision !== "approve" && body.decision !== "reject") throw new ApiError(400, 'decision must be "approve" or "reject"');
+      if (body.decision !== "approve" && body.decision !== "reject" && body.decision !== "new_plan") {
+        throw new ApiError(400, 'decision must be "approve", "reject" or "new_plan"');
+      }
       if (typeof body.operator_signature !== "string") throw new ApiError(403, "operator_signature required");
 
       const { traceId, result } = await deps.tracer.run(
@@ -241,7 +243,13 @@ export function createOrchestrator(deps: OrchestratorDeps) {
             input: { approval_id: approvalId, decision: body.decision },
             output: (d) => ({ decision: d.decision, reasons: d.reasons, cosignatures: d.cosignatures?.length ?? 0 }),
           }, () => deps.policy.decideApproval(approvalId, body.decision as string, body.operator_signature as string));
-          db.prepare("UPDATE settlement_plans SET decision = ?, reasons = ? WHERE id = ?").run(decision.decision, JSON.stringify(decision.reasons), plan.id);
+          // "new_plan": the Policy Service closed this plan (rejected) and the operator asked for another; the milestone
+          // stays released, nothing is paid or minted, and POST /milestones/{id}/settle may run again.
+          const outcome = (decision as { new_plan_requested?: boolean }).new_plan_requested ? "new_plan_requested" : decision.decision;
+          db.prepare("UPDATE settlement_plans SET decision = ?, reasons = ? WHERE id = ?").run(outcome, JSON.stringify(decision.reasons), plan.id);
+          if (outcome === "new_plan_requested") {
+            return { decision: outcome, reasons: decision.reasons, plan_id: plan.id, next: `POST /milestones/${m.id}/settle` };
+          }
           if (decision.decision !== "approved") return { decision: decision.decision, reasons: decision.reasons, plan_id: plan.id };
           if (m.state !== "released" && m.state !== "paid_out") throw new ApiError(409, `milestone is ${m.state}; it must be released to the vault first`);
           recordPayouts(plan.id, m, JSON.parse(plan.proposal_json), plan.proposal_hash, decision.cosignatures ?? []);

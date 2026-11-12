@@ -531,3 +531,45 @@ test("malformed vault actions are refused", async () => {
   }
   await expectError(h.service.setPolicy({ policy: doc, version: 2, operator_signature: sig }), 400); // no vault
 });
+
+// ---- approvals of plans that move no money (lead's decision, 13 Nov 2026) ----
+
+test("approvals: a NO_PAYOUTS escalation cannot be approved; it offers new_plan or reject only", async () => {
+  const h = makeHarness();
+  const esc = await submit(h, { ...goodProposal(), actions: [] });
+  assert.equal(esc.decision, "escalated");
+  assert.deepEqual(esc.reasons, ["NO_PAYOUTS"]);
+  const id = esc.approval_id!;
+  const approveSig = await signApproval(h.operator, id, "approve", esc.proposal_hash);
+  await expectError(h.service.decideApproval(id, { decision: "approve", operator_signature: approveSig }), 409);
+  assert.equal(h.service.listApprovals("pending").length, 1); // still pending: nothing was decided
+  const sig = await signApproval(h.operator, id, "new_plan", esc.proposal_hash);
+  const r: any = await h.service.decideApproval(id, { decision: "new_plan", operator_signature: sig });
+  assert.equal(r.decision, "rejected");
+  assert.equal(r.new_plan_requested, true);
+  assert.equal(r.cosignatures, undefined);
+  assert.equal(h.service.listApprovals("pending").length, 0);
+});
+
+test("approvals: any escalated plan with a zero payout total cannot be approved, even for another reason", async () => {
+  const h = makeHarness();
+  // Escalated for needs_human, but it pays nobody (only a tax reserve).
+  const esc = await submit(h, { ...goodProposal(), needs_human: true, actions: [{ type: "tax_reserve", amount: "50000000", reason: "tax" }] });
+  assert.equal(esc.decision, "escalated");
+  const id = esc.approval_id!;
+  const sig = await signApproval(h.operator, id, "approve", esc.proposal_hash);
+  await expectError(h.service.decideApproval(id, { decision: "approve", operator_signature: sig }), 409);
+  const rejectSig = await signApproval(h.operator, id, "reject", esc.proposal_hash);
+  const r: any = await h.service.decideApproval(id, { decision: "reject", operator_signature: rejectSig });
+  assert.equal(r.decision, "rejected");
+  assert.equal(r.new_plan_requested, undefined);
+});
+
+test("approvals: new_plan needs the operator's signature over new_plan itself", async () => {
+  const h = makeHarness();
+  const esc = await submit(h, { ...goodProposal(), actions: [] });
+  const id = esc.approval_id!;
+  const wrong = await signApproval(h.operator, id, "reject", esc.proposal_hash); // signed for a different decision
+  await expectError(h.service.decideApproval(id, { decision: "new_plan", operator_signature: wrong }), 403);
+  await expectError(h.service.decideApproval(id, { decision: "maybe", operator_signature: wrong }), 400);
+});

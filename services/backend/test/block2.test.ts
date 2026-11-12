@@ -216,3 +216,25 @@ test("vault relay submits operator-signed actions in order through the chain por
   await assert.rejects(relayVaultActions(h.chain, "0x12", actions), (e: unknown) => e instanceof ApiError && e.status === 400);
   await assert.rejects(relayVaultActions(h.chain, VAULT, []), (e: unknown) => e instanceof ApiError && e.status === 400);
 });
+
+test("escalated settlement: new_plan closes the plan with nothing paid or minted, and the agent can be asked again", async () => {
+  const h = harness({ decision: "escalated" });
+  await fundedAndReleased(h);
+  const first: any = await h.orchestrator.settle(M1);
+  assert.equal(first.decision, "escalated");
+  const r: any = await h.orchestrator.executeApproval(M1, first.approval_id, { decision: "new_plan", operator_signature: "0xsig" });
+  assert.equal(r.decision, "new_plan_requested");
+  assert.equal(r.next, `POST /milestones/${M1}/settle`);
+  assert.equal(h.sent.includes("vaultExecute"), false);
+  assert.equal(h.receipts.size, 0);
+  const row = h.db.prepare("SELECT state FROM milestones WHERE id = ?").get(M1) as { state: string };
+  assert.equal(row.state, "released"); // still waiting for a settlement
+  // A new settlement runs (a new plan, a new Policy decision).
+  const before = h.submitted.length;
+  const second: any = await h.orchestrator.settle(M1);
+  assert.equal(h.submitted.length, before + 1);
+  assert.ok(second.plan_id === undefined || second.plan_id !== first.plan_id);
+  // An unknown decision is refused before anything is relayed.
+  await assert.rejects(h.orchestrator.executeApproval(M1, first.approval_id, { decision: "approve_all", operator_signature: "0xsig" }),
+    (e: unknown) => e instanceof ApiError && e.status === 400);
+});

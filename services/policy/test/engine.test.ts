@@ -311,12 +311,12 @@ test("amounts beyond 2^53 are exact", () => {
     daily_cap: (2n ** 61n).toString(),
     min_tax_reserve_bps: 0,
   };
-  const ctx = makeCtx({ policy: bigPolicy, vaultBalance: (2n ** 62n).toString() });
+  const ctx = makeCtx({ policy: bigPolicy, vaultBalance: (2n ** 62n).toString(), milestone: milestoneOf((2n ** 62n).toString()) });
   assert.equal(evaluateProposal(withActions([payout(big)]), ctx).decision, "approved");
   const r = evaluateProposal(withActions([payout((2n ** 60n + 1n).toString())]), ctx);
   assert.deepEqual(r.reasons, ["OVER_PER_TX_CAP"]);
   // Two numbers that are equal as floats but differ as integers.
-  const daily = makeCtx({ policy: bigPolicy, vaultBalance: (2n ** 62n).toString(), spentTodayBaseUnits: (2n ** 61n - 2n ** 60n + 1n).toString() });
+  const daily = makeCtx({ policy: bigPolicy, vaultBalance: (2n ** 62n).toString(), milestone: milestoneOf((2n ** 62n).toString()), spentTodayBaseUnits: (2n ** 61n - 2n ** 60n + 1n).toString() });
   assert.deepEqual(evaluateProposal(withActions([payout(big)]), daily).reasons, ["OVER_DAILY_CAP"]);
 });
 

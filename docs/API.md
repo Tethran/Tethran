@@ -269,6 +269,11 @@ Errors: `400` bad agent_mode, `409` milestone not released, `502 POLICY_UNREACHA
 
 #### `POST /milestones/{id}/escalations/{approvalId}/execute` — act on an escalated settlement
 
+Decisions: `approve`, `reject`, `new_plan` (each signed by the operator over that exact word). A plan that moves no
+money (`NO_PAYOUTS`, or any escalated plan with a zero payout total) offers only **`new_plan`** ("request a new plan")
+or **`reject`**; `approve` is refused with `409` by the Policy Service. Neither pays or mints anything and the
+milestone stays `released`. `new_plan` answers `{ "decision": "new_plan_requested", "plan_id": 4, "next": "POST /milestones/{id}/settle" }`.
+
 For a settlement that came back `escalated`. The operator's signed decision goes to the Policy Service, which
 re-runs every rejecting rule against the current policy and the chain and only then co-signs. A human can
 override an escalation reason, never a rejecting rule or an on-chain limit.
@@ -517,7 +522,8 @@ Every simulated part carries a `simulated` field or a "Simulated" label in the r
 
 Reason codes and rule order: `docs/INTERFACES.md` section 2 (v0.7: hard rules run only for plans that move money;
 a plan that moves no money is escalated, never rejected for a hard rule; new escalation codes `INJECTION_FLAGGED`
-and `NO_PAYOUTS`; `needs_human` is never approved).
+and `NO_PAYOUTS`; v0.8: `OVER_MILESTONE_AMOUNT` and `ZERO_AMOUNT_PAYOUT`; `needs_human` is never approved; a plan that
+moves no money is never approved).
 
 ### `POST /v1/proposals` — decide on an agent proposal
 

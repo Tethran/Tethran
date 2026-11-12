@@ -102,7 +102,7 @@ export function createOperator(deps: {
      * Service. The Policy Service verifies the operator signature itself; this backend cannot decide for it.
      */
     async approvalTypedData(approvalId: string, decision: unknown) {
-      if (decision !== "approve" && decision !== "reject") throw new ApiError(400, 'decision must be "approve" or "reject"');
+      if (decision !== "approve" && decision !== "reject" && decision !== "new_plan") throw new ApiError(400, 'decision must be "approve", "reject" or "new_plan"');
       const pending = (await deps.policy.listApprovals("pending")) as { id: string; proposal_hash: string }[];
       const a = Array.isArray(pending) ? pending.find((x) => x.id === approvalId) : undefined;
       if (!a) throw new ApiError(404, "no pending approval with this id");
@@ -113,7 +113,7 @@ export function createOperator(deps: {
     },
 
     async decideApproval(approvalId: string, body: { decision?: unknown; operator_signature?: unknown }) {
-      if (body.decision !== "approve" && body.decision !== "reject") throw new ApiError(400, 'decision must be "approve" or "reject"');
+      if (body.decision !== "approve" && body.decision !== "reject" && body.decision !== "new_plan") throw new ApiError(400, 'decision must be "approve", "reject" or "new_plan"');
       if (typeof body.operator_signature !== "string") throw new ApiError(403, "operator_signature required");
       return deps.policy.decideApproval(approvalId, body.decision, body.operator_signature);
     },

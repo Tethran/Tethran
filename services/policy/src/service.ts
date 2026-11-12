@@ -283,12 +283,23 @@ export function createService(deps: ServiceDeps) {
     async decideApproval(id: string, input: unknown) {
       if (!isRecord(input)) bad("body must be an object");
       const { decision, operator_signature } = input;
-      if (decision !== "approve" && decision !== "reject") bad("decision must be approve or reject");
+      if (decision !== "approve" && decision !== "reject" && decision !== "new_plan") bad("decision must be approve, reject or new_plan");
       if (typeof operator_signature !== "string" || operator_signature.length === 0) throw new ServiceError(403, "operator signature required");
 
       const approval = approvals.get(id);
       if (approval === undefined) throw new ServiceError(404, "approval not found");
       if (approval.status !== "pending") throw new ServiceError(409, "approval already decided");
+
+      // A plan that moves no money (NO_PAYOUTS, or any escalated plan whose payout total is zero) can never be
+      // approved: there is nothing to sign, and approving would close the milestone with nothing paid. The operator
+      // requests a new plan or rejects it.
+      const escalatedProposal = approval.proposal as SettlementProposal;
+      const paysSomething = Array.isArray(escalatedProposal?.actions) && escalatedProposal.actions
+        .filter((a) => a.type === "payout" || a.type === "mobile_money_payout")
+        .reduce((sum, a) => sum + BigInt((a as { amount: string }).amount), 0n) > 0n;
+      if (decision === "approve" && (!paysSomething || approval.reasons.includes("NO_PAYOUTS" as never))) {
+        throw new ServiceError(409, "this escalated plan moves no money; request a new plan or reject it");
+      }
 
       const value = approvalDecisionValue(id, decision as string, approval.proposal_hash);
       if (!signatureMatches(policyDomain, approvalDecisionTypes, value, operator_signature, deps.operatorAddress)) {
@@ -303,10 +314,15 @@ export function createService(deps: ServiceDeps) {
         trace_id: approval.trace_id,
       };
 
-      if (decision === "reject") {
+      if (decision === "reject" || decision === "new_plan") {
+        // Both close this plan with nothing signed. "new_plan" tells the backend the operator wants the agent asked
+        // again; the milestone stays released and waiting for a settlement either way.
         if (!approvals.decide(id, "rejected", iso())) throw new ServiceError(409, "approval already decided");
         audit.append({ ...base, at: iso(), decision: "rejected", reasons: approval.reasons });
-        return { decision: "rejected" as Decision, reasons: approval.reasons, proposal_hash: approval.proposal_hash };
+        return {
+          decision: "rejected" as Decision, reasons: approval.reasons, proposal_hash: approval.proposal_hash,
+          ...(decision === "new_plan" ? { new_plan_requested: true } : {}),
+        };
       }
 
       // Approve: a human can override escalation reasons, never a rejecting rule or an on-chain limit.

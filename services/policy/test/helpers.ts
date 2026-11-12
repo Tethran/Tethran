@@ -12,23 +12,28 @@ export const policy: Policy = {
   chargeback_hold_seconds: 0,
 };
 
+// A test that does not set a milestone is not about the milestone amount or the tax reserve: it gets a gross amount
+// far above any payout (OVER_MILESTONE_AMOUNT out of the way) and a 0% tax rule. Tests about either set the milestone
+// with milestoneOf() and keep the policy's 10% tax rule. A milestone given with grossAmount "0" means the same as no
+// milestone for amounts: the test only sets a flag (card hold, identity), so it gets LARGE_GROSS and a 0% tax rule.
+export const LARGE_GROSS = "1000000000000"; // 1,000,000 USDT
 export function makeCtx(overrides: Partial<EvaluationContext> = {}): EvaluationContext {
+  const aboutAmounts = overrides.milestone !== undefined && overrides.milestone.grossAmount !== "0";
+  const pol = overrides.policy ?? policy;
   return {
-    policy,
-    payees: {
+    ...overrides,
+    policy: aboutAmounts ? pol : { ...pol, min_tax_reserve_bps: 0 },
+    payees: overrides.payees ?? {
       "payee-1": { address: "0x00000000000000000000000000000000000000a1", rail: "usdt", simulated: false },
       "payee-2": { address: "0x00000000000000000000000000000000000000a2", rail: "mpesa", simulated: true },
     },
-    spentTodayBaseUnits: "0",
-    vaultBalance: "10000000000", // 10,000 USDT
-    nowUnixSeconds: 1_800_000_000,
-    seenProposalHashes: new Set<string>(),
-    // grossAmount 0 keeps the tax rule out of the way; tests about tax or the reserve set it with milestoneOf().
-    milestone: { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount: "0" },
-    ...overrides,
+    spentTodayBaseUnits: overrides.spentTodayBaseUnits ?? "0",
+    vaultBalance: overrides.vaultBalance ?? "10000000000", // 10,000 USDT
+    nowUnixSeconds: overrides.nowUnixSeconds ?? 1_800_000_000,
+    seenProposalHashes: overrides.seenProposalHashes ?? new Set<string>(),
+    milestone: aboutAmounts ? overrides.milestone! : { cardFunded: false, releaseEligible: true, identityMatch: true, ...overrides.milestone, grossAmount: LARGE_GROSS },
   };
 }
-
 // 450 USDT payout + 50 USDT tax reserve: tax is exactly 10% of the 500 USDT total.
 export function goodProposal(): Record<string, unknown> {
   return {

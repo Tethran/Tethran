@@ -189,6 +189,7 @@ export function fakePolicy(signer: Pick<Wallet, "signTypedData">, opts: { decisi
       return { decision, reasons: [], proposal_hash, cosignatures };
     },
     async decideApproval(_id, decision) {
+      if (decision === "new_plan") return { decision: "rejected", reasons: ["NO_PAYOUTS"], proposal_hash: "ab".repeat(32), new_plan_requested: true } as never;
       if (decision !== "approve") return { decision: "rejected", reasons: ["HUMAN_REJECTED"], proposal_hash: "ab".repeat(32) };
       const last = submitted.at(-1)!;
       const signed = await (opts.decision = "approved", policy.submitProposal(last.proposal, last.traceId));

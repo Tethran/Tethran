@@ -101,9 +101,14 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
   const rejected: RejectReason[] = [];
   const escalated: EscalateReason[] = [];
 
-  // Hard rules: they run only against money-moving actions (payouts). A proposal that moves no money cannot break a
-  // payee, cap, reserve, duplicate or hold rule, so it is never rejected for one; it goes to a human instead.
-  const movesMoney = payouts.length > 0;
+  // A payout of zero is never valid: it would get a co-signature and an action id for nothing, and it must not
+  // turn a plan that moves no money into one that looks like it does. Checked for every proposal with payouts.
+  if (payoutAmounts.some((n) => n === 0n)) rejected.push("ZERO_AMOUNT_PAYOUT");
+
+  // Hard rules: they run only when money actually leaves the vault (payout total above zero). A proposal that moves
+  // no money cannot break a payee, cap, reserve, duplicate or hold rule, so it is never rejected for one; it goes to
+  // a human instead.
+  const movesMoney = payoutTotal > 0n;
   if (movesMoney) {
     // In INTERFACES.md order.
     if (ctx.seenProposalHashes.has(proposal_hash)) rejected.push("DUPLICATE_PROPOSAL");
@@ -126,9 +131,15 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
     // After this proposal the vault must still hold at least vault_min_reserve (the guard enforces the same on-chain).
     if (BigInt(ctx.vaultBalance) - payoutTotal < BigInt(policy.vault_min_reserve)) rejected.push("BELOW_VAULT_RESERVE");
 
-    // The tax reserve is a share of the gross milestone payout amount (what the escrow released), required whenever
-    // money is paid out. Rule: taxTotal / grossAmount >= bps / 10000, done as integers.
+    // grossAmount is the escrow's on-chain milestone amount, which release pays to the vault in full. The Policy
+    // Service reads it from the chain itself; it never comes from the agent or the request.
     const gross = BigInt(ctx.milestone.grossAmount);
+
+    // The plan may not allocate more than the milestone released: payouts plus the tax reserve.
+    if (payoutTotal + taxTotal > gross) rejected.push("OVER_MILESTONE_AMOUNT");
+
+    // The tax reserve is a share of the gross milestone amount, required whenever money is paid out.
+    // Rule: taxTotal / grossAmount >= min_tax_reserve_bps / 10000, checked as taxTotal * 10000 >= bps * gross.
     if (taxTotal * 10000n < BigInt(policy.min_tax_reserve_bps) * gross) rejected.push("TAX_RESERVE_TOO_LOW");
   }
 
