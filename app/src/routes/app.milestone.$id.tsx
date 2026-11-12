@@ -44,7 +44,7 @@ function MilestonePage() {
       {({ milestone: m, contract: c, proposal }) => {
         const st = m.status;
         return (
-          <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr]">
+          <div className="grid gap-8 grid-cols-1 lg:grid-cols-[1.4fr_1fr] *:min-w-0">
             <div>
               <PageHead eyebrow={c.title} title={m.title}><StatusChip status={st} /></PageHead>
               <Card><Amount value={m.amount} fee={m.fee} /><p className="mt-4 text-sm text-muted-foreground">Done when: {m.criteria}</p></Card>

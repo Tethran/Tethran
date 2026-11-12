@@ -28,7 +28,7 @@ export function SignChoice({ label, onSign, busy, tone = "ink", className, child
     <div className={cn("grid gap-2", className)}>
       <div className="flex flex-wrap gap-2">
         {demo && (
-          <button disabled={busy} onClick={() => onSign("demo")} data-testid={`demo-${label}`}
+          <button disabled={busy} onClick={() => onSign("demo")} data-testid={`demo-${label}`} title={DEMO_LABEL}
             className={cn("inline-flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-medium disabled:opacity-40", primary)}>
             <FlaskConical className="size-4" aria-hidden />{label}
           </button>
@@ -38,7 +38,6 @@ export function SignChoice({ label, onSign, busy, tone = "ink", className, child
           <Wallet className="size-4" aria-hidden />{demo ? "Sign with your wallet" : label}
         </button>
       </div>
-      {demo && <p className="text-xs text-muted-foreground">The first button signs with a test key ({DEMO_LABEL.toLowerCase()}). The wallet button is the real path.</p>}
       {children}
     </div>
   );
@@ -48,4 +47,16 @@ export function SignChoice({ label, onSign, busy, tone = "ink", className, child
 export function DemoSigned({ via }: { via: Via | null }) {
   if (via !== "demo") return null;
   return <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-progress px-2 py-0.5 font-mono text-[0.68rem] uppercase tracking-wider"><FlaskConical className="size-3" aria-hidden />{DEMO_LABEL}</span>;
+}
+
+/** One note per page when demo signing is on: which button is the test key and which is the real path. */
+export function DemoNote() {
+  const demo = useDemoSigner();
+  if (!demo) return null;
+  return (
+    <p className="mb-6 flex items-start gap-2 rounded-[var(--radius-input)] border border-dashed border-progress bg-progress/10 p-3 text-sm">
+      <FlaskConical className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <span><span className="font-medium">Demo mode.</span> Buttons with the flask sign with a test key ({DEMO_LABEL.toLowerCase()}). "Sign with your wallet" is the real path.</span>
+    </p>
+  );
 }

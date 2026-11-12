@@ -123,6 +123,11 @@
 }
 
 @layer base {
+  /* Grid items may shrink below their content (a long title, a wide table in its own scroll box) instead of
+     widening the page: without this a phone screen scrolls sideways. */
+  .grid > * {
+    min-width: 0;
+  }
   * { border-color: var(--color-border); }
   html { -webkit-font-smoothing: antialiased; }
   body {

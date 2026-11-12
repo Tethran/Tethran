@@ -22,7 +22,7 @@ export function Overspend() {
           <h2 className="display-section"><span className="weight-light">Try to</span> overspend.</h2>
           <p className="mt-4 text-lg text-muted-foreground">Ask the agent for more than you allow. Watch it stop.</p>
         </Reveal>
-        <div className="mt-12 grid gap-6 lg:grid-cols-[1fr_1.1fr]">
+        <div className="mt-12 grid gap-6 grid-cols-1 lg:grid-cols-[1fr_1.1fr] *:min-w-0">
           <div className="rounded-[var(--radius-sheet)] border bg-surface p-6 shadow-soft md:p-8">
             <div className="flex items-center justify-between"><p className="font-medium">Ask the AI agent to send</p><SimTag label="Demo" /></div>
             <p className="mt-4 font-display text-6xl font-semibold tracking-[-0.05em] tabular-nums">{usd(ask)}</p>

@@ -7,7 +7,8 @@ import tsConfigPaths from "vite-tsconfig-paths";
 
 // Port 3000 matches the backend's CORS allowlist (CORS_ORIGINS, default http://localhost:3000).
 export default defineConfig(({ command }) => ({
-  server: { port: 3000, strictPort: true, host: "localhost" },
+  // Playwright writes videos into e2e-artifacts/ while the dev server runs: not watched.
+  server: { port: 3000, strictPort: true, host: "localhost", watch: { ignored: ["**/e2e-artifacts/**"] } },
   preview: { port: 3000, strictPort: true, host: "localhost" },
   plugins: [
     tsConfigPaths(),

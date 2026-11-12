@@ -3,7 +3,7 @@ import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError, DEMO_LABEL, type Via } from "@/api";
-import { SignChoice } from "@/components/app/SignChoice";
+import { SignChoice, DemoNote } from "@/components/app/SignChoice";
 import type { Dispute } from "@/api/types";
 import { PageHead } from "@/components/app/AppShell";
 import { Async, EmptyBlock, useApi } from "@/components/app/demo-state";
@@ -35,7 +35,7 @@ function Case({ d, onDone }: { d: Dispute; onDone: () => void }) {
     } catch (e) { toast.error((e as ApiError).message); }
   };
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+    <div className="grid gap-6 grid-cols-1 lg:grid-cols-[1.3fr_1fr] *:min-w-0">
       <div className="grid gap-4">
         <Card>
           <div className="flex items-center justify-between"><p className="font-medium">{d.title}</p><StatusChip status="Disputed" /></div>
@@ -78,6 +78,7 @@ function Arbiter() {
   return (
     <div>
       <PageHead eyebrow="Two of three decide" light="Make a" title="fair call." />
+      <DemoNote />
       <Async q={q} rows={3} empty={<EmptyBlock obj="scales" title="No open disputes." />}>
         {(ds) => <div className="grid gap-10">{ds.map((d) => <Case key={d.milestoneId} d={d} onDone={() => q.refetch()} />)}</div>}
       </Async>

@@ -17,7 +17,7 @@ function Chip({ icon: Icon, title, sub, className, delay }: { icon: typeof Lock;
 export function Hero() {
   return (
     <section id="product" className="relative overflow-hidden px-5 pt-36 pb-20 md:pt-44 md:pb-32">
-      <div className="mx-auto grid max-w-[1200px] items-center gap-12 lg:grid-cols-[1.1fr_1fr]">
+      <div className="mx-auto grid max-w-[1200px] items-center gap-12 grid-cols-1 lg:grid-cols-[1.1fr_1fr] *:min-w-0">
         <div className="relative z-10">
           <WordReveal text="Get paid for the work you deliver." heavyFrom={3} className="display-hero max-w-[11ch] text-ink" />
           <p className="mt-6 max-w-[30ch] text-lg text-muted-foreground animate-word" style={{ animationDelay: "1.4s" }}>

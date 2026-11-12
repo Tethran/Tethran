@@ -34,7 +34,7 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="mt-10 grid gap-8 lg:grid-cols-[1.5fr_1fr]">
+      <div className="mt-10 grid gap-8 grid-cols-1 lg:grid-cols-[1.5fr_1fr] *:min-w-0">
         <section>
           <h2 className="text-2xl">Active milestones</h2>
           <div className="mt-4">

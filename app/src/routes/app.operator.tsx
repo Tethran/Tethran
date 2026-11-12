@@ -6,7 +6,7 @@ import { api, ApiError, DEMO_LABEL, reasonInfo, type Via } from "@/api";
 import type { ApprovalItem } from "@/api/types";
 import { PageHead } from "@/components/app/AppShell";
 import { Async, EmptyBlock, useApi } from "@/components/app/demo-state";
-import { DemoSigned, SignChoice, useDemoSigner } from "@/components/app/SignChoice";
+import { DemoSigned, SignChoice, useDemoSigner, DemoNote } from "@/components/app/SignChoice";
 import { Card, DecisionChip, ReasonList, SimTag, usd } from "@/components/tethran/ui";
 
 export const Route = createFileRoute("/app/operator")({
@@ -142,7 +142,8 @@ function Operator() {
   return (
     <div>
       <PageHead eyebrow="Operator" light="Rules the AI" title="can't break." />
-      <div className="grid gap-8 lg:grid-cols-[1fr_1.4fr]">
+      <DemoNote />
+      <div className="grid gap-8 grid-cols-1 lg:grid-cols-[1fr_1.4fr] *:min-w-0">
         <div className="grid content-start gap-8">
           <Limits />
           <Card>

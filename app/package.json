@@ -13,7 +13,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "start": "node .output/server/index.mjs"
+    "start": "node .output/server/index.mjs",
+    "e2e": "playwright test",
+    "e2e:tour": "playwright test --project=tour-360 --project=tour-768 --project=tour-1440",
+    "e2e:journey": "playwright test --project=journey-1440"
   },
   "overrides": {
     "rolldown": "1.2.1"
@@ -79,6 +82,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@playwright/test": "^1.65.0",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^22.16.5",
