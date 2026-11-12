@@ -36,8 +36,10 @@ test("approved: returns co-signatures that recover to the Policy signer, and aud
   assert.deepEqual(r.reasons, []);
   assert.equal(r.cosignatures?.length, 1); // one payout; the tax_reserve gets none
   const s = r.cosignatures![0];
-  const value = { to: s.to, amount: s.amount, proposalHash: "0x" + r.proposal_hash, actionId: s.action_id };
+  const value = { to: s.to, amount: s.amount, proposalHash: "0x" + r.proposal_hash, actionId: s.action_id, deadline: s.deadline };
   assert.equal(verifyTypedData(transferDomain(CHAIN_ID, VAULT), transferTypes, value, s.signature), h.policySigner.address);
+  // valid for 15 minutes from the service clock
+  assert.equal(s.deadline, Date.parse("2026-11-12T10:00:00Z") / 1000 + 900); // the harness clock
   assert.equal(s.amount, "450000000");
 
   const rows = h.audit.list({ milestone_id: MILESTONE });
@@ -384,4 +386,46 @@ test("no key material in any result, error or audit row", async () => {
 
   const text = seen.join("\n");
   for (const s of secrets) assert.ok(!text.includes(s), "secret leaked");
+});
+
+// ---- retry rule: only a proposal that already has co-signatures is a duplicate ----
+
+test("retry after a signing failure: the same proposal is signed on the second try, then becomes a duplicate", async () => {
+  let failing = true;
+  const real = Wallet.createRandom();
+  const h = makeHarness({
+    signer: {
+      async signTypedData(domain, types, value) {
+        if (failing) throw new Error("hsm offline");
+        return real.signTypedData(domain as never, types as never, value as never);
+      },
+    },
+  });
+  await expectError(submit(h), 500); // approved and audited, but nothing was signed
+  failing = false;
+  const second = await submit(h);
+  assert.equal(second.decision, "approved");
+  assert.equal(second.cosignatures?.length, 1);
+  const third = await submit(h);
+  assert.deepEqual([third.decision, third.reasons, third.cosignatures], ["rejected", ["DUPLICATE_PROPOSAL"], undefined]);
+  // all three outcomes are in the audit log
+  assert.deepEqual(h.audit.list({ milestone_id: MILESTONE }).map((r) => r.decision), ["approved", "approved", "rejected"]);
+});
+
+test("a rejected proposal can be submitted again and is evaluated afresh, not called a duplicate", async () => {
+  const h = makeHarness();
+  const p = withActions([{ type: "payout", payee_id: "payee-1", amount: "1000000001", asset: "USDT" }]);
+  const first = await submit(h, p);
+  const second = await submit(h, p);
+  assert.deepEqual(second.reasons, first.reasons);
+  assert.ok(!second.reasons.includes("DUPLICATE_PROPOSAL"));
+});
+
+test("a proposal waiting in the approval queue is a duplicate until a human decides it", async () => {
+  const h = makeHarness();
+  const first = await submit(h, escalatingProposal());
+  assert.equal(first.decision, "escalated");
+  const second = await submit(h, escalatingProposal());
+  assert.deepEqual([second.decision, second.reasons], ["rejected", ["DUPLICATE_PROPOSAL"]]);
+  assert.equal(h.service.listApprovals("pending").length, 1);
 });

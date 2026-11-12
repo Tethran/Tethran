@@ -31,11 +31,20 @@ test("action_id is keccak256(abi.encode(bytes32 proposalHash, uint256 index))", 
   assert.equal(actionIdFor(hash, 3), expected);
 });
 
+const DEADLINE = 1_800_000_900;
+
+test("a missing or non-integer deadline is refused", async () => {
+  const proposal = proposalWithMobileMoney();
+  for (const deadline of [0, -1, 1.5, Number.NaN]) {
+    await assert.rejects(cosignProposal({ signer: Wallet.createRandom(), proposal, proposalHashHex: hashProposal(proposal), chainId: 1, vault, payees, deadline }));
+  }
+});
+
 test("co-signature recovers to the Policy signer over the Transfer typed data", async () => {
   const signer = Wallet.createRandom();
   const proposal = proposalWithMobileMoney();
   const proposalHashHex = hashProposal(proposal);
-  const sigs = await cosignProposal({ signer, proposal, proposalHashHex, chainId: 11155111, vault, payees });
+  const sigs = await cosignProposal({ signer, proposal, proposalHashHex, chainId: 11155111, vault, payees, deadline: DEADLINE });
 
   assert.equal(sigs.length, 2);
   assert.deepEqual(sigs.map((s) => s.action_index), [1, 3]); // tax_reserve (0) and conversion (2) get none
@@ -45,8 +54,11 @@ test("co-signature recovers to the Policy signer over the Transfer typed data", 
   for (const s of sigs) {
     assert.equal(s.action_id, actionIdFor(proposalHashHex, s.action_index));
     const domain = { name: "TethranVault", version: "1", chainId: 11155111, verifyingContract: vault };
-    const value = { to: s.to, amount: s.amount, proposalHash: "0x" + proposalHashHex, actionId: s.action_id };
+    const value = { to: s.to, amount: s.amount, proposalHash: "0x" + proposalHashHex, actionId: s.action_id, deadline: s.deadline };
+    assert.equal(s.deadline, DEADLINE);
     assert.equal(verifyTypedData(domain, transferTypes, value, s.signature), signer.address);
+    // the deadline is part of what was signed: a different deadline does not verify
+    assert.notEqual(verifyTypedData(domain, transferTypes, { ...value, deadline: DEADLINE + 1 }, s.signature), signer.address);
   }
 });
 
@@ -54,8 +66,10 @@ test("a signature does not verify against another vault or chain", async () => {
   const signer = Wallet.createRandom();
   const proposal = proposalWithMobileMoney();
   const proposalHashHex = hashProposal(proposal);
-  const [s] = await cosignProposal({ signer, proposal, proposalHashHex, chainId: 1337, vault, payees });
-  const value = { to: s.to, amount: s.amount, proposalHash: "0x" + proposalHashHex, actionId: s.action_id };
+  const [s] = await cosignProposal({ signer, proposal, proposalHashHex, chainId: 1337, vault, payees, deadline: DEADLINE });
+  const value = { to: s.to, amount: s.amount, proposalHash: "0x" + proposalHashHex, actionId: s.action_id, deadline: s.deadline };
+  assert.equal(verifyTypedData(transferDomain(1337, vault), transferTypes, value, s.signature), signer.address);
+  assert.notEqual(verifyTypedData(transferDomain(1338, vault), transferTypes, value, s.signature), signer.address);
   const other = verifyTypedData(transferDomain(1337, "0x00000000000000000000000000000000000000b2"), transferTypes, value, s.signature);
   assert.notEqual(other, signer.address);
 });
@@ -68,13 +82,13 @@ test("no co-signature for tax_reserve and conversion only", async () => {
       { type: "conversion", amount: "5", target: "NGN", condition: "rate ok" },
     ],
   } as SettlementProposal;
-  const sigs = await cosignProposal({ signer: Wallet.createRandom(), proposal, proposalHashHex: hashProposal(proposal), chainId: 1, vault, payees });
+  const sigs = await cosignProposal({ signer: Wallet.createRandom(), proposal, proposalHashHex: hashProposal(proposal), chainId: 1, vault, payees, deadline: DEADLINE });
   assert.deepEqual(sigs, []);
 });
 
 test("an unknown payee throws instead of signing", async () => {
   const proposal = proposalWithMobileMoney();
   await assert.rejects(
-    cosignProposal({ signer: Wallet.createRandom(), proposal, proposalHashHex: hashProposal(proposal), chainId: 1, vault, payees: {} }),
+    cosignProposal({ signer: Wallet.createRandom(), proposal, proposalHashHex: hashProposal(proposal), chainId: 1, vault, payees: {}, deadline: DEADLINE }),
   );
 });

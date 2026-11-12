@@ -105,6 +105,9 @@ function bad(message: string): never {
   throw new ServiceError(400, message);
 }
 
+// Co-signatures are valid for 15 minutes; the vault refuses the transfer after the deadline.
+export const COSIGN_VALID_SECONDS = 900;
+
 export function createService(deps: ServiceDeps) {
   const { policyStore, audit, decisions, approvals, chain, chainWriter, signer } = deps;
   const iso = () => deps.now().toISOString();
@@ -133,7 +136,12 @@ export function createService(deps: ServiceDeps) {
 
   async function sign(proposal: SettlementProposal, proposalHash: string, g: { vault: string; chainId: number; payees: Record<string, ResolvedPayee> }) {
     try {
-      return await cosignProposal({ signer, proposal, proposalHashHex: proposalHash, chainId: g.chainId, vault: g.vault, payees: g.payees });
+      const deadline = Math.floor(deps.now().getTime() / 1000) + COSIGN_VALID_SECONDS;
+      const cosignatures = await cosignProposal({ signer, proposal, proposalHashHex: proposalHash, chainId: g.chainId, vault: g.vault, payees: g.payees, deadline });
+      // Record that signatures exist BEFORE they leave this function. From here on the same proposal is a
+      // duplicate. If signing or this write fails, nothing is returned, so a retry of the proposal is allowed.
+      decisions.markSigned(proposalHash);
+      return cosignatures;
     } catch {
       // The decision is already in the audit log. Never return a partial or unsigned "approved".
       throw new ServiceError(500, "signing failed");
@@ -149,7 +157,9 @@ export function createService(deps: ServiceDeps) {
 
       const active = policyStore.current();
       const rawMilestone = isRecord(proposal) && typeof proposal.milestone_id === "string" ? proposal.milestone_id : "unknown";
-      const seen = decisions.seenHashes();
+      // Duplicates: a hash that already has co-signatures, or one waiting in the approval queue.
+      const seen = decisions.signedHashes();
+      for (const pending of approvals.list("pending")) seen.add(pending.proposal_hash);
 
       let result: EvaluationResult;
       let gathered: Awaited<ReturnType<typeof gather>> | undefined;

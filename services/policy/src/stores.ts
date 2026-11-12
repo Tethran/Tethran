@@ -75,7 +75,11 @@ export interface DecisionRecord {
 
 export interface DecisionStore {
   add(d: DecisionRecord): void;
-  seenHashes(): Set<string>;
+  // Records that co-signatures were issued for this proposal hash.
+  markSigned(proposalHash: string): void;
+  // Hashes for which co-signatures were issued. Only these count as duplicates: a proposal whose earlier
+  // decision produced no signatures (rejected, or approved but signing failed) may be submitted again.
+  signedHashes(): Set<string>;
   close(): void;
 }
 
@@ -92,6 +96,7 @@ export function openDecisionStore(path: string): DecisionStore {
       at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS policy_decisions_hash ON policy_decisions (proposal_hash);
+    CREATE TABLE IF NOT EXISTS signed_proposals (proposal_hash TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT (datetime('now')));
   `);
   const insert = db.prepare(
     "INSERT INTO policy_decisions (proposal_hash, decision, reasons, milestone_id, trace_id, at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -100,8 +105,11 @@ export function openDecisionStore(path: string): DecisionStore {
     add(d) {
       insert.run(d.proposal_hash, d.decision, JSON.stringify(d.reasons), d.milestone_id, d.trace_id, d.at);
     },
-    seenHashes() {
-      const rows = db.prepare("SELECT DISTINCT proposal_hash FROM policy_decisions").all() as { proposal_hash: string }[];
+    markSigned(proposalHash) {
+      db.prepare("INSERT OR IGNORE INTO signed_proposals (proposal_hash) VALUES (?)").run(proposalHash);
+    },
+    signedHashes() {
+      const rows = db.prepare("SELECT proposal_hash FROM signed_proposals").all() as { proposal_hash: string }[];
       return new Set(rows.map((r) => r.proposal_hash));
     },
     close() {

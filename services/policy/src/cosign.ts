@@ -12,13 +12,14 @@ export interface TypedDataSigner {
   ): Promise<string>;
 }
 
-// INTERFACES.md section 3: Transfer(address to,uint256 amount,bytes32 proposalHash,bytes32 actionId)
+// INTERFACES.md section 3: Transfer(address to,uint256 amount,bytes32 proposalHash,bytes32 actionId,uint256 deadline)
 export const transferTypes = {
   Transfer: [
     { name: "to", type: "address" },
     { name: "amount", type: "uint256" },
     { name: "proposalHash", type: "bytes32" },
     { name: "actionId", type: "bytes32" },
+    { name: "deadline", type: "uint256" },
   ],
 };
 
@@ -37,6 +38,7 @@ export interface Cosignature {
   action_id: string;
   to: string;
   amount: string;
+  deadline: number; // unix seconds; the vault refuses the transfer after this
   signature: string;
 }
 
@@ -48,8 +50,10 @@ export async function cosignProposal(args: {
   chainId: number;
   vault: string;
   payees: Record<string, ResolvedPayee>;
+  deadline: number; // unix seconds, the same for every action of this proposal
 }): Promise<Cosignature[]> {
-  const { signer, proposal, proposalHashHex, chainId, vault, payees } = args;
+  const { signer, proposal, proposalHashHex, chainId, vault, payees, deadline } = args;
+  if (!Number.isInteger(deadline) || deadline <= 0) throw new Error("deadline must be a unix time in seconds");
   const domain = transferDomain(chainId, vault);
   const out: Cosignature[] = [];
   for (let i = 0; i < proposal.actions.length; i++) {
@@ -63,8 +67,9 @@ export async function cosignProposal(args: {
       amount: action.amount,
       proposalHash: "0x" + proposalHashHex,
       actionId,
+      deadline,
     });
-    out.push({ action_index: i, action_id: actionId, to, amount: action.amount, signature });
+    out.push({ action_index: i, action_id: actionId, to, amount: action.amount, deadline, signature });
   }
   return out;
 }
