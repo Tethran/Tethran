@@ -1,0 +1,32 @@
+{
+  "scenario": "clean_delivery",
+  "verdict": "PASS",
+  "problem": null,
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "trace_id": "01a1cf89-fb6d-733d-a0ec-61ff6d267bb3",
+  "at": "2026-11-12T11:34:53.275Z",
+  "gross_amount": "1000000000",
+  "proposal": {
+    "milestone_id": "ms-clean",
+    "confidence": 0.93,
+    "evidence_used": [
+      "ev-1"
+    ],
+    "actions": [
+      {
+        "type": "payout",
+        "payee_id": "payee_amara",
+        "amount": "900000000",
+        "asset": "USDT"
+      },
+      {
+        "type": "tax_reserve",
+        "amount": "100000000",
+        "reason": "10 percent tax reserve"
+      }
+    ],
+    "flags": [],
+    "needs_human": false
+  }
+}

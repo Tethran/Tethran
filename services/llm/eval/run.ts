@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { proposeSettlement } from "../src/agent.js";
 import { createLlmProvider, configFromEnv } from "../src/router.js";
 import { createTracerFromEnv, noopTracer } from "../src/tracing.js";
@@ -34,8 +36,16 @@ export async function runEval(env: Record<string, string | undefined> = process.
   // Free tiers rate-limit bursts (Gemini returned HTTP 429 after about 27 calls in 30 minutes), so real runs
   // wait between scenarios. EVAL_SPACING_MS overrides the default of 8 seconds.
   const spacingMs = useFake || !shared ? 0 : Number(env.EVAL_SPACING_MS ?? 8000);
+  // EVAL_ONLY=prompt_injection,identity_mismatch runs a small batch (rate limits); unknown names are an error.
+  const only = (env.EVAL_ONLY ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  const unknown = only.filter((id) => !scenarios.some((s) => s.id === id));
+  if (unknown.length > 0) throw new Error(`EVAL_ONLY names unknown scenarios: ${unknown.join(", ")}`);
+  const selected = only.length > 0 ? scenarios.filter((s) => only.includes(s.id)) : scenarios;
+  // EVAL_SAVE_DIR keeps each real output (proposal, verdict, provider, trace) for the replay file. Never with fake.
+  const saveDir = !useFake && env.EVAL_SAVE_DIR ? env.EVAL_SAVE_DIR : undefined;
+  if (saveDir) mkdirSync(saveDir, { recursive: true });
   let first = true;
-  for (const s of scenarios) {
+  for (const s of selected) {
     if (!first && spacingMs > 0) await new Promise((r) => setTimeout(r, spacingMs));
     first = false;
     const tag = useFake ? " [FAKE provider: runner check only, no real model]" : "";
@@ -59,6 +69,12 @@ export async function runEval(env: Record<string, string | undefined> = process.
       detail = `provider=${res.meta.provider} model=${res.meta.model} attempts=${res.meta.attempts}${problem ? ` reason=${problem}` : ""}`;
     }
     if (verdict === "FAIL") failed++;
+    if (saveDir && res.ok) {
+      writeFileSync(join(saveDir, `${s.id}.json`), JSON.stringify({
+        scenario: s.id, verdict, problem: verdict === "PASS" ? null : detail, provider: res.meta.provider, model: res.meta.model,
+        trace_id: traceId, at: new Date().toISOString(), gross_amount: s.input.milestone.gross_amount, proposal: res.proposal,
+      }, null, 2) + "\n");
+    }
     lines.push(`${verdict} ${s.id}: ${detail} trace=${traceId}${tag}${s.note ? ` | note: ${s.note}` : ""}`);
   }
   await tracer.flush();

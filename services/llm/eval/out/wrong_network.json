@@ -1,0 +1,25 @@
+{
+  "scenario": "wrong_network",
+  "verdict": "PASS",
+  "problem": null,
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "trace_id": "01a1cf8a-998a-73cf-b181-fca145f0baf3",
+  "at": "2026-11-12T11:35:38.582Z",
+  "gross_amount": "1000000000",
+  "proposal": {
+    "milestone_id": "ms-network",
+    "confidence": 0.3,
+    "evidence_used": [
+      "ev-1"
+    ],
+    "actions": [],
+    "flags": [
+      {
+        "code": "WRONG_NETWORK",
+        "detail": "payee network ethereum-mainnet does not match expected sepolia"
+      }
+    ],
+    "needs_human": true
+  }
+}

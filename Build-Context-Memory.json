@@ -2198,6 +2198,72 @@
         "Push when the lead says so (force push after the rewrite)"
       ],
       "notes": "WDK modules used: @tetherto/wdk 1.0.0-beta.22 and @tetherto/wdk-wallet-evm 1.0.0-beta.26 (wdk-wallet and wdk-failover-provider are transitive only)."
+    },
+    {
+      "session_id": "session_013",
+      "timestamp": "2026-11-12T11:42:21Z",
+      "ai_agent": "Executing engineer (main session)",
+      "current_phase": "Block 4 follow-ups: Policy rule order, history hygiene, evaluation, app readiness",
+      "progress": {
+        "completed": [
+          "Policy engine: hard rules only for money-moving plans; no-payout plans escalate; INJECTION_FLAGGED and NO_PAYOUTS; needs_human never approved",
+          "Paid-data injection regression test (guard and agent)",
+          "the project rules file and the working guide removed from all of main's history; secrets scan clean",
+          "Evaluation 8/9 on live Groq; replay file rebuilt from real outputs (8 real, 1 curated)",
+          "CORS, list endpoints, proposal in timeline, operator approval relay, API screen map, npm run demo"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "Second chain deploy: no Base Sepolia test ETH",
+          "Push: waiting for the lead"
+        ]
+      },
+      "last_session_summary": "Session 012 built Block 4: seed, x402, README, DEMO; reconciliation country from the contract profile; first history rewrite.",
+      "changes_made": [
+        "services/policy: engine.ts, types.ts, index.ts, http.ts (error log); tests",
+        "services/llm: eval/run.ts (EVAL_ONLY, EVAL_SAVE_DIR), eval/out/*.json, guards test",
+        "services/backend: http.ts (CORS, lists, timeline), contracts.ts and contractRoutes.ts (list), operator.ts (approval relay), seed.ts (logs, resilience, local node), scripts/make-replay.ts, replay/proposals.json, package.json (demo)",
+        "docs/INTERFACES.md (v0.7 rule order and codes), docs/API.md, docs/DEMO.md, README.md, Development.md"
+      ],
+      "file_module_map": [
+        {
+          "file": "services/policy/test/engine.branches.test.ts",
+          "purpose": "One test per decision branch"
+        },
+        {
+          "file": "services/llm/eval/out/",
+          "purpose": "Real model outputs from the evaluation run (source of the replay file)"
+        },
+        {
+          "file": "services/backend/test/appReads.test.ts",
+          "purpose": "Milestone list, contract list, proposal in the timeline"
+        }
+      ],
+      "decisions_log": [
+        "Policy: hard rules only for money-moving plans; no-payout plans escalate with reason codes (lead)",
+        "New escalation codes INJECTION_FLAGGED and NO_PAYOUTS (INTERFACES v0.7)",
+        "Approval decisions reach the Policy Service through a backend relay; the Policy Service keeps verifying the operator signature; no CORS on the Policy Service",
+        "Replay uses a real output only when it passed its scenario check; otherwise curated and labelled"
+      ],
+      "known_issues": [
+        "identity_mismatch: the live model does not flag the mismatch (backstops hold)",
+        "Approving a NO_PAYOUTS escalation executes a plan with no payouts",
+        "Sepolia public RPC timeouts can fail a seed scenario",
+        "Remaining file-name mentions of the two removed files in the memory file and Development.md",
+        "Remote holds pre-rewrite history; a force push is needed"
+      ],
+      "errors_encountered": [
+        "Sepolia RPC timeouts during the seed (deposit confirm; Policy chain read)",
+        "Provider network errors on two eval scenarios; passed on one retry",
+        "An old scratch script with the same name ran instead of the new one; it threw before writing; redone under a new name"
+      ],
+      "next_steps": [
+        "Lead: decide the remaining file-name mentions and the NO_PAYOUTS approval behaviour",
+        "Lead: say when to force push",
+        "Fund Base Sepolia and deploy the second chain",
+        "Tell the web app workstream about INTERFACES v0.7 and the API screen map"
+      ],
+      "notes": "Evaluation traces are in Opik project tethran; each replay proposal names its trace."
     }
   ]
 }

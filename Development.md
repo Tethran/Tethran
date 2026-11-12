@@ -719,3 +719,55 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
 - README rewritten: what it is, one-command run, architecture, simulated parts, trust assumptions, tests, WDK
   modules used and what WDK could not do. `docs/DEMO.md`: step-by-step journey, handled failure, reset commands,
   real versus simulated, fallback plan. `docs/API.md`: x402, seed, reconciliation country.
+
+---
+
+## Session 013 — 2026-11-13 — Policy rule order, second history rewrite, evaluation, app readiness
+
+### Policy engine (lead's decision; for line-by-line review)
+- The code firing on no-payout plans was `TAX_RESERVE_TOO_LOW`, derived from a zero tax reserve against the gross
+  amount on plans that move no money. Fixed by the new rule order:
+  - `SCHEMA_INVALID` always rejects.
+  - Hard rules (duplicate, hold, payee, per-tx cap, daily cap, vault reserve, tax reserve) run only when the plan
+    has money-moving actions (`payout`, `mobile_money_payout`); any violation rejects.
+  - Escalation rules run for every plan: soft limit, low confidence, `needs_human`, identity mismatch, and the new
+    `INJECTION_FLAGGED` (agent or guard injection codes). A plan that moves no money and triggers none of them is
+    escalated `NO_PAYOUTS`: a plan that pays nobody is never approved automatically.
+  - `needs_human=true` is never approved (an explicit last check as well).
+- 15 branch tests (`services/policy/test/engine.branches.test.ts`); 3 older tests updated to the new behaviour.
+  `docs/INTERFACES.md` reason codes and rule order updated (v0.7); the other workstream must be told.
+- Open point: a human approving a `NO_PAYOUTS` escalation executes a plan with no payouts (receipt, no transfers).
+
+### Paid-data regression test
+- Real injection text inside x402 paid data is flagged by the guard and, through the agent, forces `needs_human`
+  and an `INJECTION_SUSPECTED` flag; a tool name inside the purchased data still counts. Only our own label is exempt.
+
+### Second history rewrite (approved)
+- Backup tag `pre-rewrite-backup-2`. the project rules file and the working guide removed from every commit of `main` with an
+  index filter; local copies kept and added to `.git/info/exclude`. Full-history grep: neither file in any commit;
+  no tool names in messages. Remaining mentions are file-name references in the memory file and this log, one deleted
+  line of an early architecture draft, and the plan's own no-attribution rule (reported to the lead).
+- Secrets scan over `main` and all local refs: none of the 14 secret values in `.env` appear; no key, seed or API-key
+  patterns; no `.env`, `.sqlite` or `.demo-data` file ever committed. Not pushed.
+
+### Evaluation (live Groq openai/gpt-oss-120b, current prompt, small batches)
+- 8 of 9 pass: clean_delivery, disputed_delivery, prompt_injection, over_limit_request, unknown_payee,
+  low_confidence_plan, duplicate_send, wrong_network. identity_mismatch fails: the model did not flag the invoice
+  issued under a different name (the prompt has the rule). Backstops: the backend's strict identity hold and the
+  Policy Service's `IDENTITY_MISMATCH` escalation. Two scenarios first failed on provider network errors and passed
+  on one retry.
+- The runner takes `EVAL_ONLY` and `EVAL_SAVE_DIR`; outputs are in `services/llm/eval/out/`. `make-replay.ts` builds
+  the replay file from passing real outputs: 8 real (each names its Opik trace), 1 curated (labelled).
+
+### App readiness (no UI work)
+- CORS for `http://localhost:3000` (`CORS_ORIGINS`), preflight included, never on `/internal`.
+- `GET /milestones` and `GET /contracts` lists; the timeline's settlement plans include the agent's proposal,
+  `agent_mode` and `approval_id`; operator approval typed data and a signed-decision relay to the Policy Service.
+- `docs/API.md`: screen-to-endpoint map, CORS and error format, list endpoints, wallet roles and signing policy.
+- `npm run demo`: one command starts the services (and the local chain if needed), seeds and keeps serving.
+
+### Seed on Sepolia (new rules)
+- 7 of 9 as intended; clean_delivery paid out with receipt #6; no-payout plans now escalated. Two scenarios failed on
+  Sepolia RPC timeouts (`over_limit_request` deposit confirm; `prompt_injection` Policy Service chain read). Both
+  services now log unexpected errors (sanitised); the seed keeps full service logs in `.demo-data/logs/`, and a
+  failed scenario no longer stops the rest.

@@ -1,0 +1,26 @@
+{
+  "scenario": "disputed_delivery",
+  "verdict": "PASS",
+  "problem": null,
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "trace_id": "01a1cf8a-470e-7487-af1f-a005f53c734d",
+  "at": "2026-11-12T11:35:14.401Z",
+  "gross_amount": "1000000000",
+  "proposal": {
+    "milestone_id": "ms-disputed",
+    "confidence": 0.3,
+    "evidence_used": [
+      "ev-1",
+      "ev-2"
+    ],
+    "actions": [],
+    "flags": [
+      {
+        "code": "DELIVERY_DISPUTED",
+        "detail": "Client rejects delivery while provider claims delivered"
+      }
+    ],
+    "needs_human": true
+  }
+}

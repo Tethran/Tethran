@@ -110,7 +110,7 @@ test("replay mode: a saved proposal is used, labelled Replay, and still goes thr
   await fundedAndReleased(h);
   const r: any = await h.orchestrator.settle(M1);
   assert.equal(r.agent_mode, "Replay");
-  assert.match(r.replay_source, /curated/);
+  assert.match(r.replay_source, /^(curated|real model output: .+ Opik trace )/); // always says where it came from
   assert.equal(h.llm.calls, 0);
   assert.equal(h.submitted.length, 1); // the Policy Service still decided
   assert.equal(r.decision, "approved");

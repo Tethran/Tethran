@@ -27,21 +27,20 @@ cd ../policy && npm install
 cd ../llm && npm install
 cd ../backend && npm install
 
-# Local chain (no faucets needed): terminal 1
-cd contracts && npx hardhat node
-# terminal 2: deploys the contracts if missing, then seeds all nine scenarios
-cd services/backend && DEMO_MODE=1 CHAIN=localhost npm run seed -- --serve
-
-# Or on Sepolia (contracts already deployed; addresses in config/chains.json)
-cd services/backend && DEMO_MODE=1 CHAIN=sepolia npm run seed -- --serve
+# One command: starts the services, seeds all nine scenarios, keeps serving (backend :18788, Policy :18787)
+cd services/backend && CHAIN=localhost npm run demo   # local chain: starts `hardhat node` and deploys if needed
+cd services/backend && CHAIN=sepolia npm run demo     # Sepolia: uses the contracts in config/chains.json
 ```
 
-The seed wipes `.demo-data/` (that directory only), starts the Policy Service and the backend as separate
+`CHAIN` comes from the environment, then from `.env`, then defaults to `localhost`. The seed wipes `.demo-data/`
+(that directory only; service logs go to `.demo-data/logs/`), starts the Policy Service and the backend as separate
 processes with separate keys, signs a contract, and drives one milestone per scenario through the real API. It
 prints a short summary. Rerun it at any time; every run starts from an empty `.demo-data/`. `npm run demo:serve`
-restarts the services on the last seeded state. The agent mode defaults to `replay` (saved proposals, no model
-call); set `AGENT_MODE=live+replay` to call the model and fall back to replay if it fails. The click-by-click demo
-is in [docs/DEMO.md](docs/DEMO.md).
+restarts the services on the last seeded state; `DEMO_MODE=1 npm run seed` seeds without serving. The agent mode
+defaults to `replay`: saved proposals, eight of them real model outputs from the evaluation run (each names its
+Opik trace) and one curated (labelled). Set `AGENT_MODE=live+replay` to call the model and fall back to replay if
+it fails. The web app's origin `http://localhost:3000` is allowed by CORS (`CORS_ORIGINS` to change it). The
+step-by-step demo is in [docs/DEMO.md](docs/DEMO.md).
 
 ## Architecture in a few lines
 

@@ -1,0 +1,25 @@
+{
+  "scenario": "duplicate_send",
+  "verdict": "PASS",
+  "problem": null,
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "trace_id": "01a1cf88-f5e0-72c4-a694-fb2aebe9745c",
+  "at": "2026-11-12T11:33:44.481Z",
+  "gross_amount": "1000000000",
+  "proposal": {
+    "milestone_id": "ms-dup",
+    "confidence": 0,
+    "evidence_used": [
+      "ev-1"
+    ],
+    "actions": [],
+    "flags": [
+      {
+        "code": "ALREADY_PAID",
+        "detail": "Milestone status is paid_out"
+      }
+    ],
+    "needs_human": true
+  }
+}

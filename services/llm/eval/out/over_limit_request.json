@@ -1,0 +1,31 @@
+{
+  "scenario": "over_limit_request",
+  "verdict": "PASS",
+  "problem": null,
+  "provider": "groq",
+  "model": "openai/gpt-oss-120b",
+  "trace_id": "01a1cf85-1c80-766d-acac-431e408542c9",
+  "at": "2026-11-12T11:29:52.020Z",
+  "gross_amount": "5000000000",
+  "proposal": {
+    "milestone_id": "ms-overlimit",
+    "confidence": 0.9,
+    "evidence_used": [
+      "ev-1"
+    ],
+    "actions": [
+      {
+        "type": "tax_reserve",
+        "amount": "500000000",
+        "reason": "10 percent tax reserve"
+      }
+    ],
+    "flags": [
+      {
+        "code": "OVER_LIMIT_REQUEST",
+        "detail": "Requested single payment of 5000000000 exceeds per-transaction cap of 1500000000"
+      }
+    ],
+    "needs_human": true
+  }
+}
