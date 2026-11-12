@@ -1163,6 +1163,268 @@
         "Get Base Sepolia test ETH; consider a dedicated Sepolia RPC URL for the demo"
       ],
       "notes": "Stopped for the lead review before the vault and guard, as instructed. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
+    },
+    {
+      "session_id": "session_007",
+      "timestamp": "2026-11-12T01:03:23Z",
+      "ai_agent": "Executing engineer (Person A workstream) with two helper agents (services/policy API, services/llm)",
+      "current_phase": "Phase 1 (vault awaiting review), Phase 2 (Policy API built), Phase 3 groundwork (LlmProvider)",
+      "progress": {
+        "completed": [
+          "Escrow minTimeout as a constructor parameter; redeployed to Sepolia with 10 minutes; proof passed",
+          "ProviderVault with built-in spending guard, signer rotation and provider withdrawal; 36 tests (105 contract tests)",
+          "INTERFACES.md v0.5",
+          "Policy Service HTTP API, co-signing, stores and approvals queue; 104 tests",
+          "services/llm: LlmProvider, adapters, router, tracing, agent call, eval runner; 33 tests",
+          "ChainClient: bounded retry when gas estimation reverts; 28 tests"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "Everything after the vault waits for the lead's review of ProviderVault.sol",
+          "Real LLM and Opik runs need API keys (GROQ, GEMINI, OPIK)"
+        ]
+      },
+      "last_session_summary": "Session 006 applied review findings R1 to R10 to the escrow, ChainClient, scripts and policy engine, published INTERFACES v0.4, redeployed to Sepolia and wrote the vault design notes.",
+      "changes_made": [
+        "contracts/contracts/MilestoneEscrow.sol: minTimeout immutable; tests and deploy script updated",
+        "contracts/contracts/ProviderVault.sol and contracts/test/ProviderVault.test.ts added",
+        "docs/INTERFACES.md v0.5",
+        "services/policy: cosign, service, stores, typed, http, main and their tests",
+        "services/llm: new module",
+        "services/chain: estimate retry",
+        "config/chains.json: new Sepolia addresses and minTimeoutSeconds; .env.example LLM variables; README status and trust assumptions; Development.md"
+      ],
+      "file_module_map": [
+        {
+          "file": "contracts/contracts/ProviderVault.sol",
+          "purpose": "Two-signature vault with built-in guard. Needs line-by-line review",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "contracts/test/ProviderVault.test.ts",
+          "purpose": "36 vault tests",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "contracts/contracts/MilestoneEscrow.sol",
+          "purpose": "minTimeout set at deployment",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "contracts/scripts/deploy.ts",
+          "purpose": "Passes minTimeout from chains.json",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "config/chains.json",
+          "purpose": "Sepolia addresses; minTimeoutSeconds",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "docs/INTERFACES.md",
+          "purpose": "Workstream contract, v0.5",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/policy/src/cosign.ts",
+          "purpose": "Vault Transfer co-signing. Key handling: needs review",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/policy/src/service.ts",
+          "purpose": "Policy Service logic behind the API. Needs review",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/policy/src/stores.ts",
+          "purpose": "SQLite stores: policy versions, decisions, approvals",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/policy/src/typed.ts",
+          "purpose": "EIP-712 verification for operator actions and attestations",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/policy/src/http.ts",
+          "purpose": "node:http server for the seven routes",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/policy/src/main.ts",
+          "purpose": "Entry point; chain reader and writer are labelled stubs",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/llm/src/router.ts",
+          "purpose": "Provider order, retries, 429 handling, three-attempt cap",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/llm/src/agent.ts",
+          "purpose": "proposeSettlement: valid proposal or rejected SCHEMA_INVALID",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/llm/src/providers/",
+          "purpose": "Groq, Gemini, NVIDIA adapters over fetch",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/llm/eval/run.ts",
+          "purpose": "npm run eval:agent: nine seeded scenarios",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "services/chain/src/evmChainClient.ts",
+          "purpose": "Bounded retry on reverted gas estimates",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": ".env.example",
+          "purpose": "LLM variable names",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "README.md",
+          "purpose": "Status table; known trust assumptions",
+          "last_modified": "2026-11-12T01:03:23Z"
+        },
+        {
+          "file": "Development.md",
+          "purpose": "Change log",
+          "last_modified": "2026-11-12T01:03:23Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Decisions: lead approved the escrow design; minTimeout as a constructor parameter (10 minutes on Sepolia); guard merged into the vault; operator-signed rotation and provider withdrawal; per-action id; LlmProvider with Groq then Gemini",
+          "reason": "Relayed by the lead developer",
+          "alternatives_considered": "Separate guard contract; sequential nonce; fixed MIN_TIMEOUT constant"
+        },
+        {
+          "decision": "Vault: payees set in batches, policy changes effective at once, operator is the provider or agency admin, plain deployment per provider",
+          "reason": "The lead said to follow my recommendation on these four unless it weakens a trust boundary; none does, though an immediate policy change means a stolen operator key can raise limits without delay (it still cannot move funds to a third party)",
+          "alternatives_considered": "One payee per call; a delay on limit changes; platform as operator; a clone factory"
+        },
+        {
+          "decision": "The vault authorises everything by signature and never by msg.sender",
+          "reason": "Any relayer can submit; the keys that matter never need gas, and there is one rule to review",
+          "alternatives_considered": "Operator calls directly as msg.sender"
+        },
+        {
+          "decision": "One guard function serves both execute and the check view",
+          "reason": "The pre-flight answer can never differ from what execute enforces",
+          "alternatives_considered": "Separate view logic"
+        },
+        {
+          "decision": "withdrawToProvider ignores the limits and does not count towards the daily cap",
+          "reason": "It is the escape hatch for lost co-signer keys and can pay only the provider's fixed address",
+          "alternatives_considered": "Applying the limits to it"
+        },
+        {
+          "decision": "ChainClient asks again up to twice when gas estimation reverts on chains with confirmations > 1",
+          "reason": "Public RPC nodes lag a block; a reverted estimate broadcasts nothing",
+          "alternatives_considered": "More confirmations; a dedicated RPC"
+        },
+        {
+          "decision": "Helper agent commits cherry-picked onto main instead of merge commits",
+          "reason": "Linear history with plain messages and no branch names in it",
+          "alternatives_considered": "Merge commits"
+        },
+        {
+          "decision": "ChainClient vault wiring deferred until the vault is approved",
+          "reason": "It depends on the vault ABI, which is under review",
+          "alternatives_considered": "Wiring it now"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "ProviderVault is not deployed and ChainClient vaultExecute, setPolicy and the other vault calls still throw NotBuiltYetError",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Policy Service main.ts cannot serve real proposals: its chain reader and writer are stubs until wired to ChainClient",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Operator signing for POST /v1/policy and approval decisions is not defined in INTERFACES; the service uses a TethranPolicy domain with no chain id, and that signature cannot be forwarded to the vault (setPolicy and setPayees need their own)",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "POST /v1/attestations/verify needs a release_to_provider field that INTERFACES does not list",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "A proposal whose co-signing failed cannot be retried (DUPLICATE_PROPOSAL); recovery path undecided",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Two approvals made before either lands can both pass the off-chain daily-cap check; the vault blocks the second on-chain",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "services/llm has never called a real provider or Opik: no API keys; the Opik adapter is unverified",
+          "severity": "high",
+          "status": "open"
+        },
+        {
+          "issue": "A stolen operator key can raise vault limits at once (no delay), though it can only move funds to the provider's fixed address",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "The operator address of a vault is immutable; a lost operator key freezes policy (transfers within the existing limits still work)",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Arbiter and vault selection in the backend with tests: waits for the treasury service",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Two earlier Sepolia escrows and their test tokens are abandoned on-chain",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "docs/03 and PRD FR-4.5, FR-14.5 still describe the pre-v0.2 design; docs/notes/vault-guard-design.md predates the decisions",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Base Sepolia wallets hold no test ETH yet",
+          "severity": "medium",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "approve reverted at gas estimation on the freshly deployed Sepolia escrow",
+          "context": "Public RPC node had not seen the funding block although two confirmations had passed",
+          "resolution": "ChainClient retries a reverted estimate up to twice on such chains; rerun passed"
+        },
+        {
+          "error": "PartiesNotDistinct in a new vault integration test",
+          "context": "The test picked signers that overlapped with the setup's provider",
+          "resolution": "Test uses separate signers"
+        }
+      ],
+      "next_steps": [
+        "Lead: line-by-line review of ProviderVault.sol; also services/policy/src/cosign.ts and service.ts",
+        "Lead: decide how the operator signs a policy change once (API versus vault typed data), and the failed-signing recovery path",
+        "Lead: provide GROQ, GEMINI and OPIK keys so eval:agent and tracing can be run for real",
+        "After vault approval: ChainClient vault wiring, deploy a vault on Sepolia, then ReceiptNFT",
+        "Then the treasury service (Stripe webhook, funding, arbiter and vault selection with the post-funding check), then the full vertical slice through ChainClient"
+      ],
+      "notes": "Stopped for the lead review after the vault, as instructed. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
     }
   ]
 }

@@ -22,10 +22,13 @@ Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer tra
 |---|---|
 | `TestUSDT` (6 decimals, EIP-3009) | Built, tested |
 | `MilestoneEscrow`: createAndFund, approve, dispute, decide (2-of-3 EIP-712), release, refund, refundApproved | Built, tested, deployed on Sepolia |
-| Vault, spending guard, receipt NFT | Not built yet |
+| `ProviderVault`: two-signature vault with built-in spending guard, signer rotation, provider withdrawal | Built, tested; not deployed, not wired into `ChainClient` yet |
+| Receipt NFT | Not built yet |
 | `ChainClient` (escrow calls, idempotency keys, operator resolve) | Built, tested |
 | Policy Service rule engine, reason codes, audit log | Built, tested |
-| Policy Service API and co-signing, treasury service, app, agent | Not built yet |
+| Policy Service HTTP API, co-signing, approvals queue | Built, tested offline; chain reads and writes not wired yet |
+| `LlmProvider` (Groq, Gemini, optional NVIDIA) and agent eval runner | Built, tested offline only; not yet run against a real provider |
+| Treasury service, app | Not built yet |
 
 ## Known trust assumptions
 
@@ -44,7 +47,8 @@ Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer tra
 config/chains.json   per-chain config (chain id, RPC, contract addresses); test networks only
 contracts/           Solidity contracts, tests and deploy scripts (Hardhat, ethers v6)
 services/chain/      ChainClient: the only code that talks to a chain
-services/policy/     Policy Service: deterministic rule engine and append-only audit log
+services/policy/     Policy Service: rule engine, audit log, HTTP API, co-signing
+services/llm/        LlmProvider: the only code that calls a model API
 app/                 web app (not built yet)
 docs/                whitepaper, PRD, architecture, plan, INTERFACES.md, TASKS.md
 Development.md       log of every change and why

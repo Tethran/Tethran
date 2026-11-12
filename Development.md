@@ -322,3 +322,92 @@ signatures; `BELOW_VAULT_RESERVE` and the new rule order; the tax-reserve base; 
 
 ### 8. Vault and guard
 Design notes only, no code: `docs/notes/vault-guard-design.md`, with seven points marked for decision.
+
+---
+
+## 2026-11-12 — Session 007: escrow minTimeout, ProviderVault, interfaces v0.5, Policy API, LlmProvider
+
+### 1. Lead decisions
+- Escrow design changes approved. `MIN_TIMEOUT` becomes a constructor parameter. Releasing a key when the node
+  refused the transaction: keep. `BELOW_VAULT_RESERVE` ordering: fine. Treasury reclaim of Approved milestones:
+  keep, documented in the README as a trust assumption.
+- Vault: guard merged into the vault; operator-signed signer rotation; operator-signed withdrawal to the
+  provider's fixed address; per-action id consumed once. For the other four design points I went with my
+  recommendation: payees set in batches (`setPayees`), policy changes take effect at once, the operator is the
+  provider or agency admin, plain deployment per provider (no factory).
+- LLM provider: Groq then Gemini (optional NVIDIA) behind one `LlmProvider` interface.
+
+### 2. MilestoneEscrow
+- `minTimeout` is an immutable set in the constructor (`(usdt, admin, releaser, funder, minTimeout)`), must be
+  non-zero. 1 day in tests; `config/chains.json` `minTimeoutSeconds: 600` for Sepolia.
+- Redeployed to Sepolia: TestUSDT (test token) `0xE2D587DD9ad01C91DFf0baABc120192C516b9879`, MilestoneEscrow
+  `0x172AE76568ba8F83dc7584D2a161713200d9b278` (minTimeout 600 s). Proof passed on it: createAndFund
+  `0xdfc43c1b…`, approve `0x0c2b4a94…`, release `0xfecc682d…`.
+- The first proof run on the new escrow failed: `approve` reverted at gas estimation because a public RPC node
+  had not yet seen the funding block. `ChainClient` now asks again up to twice (5 s apart) when gas estimation
+  reverts on a chain with `confirmations > 1`. Nothing is broadcast in that case, so this is safe.
+
+### 3. ProviderVault (new, needs line-by-line review)
+`contracts/contracts/ProviderVault.sol`, about 230 lines with comments. No `msg.sender` checks: every action is
+authorised by EIP-712 signatures and anyone may submit.
+- `execute(to, amount, proposalHash, actionId, agentSig, policySig)`: both co-signers over the same `Transfer`
+  typed data; the action id is consumed once; then the guard; then the transfer.
+- Guard, one function used by both `execute` and the `check` view: payee allowlist, per-transaction cap, daily
+  cap per UTC day, balance floor. Reverts with `GuardBlocked(reason)`; reason names match the Policy Service codes.
+- Operator actions share one version counter (`version == policyVersion + 1`): `setPolicy`, `setPayees`,
+  `rotateSigners`, `withdrawToProvider`.
+- `withdrawToProvider` pays only the provider address fixed at deployment, ignores the limits and does not
+  count towards the daily cap.
+- Operator, agent signer and Policy signer are always three different addresses (checked at construction and
+  on rotation). A new vault has version 0 and limits 0, so it pays nothing until a policy is signed.
+- Tests: 36 (105 contract tests in total). They cover: one key in both slots, swapped slots, stand-in signers,
+  signatures for a different recipient, amount, proposal, action, vault or chain; every limit at its exact
+  boundary; the UTC-midnight reset; reserve after a top-up; a payee removed after signing; version replay,
+  skip and reuse across action types; a payee list that differs from the signed one; rotation; the escape
+  withdrawal with no policy set; and an escrow -> vault -> payees balance check.
+- **Not done:** not deployed; `ChainClient` vault calls still throw `NotBuiltYetError` (they follow once the
+  vault is approved, because they depend on its ABI).
+
+### 4. INTERFACES.md v0.4 -> v0.5
+`ISpendingGuard` replaced by `IProviderVault` with its typed data and rules; `ChainClient` vault calls
+(`vaultExecute` with `proposalHash` and `actionId`, `setPolicy`, `setPayees`, `rotateVaultSigners`,
+`vaultWithdraw`, `vaultState`, `vaultCheck`); section 2a co-signatures (one per payout action, `action_id`
+definition); `vaults` table columns; escrow `minTimeout`; the treasury trust assumption; section 7 `LlmProvider`.
+
+### 5. Policy Service HTTP API and co-signing (helper agent, own worktree; brought onto main and checked)
+- `src/cosign.ts` (the only file that touches the signer object), `src/service.ts`, `src/stores.ts`,
+  `src/typed.ts`, `src/http.ts` (`node:http`, the seven routes, 127.0.0.1), `src/main.ts`.
+- A decision is written to the audit log and the decisions store before anything is signed.
+- Checked in the main session: the branch touched only `services/policy`; the engine, audit log and their tests
+  are unchanged; typecheck clean; 104 tests pass; `cosign.ts` read and its typed data matches the vault.
+- **Stubbed and labelled:** the chain reader in `main.ts` (fails every read) and the chain writer (records calls).
+  The service cannot serve real proposals until those are wired to `ChainClient`.
+- New dependency in services/policy: `ethers`.
+
+Interface gaps it found (not changed; for the lead):
+1. What the operator signs for `POST /v1/policy` and for an approval decision is not defined. It uses a
+   `TethranPolicy` domain with `PolicyDocument(version, policyHash)` and `ApprovalDecision(...)`. That domain has
+   no chain id, so a signature could be replayed on another deployment.
+2. That signature cannot be passed to the vault: `setPolicy` and `setPayees` need their own typed-data
+   signatures. Today the operator would have to sign two or three times for one policy change.
+3. `POST /v1/attestations/verify` has no `release_to_provider` field, which the typed data needs; the service
+   requires it.
+4. A proposal whose signing failed is already recorded, so a retry is `DUPLICATE_PROPOSAL`; recovery needs a design.
+5. Two proposals approved before either lands on-chain can both pass the daily-cap check; the vault still
+   blocks the second on-chain.
+6. Response shapes for the approvals queue and whether `proposal_hash` carries `0x` are not specified.
+
+### 6. services/llm (helper agent, own worktree; brought onto main and checked)
+- `LlmProvider` per section 7; adapters for Groq, Gemini and NVIDIA using `fetch` (no vendor SDKs); a router with
+  the retry, 429 and three-attempt rules; a tracer interface with an Opik adapter; `proposeSettlement` that
+  always returns either a valid proposal or a rejected `SCHEMA_INVALID` result; `redact()`; the system prompt;
+  nine seeded scenarios and `npm run eval:agent`.
+- Checked in the main session: only `services/llm` touched; typecheck clean; 33 tests pass; `eval:agent` prints
+  nine SKIPPED lines without keys and nine PASS lines with the built-in fake provider.
+- **Not verified at all:** the real Groq, Gemini and NVIDIA calls, any real model's answers to the scenarios, and
+  the Opik adapter (written without an account to test against). No API keys exist on this machine.
+- New dependencies in services/llm: `ajv`, `opik`.
+- `.env.example` gained the LLM variable names.
+
+### 7. Housekeeping
+- Helper agent commits were cherry-picked so history stays linear with plain messages; the worktrees are removed.
