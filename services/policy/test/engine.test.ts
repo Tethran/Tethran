@@ -6,6 +6,7 @@ import { goodProposal, makeCtx, milestoneOf, policy, withActions } from "./helpe
 
 const payout = (amount: string, payee_id = "payee-1") => ({ type: "payout", payee_id, amount, asset: "USDT" });
 const tax = (amount: string) => ({ type: "tax_reserve", amount, reason: "tax" });
+const pick = (r: { decision: string; reasons: string[] }) => [r.decision, r.reasons];
 
 test("approved path returns no reasons and a 64 char hash", () => {
   const r = evaluateProposal(goodProposal(), makeCtx());
@@ -116,9 +117,9 @@ test("PAYEE_NOT_ALLOWED: prototype names are not payees", () => {
   assert.deepEqual(evaluateProposal(p, makeCtx({ policy: pol })).reasons, ["PAYEE_NOT_ALLOWED"]);
 });
 
-test("tax_reserve and conversion actions need no payee", () => {
+test("tax_reserve and conversion actions need no payee (and, moving no money, go to a human)", () => {
   const p = withActions([tax("100"), { type: "conversion", amount: "100", target: "NGN", condition: "x" }]);
-  assert.equal(evaluateProposal(p, makeCtx()).decision, "approved");
+  assert.deepEqual(pick(evaluateProposal(p, makeCtx())), ["escalated", ["NO_PAYOUTS"]]);
 });
 
 test("OVER_PER_TX_CAP: exactly the cap passes, cap + 1 fails", () => {
@@ -196,15 +197,15 @@ test("tax reserve maths with awkward numbers (no rounding)", () => {
 test("tax reserve: 0 bps never fails, and a proposal with no payouts and no tax passes when nothing is due", () => {
   const ctx = makeCtx({ policy: { ...policy, min_tax_reserve_bps: 0 }, milestone: milestoneOf("100") });
   assert.equal(evaluateProposal(withActions([payout("100")]), ctx).decision, "approved");
-  assert.equal(evaluateProposal(withActions([]), makeCtx()).decision, "approved");
-  // an empty proposal on a milestone that owes a reserve is rejected
-  assert.deepEqual(evaluateProposal(withActions([]), makeCtx({ milestone: milestoneOf("100") })).reasons, ["TAX_RESERVE_TOO_LOW"]);
+  // a proposal with no payouts is never rejected for the tax reserve; it goes to a human
+  assert.deepEqual(pick(evaluateProposal(withActions([]), makeCtx())), ["escalated", ["NO_PAYOUTS"]]);
+  assert.deepEqual(pick(evaluateProposal(withActions([]), makeCtx({ milestone: milestoneOf("100") }))), ["escalated", ["NO_PAYOUTS"]]);
 });
 
 test("tax reserve: 10000 bps requires the whole gross amount to be reserved", () => {
   const ctx = makeCtx({ policy: { ...policy, min_tax_reserve_bps: 10000 }, milestone: milestoneOf("100") });
   assert.deepEqual(evaluateProposal(withActions([payout("1"), tax("99")]), ctx).reasons, ["TAX_RESERVE_TOO_LOW"]);
-  assert.equal(evaluateProposal(withActions([tax("100")]), ctx).decision, "approved");
+  assert.deepEqual(pick(evaluateProposal(withActions([tax("100")]), ctx)), ["escalated", ["NO_PAYOUTS"]]);
 });
 
 test("BELOW_VAULT_RESERVE: payouts may not take the vault under vault_min_reserve (exact boundary)", () => {

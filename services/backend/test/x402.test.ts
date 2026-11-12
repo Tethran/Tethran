@@ -119,3 +119,19 @@ test("x402: forged, underpaid, wrong payTo and replayed payments are refused", a
     assert.match((await send(good)).body.error, /already used/);
   } finally { await s.close(); }
 });
+
+test("CORS: the web app origin gets headers and a preflight answer; other origins and /internal do not", async () => {
+  const s = await start();
+  try {
+    const pre = await fetch(`${s.base}/x402`, { method: "OPTIONS", headers: { origin: "http://localhost:3000", "access-control-request-method": "POST" } });
+    assert.equal(pre.status, 204);
+    assert.equal(pre.headers.get("access-control-allow-origin"), "http://localhost:3000");
+    assert.match(pre.headers.get("access-control-allow-headers") ?? "", /x-payment/);
+    const get = await fetch(`${s.base}/x402`, { headers: { origin: "http://localhost:3000" } });
+    assert.equal(get.headers.get("access-control-allow-origin"), "http://localhost:3000");
+    const other = await fetch(`${s.base}/x402`, { headers: { origin: "http://evil.example" } });
+    assert.equal(other.headers.get("access-control-allow-origin"), null);
+    const internal = await fetch(`${s.base}/internal/payees`, { headers: { origin: "http://localhost:3000" } });
+    assert.equal(internal.headers.get("access-control-allow-origin"), null);
+  } finally { await s.close(); }
+});

@@ -24,6 +24,8 @@ import { reconciliationRoutes, type RawResponse } from "./reconciliation";
 const MAX_BODY = 256 * 1024;
 
 export interface HttpDeps {
+  /** Origins allowed by CORS (default http://localhost:3000, the web app in development). */
+  corsOrigins?: string[];
   db: DatabaseSync;
   treasury: Treasury;
   orchestrator: Orchestrator;
@@ -202,9 +204,25 @@ export function createHttpServer(deps: HttpDeps): Server {
     })],
   ];
 
+  const corsOrigins = new Set((deps.corsOrigins ?? ["http://localhost:3000"]).map((o) => o.trim()).filter(Boolean));
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
+      // CORS for the web app (only the configured origins; never for /internal, which is service-to-service).
+      const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+      if (origin && corsOrigins.has(origin) && !url.pathname.startsWith("/internal/")) {
+        res.setHeader("access-control-allow-origin", origin);
+        res.setHeader("vary", "Origin");
+        res.setHeader("access-control-expose-headers", "x-payment-response, content-disposition");
+        if (req.method === "OPTIONS") {
+          res.writeHead(204, {
+            "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+            "access-control-allow-headers": "content-type, x-payment, idempotency-key",
+            "access-control-max-age": "600",
+          });
+          return res.end();
+        }
+      }
       const matching = routes.filter(([, re]) => re.test(url.pathname));
       if (matching.length === 0) return send(res, 404, { error: "not found" });
       const route = matching.find(([m]) => m === req.method);
@@ -231,6 +249,8 @@ export function createHttpServer(deps: HttpDeps): Server {
       send(res, 200, out);
     } catch (e) {
       if (e instanceof ApiError) return send(res, e.status, { error: safeErrorMessage(e), ...(e.code ? { code: e.code } : {}) });
+      // Logged for the operator (URLs and keys stripped); the client only sees "internal error".
+      console.error(`internal error on ${req.method} ${(req.url ?? "").split("?")[0]}: ${safeErrorMessage(e)}`);
       send(res, 500, { error: "internal error" });
     }
   });

@@ -182,11 +182,17 @@ Reason codes:
 | Decision | Codes |
 |---|---|
 | `rejected` | `SCHEMA_INVALID`, `DUPLICATE_PROPOSAL`, `HOLD_ACTIVE`, `PAYEE_NOT_ALLOWED`, `OVER_PER_TX_CAP`, `OVER_DAILY_CAP`, `BELOW_VAULT_RESERVE`, `TAX_RESERVE_TOO_LOW` |
-| `escalated` | `LOW_CONFIDENCE`, `NEEDS_HUMAN`, `IDENTITY_MISMATCH`, `OVER_SOFT_LIMIT` |
+| `escalated` | `LOW_CONFIDENCE`, `NEEDS_HUMAN`, `IDENTITY_MISMATCH`, `OVER_SOFT_LIMIT`, `INJECTION_FLAGGED`, `NO_PAYOUTS` |
 
-Rule order: schema valid → duplicate proposal → hold active → payee allowed → per-tx cap → daily cap → vault reserve → minimum tax reserve
-(any failure so far is `rejected`) → soft limit → confidence threshold → `needs_human` → identity match
-(any failure here is `escalated`). All failing codes of the deciding class are returned; nothing is silently dropped.
+Rule order (v0.7, 13 Nov 2026): schema valid (`SCHEMA_INVALID` always rejects) → **only if the proposal has
+money-moving actions** (`payout`, `mobile_money_payout`): duplicate proposal → hold active → payee allowed → per-tx
+cap → daily cap → vault reserve → minimum tax reserve (any failure so far is `rejected`) → soft limit → confidence
+threshold → `needs_human` → identity match → injection flag (any failure here is `escalated`). A proposal with no
+money-moving actions is never rejected for a hard rule; if nothing else escalates it, it is escalated `NO_PAYOUTS`
+(a plan that pays nobody is never approved automatically). `needs_human=true` is never approved.
+`INJECTION_FLAGGED`: a flag with code `INJECTION_SUSPECTED`, `IGNORE_RULES`, `ROLE_PLAY`, `PAY_UNLISTED_ADDRESS`,
+`KEY_REQUEST`, `TOOL_REQUEST`, `REVEAL_PROMPT` or `FORCE_OUTPUT`. All failing codes of the deciding class are
+returned; nothing is silently dropped.
 
 `HOLD_ACTIVE`: the proposal is for a card-funded milestone that is not yet eligible for release (still inside
 its chargeback hold, or not released). The orchestrator must not call the agent until release is eligible;

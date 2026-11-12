@@ -101,40 +101,60 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
   const rejected: RejectReason[] = [];
   const escalated: EscalateReason[] = [];
 
-  // Rejecting rules, in INTERFACES.md order.
-  if (ctx.seenProposalHashes.has(proposal_hash)) rejected.push("DUPLICATE_PROPOSAL");
+  // Hard rules: they run only against money-moving actions (payouts). A proposal that moves no money cannot break a
+  // payee, cap, reserve, duplicate or hold rule, so it is never rejected for one; it goes to a human instead.
+  const movesMoney = payouts.length > 0;
+  if (movesMoney) {
+    // In INTERFACES.md order.
+    if (ctx.seenProposalHashes.has(proposal_hash)) rejected.push("DUPLICATE_PROPOSAL");
 
-  if (ctx.milestone.cardFunded && !ctx.milestone.releaseEligible) rejected.push("HOLD_ACTIVE");
+    if (ctx.milestone.cardFunded && !ctx.milestone.releaseEligible) rejected.push("HOLD_ACTIVE");
 
-  const payeeBad = payouts.some((a) => {
-    if (!policy.payee_allowlist.includes(a.payee_id)) return true;
-    if (!Object.hasOwn(ctx.payees, a.payee_id)) return true;
-    return ctx.payees[a.payee_id].address.length === 0;
-  });
-  if (payeeBad) rejected.push("PAYEE_NOT_ALLOWED");
+    const payeeBad = payouts.some((a) => {
+      if (!policy.payee_allowlist.includes(a.payee_id)) return true;
+      if (!Object.hasOwn(ctx.payees, a.payee_id)) return true;
+      return ctx.payees[a.payee_id].address.length === 0;
+    });
+    if (payeeBad) rejected.push("PAYEE_NOT_ALLOWED");
 
-  const perTxCap = BigInt(policy.per_tx_cap);
-  if (payoutAmounts.some((n) => n > perTxCap)) rejected.push("OVER_PER_TX_CAP");
+    const perTxCap = BigInt(policy.per_tx_cap);
+    if (payoutAmounts.some((n) => n > perTxCap)) rejected.push("OVER_PER_TX_CAP");
 
-  if (BigInt(ctx.spentTodayBaseUnits) + payoutTotal > BigInt(policy.daily_cap)) rejected.push("OVER_DAILY_CAP");
+    if (BigInt(ctx.spentTodayBaseUnits) + payoutTotal > BigInt(policy.daily_cap)) rejected.push("OVER_DAILY_CAP");
 
-  // The payouts leave the vault; tax_reserve and conversion amounts stay in it.
-  // After this proposal the vault must still hold at least vault_min_reserve (the guard enforces the same on-chain).
-  if (BigInt(ctx.vaultBalance) - payoutTotal < BigInt(policy.vault_min_reserve)) rejected.push("BELOW_VAULT_RESERVE");
+    // The payouts leave the vault; tax_reserve and conversion amounts stay in it.
+    // After this proposal the vault must still hold at least vault_min_reserve (the guard enforces the same on-chain).
+    if (BigInt(ctx.vaultBalance) - payoutTotal < BigInt(policy.vault_min_reserve)) rejected.push("BELOW_VAULT_RESERVE");
 
-  // The tax reserve is a share of the gross milestone payout amount (what the escrow released).
-  // Rule: taxTotal / grossAmount >= bps / 10000, done as integers.
-  const gross = BigInt(ctx.milestone.grossAmount);
-  if (taxTotal * 10000n < BigInt(policy.min_tax_reserve_bps) * gross) rejected.push("TAX_RESERVE_TOO_LOW");
+    // The tax reserve is a share of the gross milestone payout amount (what the escrow released), required whenever
+    // money is paid out. Rule: taxTotal / grossAmount >= bps / 10000, done as integers.
+    const gross = BigInt(ctx.milestone.grossAmount);
+    if (taxTotal * 10000n < BigInt(policy.min_tax_reserve_bps) * gross) rejected.push("TAX_RESERVE_TOO_LOW");
+  }
 
-  // Escalating rules.
+  // Escalating rules (any proposal).
   const softLimit = BigInt(policy.per_tx_soft_limit);
   if (payoutAmounts.some((n) => n > softLimit)) escalated.push("OVER_SOFT_LIMIT");
   if (p.confidence < policy.confidence_threshold) escalated.push("LOW_CONFIDENCE");
   if (p.needs_human) escalated.push("NEEDS_HUMAN");
   if (!ctx.milestone.identityMatch) escalated.push("IDENTITY_MISMATCH");
+  if (p.flags.some((f) => INJECTION_FLAG_CODES.has(f.code))) escalated.push("INJECTION_FLAGGED");
+  // A plan that pays nobody is never approved automatically, even when nothing else is wrong.
+  if (!movesMoney && escalated.length === 0) escalated.push("NO_PAYOUTS");
 
   if (rejected.length > 0) return { decision: "rejected", reasons: rejected, proposal_hash };
   if (escalated.length > 0) return { decision: "escalated", reasons: escalated, proposal_hash };
+  // Unreachable with needs_human=true (it always escalates); kept explicit as the last line of defence.
+  if (p.needs_human) return { decision: "escalated", reasons: ["NEEDS_HUMAN"], proposal_hash };
   return { decision: "approved", reasons: [], proposal_hash };
 }
+
+/**
+ * Flag codes that mean the agent or its input guard saw an injection attempt: the agent's own
+ * INJECTION_SUSPECTED (also added by the post-check whenever the input guard found something) and the input
+ * guard's pattern codes.
+ */
+export const INJECTION_FLAG_CODES: ReadonlySet<string> = new Set([
+  "INJECTION_SUSPECTED", "IGNORE_RULES", "ROLE_PLAY", "PAY_UNLISTED_ADDRESS", "KEY_REQUEST", "TOOL_REQUEST",
+  "REVEAL_PROMPT", "FORCE_OUTPUT",
+]);

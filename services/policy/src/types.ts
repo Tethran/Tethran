@@ -12,7 +12,7 @@ export type RejectReason =
   | "BELOW_VAULT_RESERVE"
   | "TAX_RESERVE_TOO_LOW";
 
-export type EscalateReason = "LOW_CONFIDENCE" | "NEEDS_HUMAN" | "IDENTITY_MISMATCH" | "OVER_SOFT_LIMIT";
+export type EscalateReason = "LOW_CONFIDENCE" | "NEEDS_HUMAN" | "IDENTITY_MISMATCH" | "OVER_SOFT_LIMIT" | "INJECTION_FLAGGED" | "NO_PAYOUTS";
 
 export type ReasonCode = RejectReason | EscalateReason;
 

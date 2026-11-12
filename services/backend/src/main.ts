@@ -36,7 +36,7 @@ loadEnvOnly(resolve(__dirname, "../../../.env"), [
   "CHAIN", "RPC_URL_*", "TREASURY_PRIVATE_KEY", "AGENT_SIGNER_PRIVATE_KEY", "ARBITER_ADDRESS", "POLICY_URL", "INTERNAL_TOKEN",
   "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
   "BACKEND_DATA_DIR", "BACKEND_PORT", "HOST", "CARD_HOLD_SECONDS", "MILESTONE_TIMEOUT_SECONDS",
-  "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED", "PHONE_HASH_SALT", "X402_CAP_PER_RUN",
+  "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED", "PHONE_HASH_SALT", "X402_CAP_PER_RUN", "CORS_ORIGINS",
 ]);
 
 function need(name: string): string {
@@ -136,6 +136,7 @@ const operator = createOperator({ db, chain, treasury, policy: policyClient, now
 
 listen(createHttpServer({
   db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets, phoneHashSalt: process.env.PHONE_HASH_SALT, operator, x402,
+  corsOrigins: (process.env.CORS_ORIGINS ?? "http://localhost:3000").split(","),
 }), port, host).then(
   (p) => console.log(`backend listening on ${host}:${p} (chain ${chainCfg.name} ${chainCfg.chainId}; checkout ${checkout.name}; agent ${process.env.AGENT_MODE ?? "live+replay"})`),
   (e) => {
