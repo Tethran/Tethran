@@ -82,6 +82,11 @@ match the provider record.
 `state` is the off-chain state (INTERFACES.md section 0): `draft`, `funded`, `in_review`, `approved`, `disputed`,
 `released`, `paid_out`, `refunded`.
 
+#### `GET /milestones?provider_id=&state=&scenario=` — list for the dashboard
+
+`{ "count": 9, "milestones": [ { …milestone row, as below… } ] }`, newest first, at most 200. Local records; open one
+with `GET /milestones/{id}` to sync it with the escrow.
+
 #### `GET /milestones/{id}` — milestone, synced with the escrow
 
 Response: the milestone record (as above), with `state` brought in line with the on-chain escrow.
@@ -98,6 +103,10 @@ Response: the milestone record (as above), with `state` brought in line with the
   "evidence": [{ "id": 1, "at": "2026-11-12T10:02:00.000Z" }],
   "settlement_plans": [
     { "id": 1, "proposal_hash": "ab12…", "trace_id": "01a1cda7-bea5-74de-8063-77cdf30ab174", "decision": "paid_out", "reasons": [],
+      "approval_id": null, "agent_mode": "live",
+      "proposal": { "milestone_id": "c9fe85ad-…", "confidence": 0.9, "evidence_used": ["ev-1"],
+        "actions": [{ "type": "payout", "payee_id": "payee_amara", "amount": "60000000", "asset": "USDT" }, { "type": "tax_reserve", "amount": "10000000", "reason": "…" }],
+        "flags": [], "needs_human": false },
       "at": "2026-11-12T10:03:00.000Z" }
   ],
   "payouts": [
@@ -111,6 +120,8 @@ Response: the milestone record (as above), with `state` brought in line with the
 }
 ```
 
+`proposal` is the agent's output as stored (untrusted, schema-checked; `null` when the agent produced nothing valid);
+`decision` and `reasons` are the Policy Service's. `agent_mode` is `live`, `replay` or `Replay (live failed: …)`.
 `trace_id` is the Opik trace of the settlement run. `simulated: 1` on a payout means the on-chain transfer went to
 the rail's deposit wallet and the mobile-money or bank leg is simulated.
 
@@ -374,8 +385,10 @@ Sends a signed `charge.dispute.created` event. Inside the card hold the escrow i
 
 The client, payee and subcontractor wallets are Tether WDK wallets (`@tetherto/wdk` core with
 `@tetherto/wdk-wallet-evm`), derived from one BIP-39 test seed (`DEMO_WALLET_SEED`). Roles: `client` (account 0),
-`payee_amara` (1), `subcontractor` (2), `client_b` (3). A WDK transaction policy on every account allows only
-test-USDT transfers up to a cap, raw transactions only to the escrow, and EIP-712 signing; WDK refuses anything else.
+`payee_amara` (1), `subcontractor` (2), `client_b` (3), `agent_budget` (4, pays the agent's x402 purchases; not a
+user wallet). A WDK transaction policy on every account allows only test-USDT transfers up to a cap, raw
+transactions only to the escrow, and EIP-712 signing only for escrow attestations, contract signatures and
+test-USDT EIP-3009 authorizations up to 1 tUSDT; WDK refuses anything else.
 **Demo custody:** in the product these wallets live on the user's device; here a demo wallet service holds the test
 seed. Every response says so in `custody`. Treasury, Policy Service, agent signer and operator keys are not WDK wallets.
 
@@ -443,6 +456,11 @@ The release check is **strict**: no identity record, or names that differ, hold 
   The signature must recover to the provider's vault operator. `release` releases the escrow at once:
   `{ "milestone_id": "…", "decision": "release", "released": true, "release": { "release_tx": "0x…", … } }`. `hold` keeps it held.
   Errors: `403` signature, `404` no hold, `409` already decided.
+- `GET /operator/approvals/{approvalId}/typed-data?decision=approve|reject` → the Policy Service's `ApprovalDecision`
+  typed data (domain `TethranPolicy` v1; `approvalId`, `decision`, `proposalHash`) for a pending escalation.
+- `POST /operator/approvals/{approvalId}/decision` `{ "decision": "approve", "operator_signature": "0x…" }` → relayed to
+  `POST /v1/approvals/{id}/decision`; the Policy Service verifies the operator signature and answers with its decision
+  (and co-signatures on approve). Then `POST /milestones/{id}/escalations/{approvalId}/execute` pays out.
 - Limits, payees and the approval queue are set through the Policy Service (`POST /v1/policy`,
   `POST /v1/approvals/{id}/decision`); escalated settlements are executed with
   `POST /milestones/{id}/escalations/{approvalId}/execute`; the audit log is `GET /v1/audit` on the Policy Service.
@@ -463,14 +481,43 @@ The release check is **strict**: no identity record, or names that differ, hold 
 Every treasury action (`POST /milestones`, deposit confirm, webhook, release, refund, chargeback) is one Opik
 trace with its chain calls as spans. Responses carry `trace_id`; the funding record stores it too.
 
-### Planned (INTERFACES.md section 4 and the build plan)
+### CORS and errors
 
-`POST /payouts/{id}/status`, reconciliation, wallet review endpoints, operator and arbiter endpoints (Blocks 3 and
-4). They are added to this file as they are built.
+The backend answers CORS for the origins in `CORS_ORIGINS` (comma-separated; default `http://localhost:3000`, the web
+app in development), with preflight for `GET, POST, DELETE` and the headers `content-type`, `x-payment`,
+`idempotency-key`; it exposes `x-payment-response` and `content-disposition`. `/internal` routes never get CORS.
+The Policy Service has no CORS: the app reaches it only for the operator's approval queue and limits, through the
+backend's operator queue or a server-side call. Errors are `{ "error": "plain message", "code": "MACHINE_CODE" }`
+(`code` when there is one) with a 4xx status; anything unexpected is `500 { "error": "internal error" }`, logged on
+the server.
+
+### Screens and the calls behind them (for the web app)
+
+| Screen | Calls | Fields to show |
+|---|---|---|
+| Dashboard | `GET /milestones`, `GET /contracts`, `GET /reconciliation` | title, state, amount, country, complete, gaps |
+| Contract (create, sign) | `POST /contracts`, `GET /contracts/{id}/typed-data?party=`, `POST /contracts/{id}/sign`, `GET /contracts/{id}` | terms, milestones, `contract_hash`, signatures, status |
+| Invoice and pay link | `POST /contracts/{id}/milestones/{mid}/activate`, then `POST /milestones` with that body; `GET /pay/{invoiceId}`, `GET /invoices/{id}` | number, amounts, fee payer, missing fields, QR payload |
+| Funding: checkout | `GET /checkout/options`, `POST /checkout/sessions`, `POST /checkout/sessions/{id}/complete` | methods, the "Simulated" label, session status |
+| Funding: wallet review | `GET /milestones/{id}/deposit`, `POST /wallets/client/transfers/review` | recipient and saved name, network, amount, fee (shown separately), `can_sign`, `blocked[].code` (`WRONG_NETWORK`, `DUPLICATE_PENDING`, …), custody |
+| Funding: send and reconnect | `POST /wallets/client/transfers`, `GET /wallets/transfers/{ref}` | `tx_hash`, status; a repeat send answers `409 DUPLICATE_PENDING` or `ALREADY_SENT` |
+| Delivery and approval | `POST /milestones/{id}/evidence`, `POST /wallets/client/escrow/{id}/approve` or `/dispute`, `POST /milestones/{id}/identity` (simulated), `POST /milestones/{id}/release` | tx hashes; an identity hold is `409 IDENTITY_MISMATCH` |
+| Settlement: proposal and decision | `POST /milestones/{id}/settle`, `GET /milestones/{id}/timeline` | `settlement_plans[].proposal` (actions, confidence, flags, needs_human), `decision`, `reasons`, `agent_mode`, `trace_id`, `approval_id` |
+| Payouts | `GET /milestones/{id}/timeline` (`payouts`), `GET /payouts?milestone_id=` | payee, rail, amount, tx, status, `simulated` off-chain leg |
+| Reconciliation and tax export | `GET /reconciliation/milestones/{id}`, `GET /reconciliation/queue`, `GET /reconciliation/export.csv` | totals, gaps, country (contract profile only), CSV download |
+| Receipt | `GET /receipts/{milestoneId}` | token id, holder, hashes, mint tx (read from the chain) |
+| Operator queue | `GET /operator/queue` (identity holds and the Policy Service's pending approvals), identity typed data and decision, `GET /operator/approvals/{id}/typed-data`, `POST /operator/approvals/{id}/decision`, `POST /milestones/{id}/escalations/{approvalId}/execute` | holds, escalations with reason codes |
+| Arbiter queue | `GET /arbiter/disputes`, `POST /milestones/{id}/evidence/summary`, attestation typed data, `POST /arbiter/disputes/{id}/attestations` | attestations so far, outcome, `decide_tx` |
+
+Every simulated part carries a `simulated` field or a "Simulated" label in the response; the app should show it.
 
 ---
 
 ## Policy Service (built)
+
+Reason codes and rule order: `docs/INTERFACES.md` section 2 (v0.7: hard rules run only for plans that move money;
+a plan that moves no money is escalated, never rejected for a hard rule; new escalation codes `INJECTION_FLAGGED`
+and `NO_PAYOUTS`; `needs_human` is never approved).
 
 ### `POST /v1/proposals` — decide on an agent proposal
 
@@ -606,6 +653,10 @@ The hash is keccak256 of the UTF-8 canonical JSON (sorted keys at every level, n
 terms: parties, country, currency, recurrence and the milestone list including milestone ids. Any change to the terms
 changes it. Errors: `400` bad amounts (not a positive integer), unknown country, currency other than USD, missing or
 invalid parties, bad dates.
+
+### `GET /contracts?provider_id=&status=` — list for the dashboard
+
+`{ "contracts": [ { …same shape as GET /contracts/{id}… } ] }`, newest first, at most 200.
 
 ### `GET /contracts/{id}`, `PATCH /contracts/{id}`
 

@@ -1,7 +1,7 @@
 // HTTP routes for contracts, country profiles and invoicing, in the shape of `routes` in http.ts:
 // [method, RegExp, handler]. The main session registers them. No chain, no Stripe, no email.
 import type { IncomingMessage } from "node:http";
-import { createContract, getContract, getContractRow, listContractMilestones, signContract, signingPayload, updateContract } from "./contracts";
+import { createContract, getContract, getContractRow, listContractMilestones, listContracts, signContract, signingPayload, updateContract } from "./contracts";
 import { getCountryProfile, listCountryProfiles } from "./countryProfiles";
 import { ApiError } from "./errors";
 import {
@@ -23,6 +23,7 @@ export function contractRoutes(deps: ContractDeps): ContractRoute[] {
   };
   return [
     ["POST", /^\/contracts$/, async ({ body }) => createContract(db, body, deps.now())],
+    ["GET", /^\/contracts$/, async ({ url }) => listContracts(db, { provider_id: url.searchParams.get("provider_id"), status: url.searchParams.get("status") })],
     ["GET", /^\/contracts\/([^/]+)$/, async ({ params }) => getContract(db, params[1])],
     ["PATCH", /^\/contracts\/([^/]+)$/, async ({ params, body }) => updateContract(db, params[1], body)],
     ["GET", /^\/contracts\/([^/]+)\/typed-data$/, async ({ params, url }) => {

@@ -278,6 +278,14 @@ export function getContract(db: DatabaseSync, id: string) {
   };
 }
 
+/** Contract list for the app's dashboard: newest first, optional provider and status filters. */
+export function listContracts(db: DatabaseSync, q: { provider_id?: string | null; status?: string | null }) {
+  const rows = db.prepare(
+    `SELECT id FROM contracts WHERE (? IS NULL OR provider_id = ?) AND (? IS NULL OR status = ?) ORDER BY created_at DESC, id LIMIT 200`,
+  ).all(q.provider_id ?? null, q.provider_id ?? null, q.status ?? null, q.status ?? null) as { id: string }[];
+  return { contracts: rows.map((r) => getContract(db, r.id)) };
+}
+
 // ---------- signing ----------
 
 export function signingPayload(db: DatabaseSync, id: string, party: Party) {

@@ -84,3 +84,23 @@ test("attestations are refused for a milestone that is not disputed", async () =
   await fundApproved(h, ["A", "A"]);
   await assert.rejects(op.attest(M1, { signer: CLIENT, signature: "0x", release_to_provider: true }), status(409));
 });
+
+test("escalated approvals: typed data from the Policy Service's definitions; the signed decision is relayed, not decided here", async () => {
+  const h = harness();
+  const relayed: unknown[] = [];
+  const policy = {
+    listApprovals: async () => [{ id: "ap-1", proposal_hash: "ab".repeat(32) }],
+    decideApproval: async (id: string, decision: string, sig: string) => { relayed.push([id, decision, sig]); return { decision: "approved", reasons: [] }; },
+  } as never;
+  const op = createOperator({ db: h.db, chain: h.chain, treasury: h.treasury, policy, now: h.now });
+  const td: any = await op.approvalTypedData("ap-1", "approve");
+  assert.equal(td.domain.name, "TethranPolicy");
+  assert.deepEqual(td.message, { approvalId: "ap-1", decision: "approve", proposalHash: "0x" + "ab".repeat(32) });
+  const operator = Wallet.createRandom();
+  const sig = await operator.signTypedData(td.domain, td.types, td.message);
+  await op.decideApproval("ap-1", { decision: "approve", operator_signature: sig });
+  assert.deepEqual(relayed, [["ap-1", "approve", sig]]);
+  await assert.rejects(op.approvalTypedData("ap-9", "approve"), (e: unknown) => e instanceof ApiError && e.status === 404);
+  await assert.rejects(op.approvalTypedData("ap-1", "maybe"), (e: unknown) => e instanceof ApiError && e.status === 400);
+  await assert.rejects(op.decideApproval("ap-1", { decision: "approve" }), (e: unknown) => e instanceof ApiError && e.status === 403);
+});

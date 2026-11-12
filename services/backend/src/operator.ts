@@ -14,6 +14,11 @@ import { milestones } from "./db";
 import { ApiError } from "./errors";
 import type { PolicyClient } from "./policyClient";
 import type { Treasury } from "./treasury";
+import { approvalDecisionTypes, policyDomain } from "../../policy/src/typed";
+
+// The Policy Service's own typed data for approval decisions (same definitions, imported, never copied).
+const APPROVAL_DOMAIN = policyDomain;
+const APPROVAL_TYPES = approvalDecisionTypes;
 
 export const OPERATOR_TYPES = {
   IdentityDecision: [
@@ -92,6 +97,27 @@ export function createOperator(deps: {
       return { milestone_id: m.id, decision: "release", released: true, release: released };
     },
 
+    /**
+     * Escalated settlements: the typed data the operator signs, and a relay of the signed decision to the Policy
+     * Service. The Policy Service verifies the operator signature itself; this backend cannot decide for it.
+     */
+    async approvalTypedData(approvalId: string, decision: unknown) {
+      if (decision !== "approve" && decision !== "reject") throw new ApiError(400, 'decision must be "approve" or "reject"');
+      const pending = (await deps.policy.listApprovals("pending")) as { id: string; proposal_hash: string }[];
+      const a = Array.isArray(pending) ? pending.find((x) => x.id === approvalId) : undefined;
+      if (!a) throw new ApiError(404, "no pending approval with this id");
+      return {
+        domain: APPROVAL_DOMAIN, types: APPROVAL_TYPES, primaryType: "ApprovalDecision",
+        message: { approvalId, decision, proposalHash: "0x" + a.proposal_hash.replace(/^0x/, "") },
+      };
+    },
+
+    async decideApproval(approvalId: string, body: { decision?: unknown; operator_signature?: unknown }) {
+      if (body.decision !== "approve" && body.decision !== "reject") throw new ApiError(400, 'decision must be "approve" or "reject"');
+      if (typeof body.operator_signature !== "string") throw new ApiError(403, "operator_signature required");
+      return deps.policy.decideApproval(approvalId, body.decision, body.operator_signature);
+    },
+
     async disputes() {
       const rows = db.prepare("SELECT id FROM milestones WHERE state IN ('funded', 'in_review', 'disputed')").all() as { id: string }[];
       const out = [];
@@ -152,6 +178,8 @@ export function operatorRoutes(op: Operator): [string, RegExp, (ctx: any) => Pro
     ["GET", /^\/operator\/queue$/, async () => op.queue()],
     ["GET", /^\/operator\/identity-holds\/([^/]+)\/typed-data$/, async ({ params, url }) => op.identityTypedData(params[1], url.searchParams.get("decision"))],
     ["POST", /^\/operator\/identity-holds\/([^/]+)\/decision$/, async ({ params, body }) => op.decideIdentity(params[1], body ?? {})],
+    ["GET", /^\/operator\/approvals\/([^/]+)\/typed-data$/, async ({ params, url }) => op.approvalTypedData(params[1], url.searchParams.get("decision"))],
+    ["POST", /^\/operator\/approvals\/([^/]+)\/decision$/, async ({ params, body }) => op.decideApproval(params[1], body ?? {})],
     ["GET", /^\/arbiter\/disputes$/, async () => op.disputes()],
     ["GET", /^\/arbiter\/disputes\/([^/]+)\/typed-data$/, async ({ params, url }) =>
       op.attestationTypedData(params[1], url.searchParams.get("kind"), url.searchParams.get("release_to_provider"))],

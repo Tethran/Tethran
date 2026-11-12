@@ -97,8 +97,10 @@ export function createHttpServer(deps: HttpDeps): Server {
       milestone: m,
       fundings: db.prepare("SELECT source, reference, amount, chain_id, escrow_tx, status, at FROM fundings WHERE milestone_id = ? ORDER BY id").all(id),
       evidence: db.prepare("SELECT id, at FROM evidence WHERE milestone_id = ? ORDER BY id").all(id),
-      settlement_plans: (db.prepare("SELECT id, proposal_hash, trace_id, decision, reasons, at FROM settlement_plans WHERE milestone_id = ? ORDER BY id").all(id) as any[])
-        .map((p) => ({ ...p, reasons: JSON.parse(p.reasons) })),
+      // The agent's proposal is shown as data (it is untrusted output, already schema-checked); the decision and its
+      // reason codes are the Policy Service's.
+      settlement_plans: (db.prepare("SELECT id, proposal_json, proposal_hash, trace_id, decision, reasons, approval_id, agent_mode, at FROM settlement_plans WHERE milestone_id = ? ORDER BY id").all(id) as any[])
+        .map(({ proposal_json, ...p }) => ({ ...p, reasons: JSON.parse(p.reasons), proposal: proposal_json ? JSON.parse(proposal_json) : null })),
       payouts: db.prepare("SELECT action_index, action_id, payee_id, rail, to_address, amount, tx, status, simulated, at FROM payouts WHERE milestone_id = ? ORDER BY action_index").all(id),
       receipt: db.prepare("SELECT * FROM receipts WHERE milestone_id = ?").get(id) ?? null,
     };
@@ -107,6 +109,15 @@ export function createHttpServer(deps: HttpDeps): Server {
   const routes: [string, RegExp, Handler][] = [
     ["GET", /^\/health$/, async () => ({ ok: true })],
     ["POST", /^\/milestones$/, async ({ body }) => treasury.createMilestone(body ?? {})],
+    // List for the app's dashboard (local records; GET /milestones/{id} syncs one with the chain).
+    ["GET", /^\/milestones$/, async ({ url }) => {
+      const q = (k: string) => url.searchParams.get(k);
+      const rows = db.prepare(
+        `SELECT * FROM milestones WHERE (? IS NULL OR provider_id = ?) AND (? IS NULL OR state = ?) AND (? IS NULL OR scenario = ?)
+         ORDER BY created_at DESC, id LIMIT 200`,
+      ).all(q("provider_id"), q("provider_id"), q("state"), q("state"), q("scenario"), q("scenario"));
+      return { count: rows.length, milestones: rows };
+    }],
     ["GET", /^\/milestones\/([^/]+)$/, async ({ params }) => treasury.sync(params[1])],
     ["GET", /^\/milestones\/([^/]+)\/timeline$/, async ({ params }) => {
       await treasury.sync(params[1]).catch(() => undefined);
