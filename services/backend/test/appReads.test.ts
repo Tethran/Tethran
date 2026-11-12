@@ -56,3 +56,16 @@ test("GET /contracts lists contracts with provider and status filters", async ()
     assert.equal((await s.get("/contracts?provider_id=other")).contracts.length, 0);
   } finally { await s.close(); }
 });
+
+test("GET /providers/{id}: payout address, vault and payees for the contract form; 404 for an unknown provider", async () => {
+  const h = harness();
+  const s = await serve(h);
+  try {
+    const p = await s.get("/providers/prov-1");
+    assert.equal(p.provider_id, "prov-1");
+    assert.ok(/^0x[0-9a-fA-F]{40}$/.test(p.provider_address));
+    assert.deepEqual(p.payees.map((x: any) => x.payee_id), ["payee_amara", "payee_kofi"]);
+    assert.equal(p.payees[1].simulated, true);
+    assert.equal((await s.get("/providers/nobody")).error, "provider not found");
+  } finally { await s.close(); }
+});

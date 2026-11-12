@@ -199,6 +199,16 @@ export function createWalletLayer(deps: WalletLayerDeps) {
       return { signer: await wallets.address(w), signature, release_to_provider: body.release_to_provider, custody: CUSTODY };
     },
 
+    /**
+     * Signs a contract (ContractSignature typed data, from GET /contracts/{id}/typed-data) with the role's WDK wallet.
+     * The WDK signing policy only allows the TethranContract domain for this type.
+     */
+    async signContractTypedData(r: unknown, typed: { domain: Record<string, unknown>; types: Record<string, unknown>; message: Record<string, unknown> }) {
+      const w = role(r);
+      const signature = await (await wallets.account(w)).signTypedData({ domain: typed.domain, types: typed.types, message: typed.message });
+      return { signer: await wallets.address(w), signature, custody: CUSTODY };
+    },
+
     /** Reconnect: recheck the same transaction hash. Never resubmits. */
     async status(ref: string) {
       const p = prior(ref);

@@ -101,6 +101,12 @@ export function createOperator(deps: {
      * Escalated settlements: the typed data the operator signs, and a relay of the signed decision to the Policy
      * Service. The Policy Service verifies the operator signature itself; this backend cannot decide for it.
      */
+    policy: () => deps.policy.getPolicy(),
+    async audit(milestoneId?: string) {
+      if (!deps.policy.getAudit) throw new ApiError(404, "the audit log is not available");
+      return deps.policy.getAudit(milestoneId);
+    },
+
     async approvalTypedData(approvalId: string, decision: unknown) {
       if (decision !== "approve" && decision !== "reject" && decision !== "new_plan") throw new ApiError(400, 'decision must be "approve", "reject" or "new_plan"');
       const pending = (await deps.policy.listApprovals("pending")) as { id: string; proposal_hash: string }[];
@@ -178,6 +184,9 @@ export function operatorRoutes(op: Operator): [string, RegExp, (ctx: any) => Pro
     ["GET", /^\/operator\/queue$/, async () => op.queue()],
     ["GET", /^\/operator\/identity-holds\/([^/]+)\/typed-data$/, async ({ params, url }) => op.identityTypedData(params[1], url.searchParams.get("decision"))],
     ["POST", /^\/operator\/identity-holds\/([^/]+)\/decision$/, async ({ params, body }) => op.decideIdentity(params[1], body ?? {})],
+    // Read-only relays so the web app can show the Policy Service's policy and audit log (it has no CORS of its own).
+    ["GET", /^\/operator\/policy$/, async () => op.policy()],
+    ["GET", /^\/operator\/audit$/, async ({ url }) => op.audit(url.searchParams.get("milestone_id") ?? undefined)],
     ["GET", /^\/operator\/approvals\/([^/]+)\/typed-data$/, async ({ params, url }) => op.approvalTypedData(params[1], url.searchParams.get("decision"))],
     ["POST", /^\/operator\/approvals\/([^/]+)\/decision$/, async ({ params, body }) => op.decideApproval(params[1], body ?? {})],
     ["GET", /^\/arbiter\/disputes$/, async () => op.disputes()],

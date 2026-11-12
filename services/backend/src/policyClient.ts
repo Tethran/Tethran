@@ -22,6 +22,8 @@ export interface PolicyDecision {
 export interface PolicyClient {
   submitProposal(proposal: unknown, traceId: string): Promise<PolicyDecision>;
   getPolicy(): Promise<{ policy: Record<string, unknown>; version: number }>;
+  /** Append-only decision log (read only). */
+  getAudit?(milestoneId?: string): Promise<unknown>;
   decideApproval(approvalId: string, decision: string, operatorSignature: string): Promise<PolicyDecision>;
   listApprovals(status: string): Promise<unknown>;
 }
@@ -52,6 +54,7 @@ export function createPolicyClient(baseUrl: string, fetchImpl: typeof fetch = fe
   return {
     submitProposal: (proposal, traceId) => call("POST", "/v1/proposals", { proposal, trace_id: traceId }),
     getPolicy: () => call("GET", "/v1/policy"),
+    getAudit: (milestoneId?: string) => call("GET", `/v1/audit${milestoneId ? `?milestone_id=${encodeURIComponent(milestoneId)}` : ""}`),
     listApprovals: (status) => call("GET", `/v1/approvals?status=${encodeURIComponent(status)}`),
     decideApproval: (id, decision, operator_signature) =>
       call("POST", `/v1/approvals/${encodeURIComponent(id)}/decision`, { decision, operator_signature }),

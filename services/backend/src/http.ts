@@ -11,6 +11,7 @@ import type { Treasury } from "./treasury";
 import type { TreasuryChain } from "./chainPort";
 import { PAYMENT_METHODS, startCheckout, type CheckoutProvider, type SimulatedCheckout } from "./checkout";
 import { contractRoutes } from "./contractRoutes";
+import { signContract, signingPayload } from "./contracts";
 import { parseAgentMode } from "./replay";
 import { relayVaultActions } from "./vaultRelay";
 import type { WalletLayer } from "./wallets";
@@ -190,6 +191,20 @@ export function createHttpServer(deps: HttpDeps): Server {
     ["POST", /^\/wallets\/([^/]+)\/transfers$/, async ({ params, body }) => needWallets().send(params[1], body ?? {})],
     ["POST", /^\/wallets\/([^/]+)\/escrow\/([^/]+)\/(approve|dispute)$/, async ({ params }) => needWallets().escrowAction(params[1], params[2], params[3])],
     ["POST", /^\/wallets\/([^/]+)\/attestations\/([^/]+)$/, async ({ params, body }) => needWallets().signAttestation(params[1], params[2], body ?? {})],
+    // The client signs a contract with its WDK wallet (demo custody). The provider signs with its own wallet.
+    ["POST", /^\/wallets\/client\/contracts\/([^/]+)\/sign$/, async ({ params }) => {
+      const typed = signingPayload(db, params[1], "client");
+      const s = await needWallets().signContractTypedData("client", typed as never);
+      return signContract(db, params[1], { party: "client", signer: s.signer, signature: s.signature }, deps.now());
+    }],
+    // What the app needs to create a contract for a provider: its payout address (the vault's fixed payee) and payees.
+    ["GET", /^\/providers\/([^/]+)$/, async ({ params }) => {
+      const v = db.prepare("SELECT * FROM vaults WHERE provider_id = ?").get(params[1]) as Record<string, unknown> | undefined;
+      if (!v) throw new ApiError(404, "provider not found");
+      const payees = (db.prepare("SELECT payee_id, name, rail, simulated FROM payees WHERE provider_id = ? ORDER BY payee_id").all(params[1]) as any[])
+        .map((p) => ({ ...p, simulated: p.simulated === 1 }));
+      return { provider_id: params[1], chain_id: v.chain_id, vault: v.vault, operator: v.operator, provider_address: v.provider_payout, payees };
+    }],
     // SIMULATED identity verification provider
     ["POST", /^\/milestones\/([^/]+)\/identity$/, async ({ params, body }) => {
       if (!milestones.get(db, params[1])) throw new ApiError(404, "milestone not found");
@@ -215,7 +230,7 @@ export function createHttpServer(deps: HttpDeps): Server {
     })],
   ];
 
-  const corsOrigins = new Set((deps.corsOrigins ?? ["http://localhost:3000"]).map((o) => o.trim()).filter(Boolean));
+  const corsOrigins = new Set((deps.corsOrigins ?? ["http://localhost:3000", "http://127.0.0.1:3000"]).map((o) => o.trim()).filter(Boolean));
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");

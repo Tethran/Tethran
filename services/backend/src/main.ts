@@ -136,7 +136,7 @@ const operator = createOperator({ db, chain, treasury, policy: policyClient, now
 
 listen(createHttpServer({
   db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets, phoneHashSalt: process.env.PHONE_HASH_SALT, operator, x402,
-  corsOrigins: (process.env.CORS_ORIGINS ?? "http://localhost:3000").split(","),
+  corsOrigins: (process.env.CORS_ORIGINS ?? "http://localhost:3000,http://127.0.0.1:3000").split(","),
 }), port, host).then(
   (p) => console.log(`backend listening on ${host}:${p} (chain ${chainCfg.name} ${chainCfg.chainId}; checkout ${checkout.name}; agent ${process.env.AGENT_MODE ?? "live+replay"})`),
   (e) => {
