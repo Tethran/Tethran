@@ -29,8 +29,19 @@ describe("reason codes in plain language", () => {
       expect(r.plain, code).not.toMatch(/see the service documentation/i);
     }
   });
-  it("includes the v0.8 codes", () => {
-    expect(POLICY_CODES.rejected).toEqual(expect.arrayContaining(["OVER_MILESTONE_AMOUNT", "ZERO_AMOUNT_PAYOUT"]));
+  it("includes the v0.8 and v0.9 codes", () => {
+    expect(POLICY_CODES.rejected).toEqual(expect.arrayContaining(["OVER_MILESTONE_AMOUNT", "ZERO_AMOUNT_PAYOUT", "MILESTONE_NOT_RELEASED", "ALREADY_SETTLED"]));
     expect(POLICY_CODES.escalated).toEqual(expect.arrayContaining(["NO_PAYOUTS", "INJECTION_FLAGGED"]));
+  });
+});
+
+describe("the app's reason codes match the Policy Service", () => {
+  it("lists exactly the codes in services/policy/src/types.ts", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const src = readFileSync(resolve(__dirname, "../../../services/policy/src/types.ts"), "utf8");
+    const union = (name: string) => [...(src.match(new RegExp(`export type ${name} =([^;]+);`))?.[1] ?? "").matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]).sort();
+    expect([...POLICY_CODES.rejected].sort()).toEqual(union("RejectReason"));
+    expect([...POLICY_CODES.escalated].sort()).toEqual(union("EscalateReason"));
   });
 });

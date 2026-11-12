@@ -37,3 +37,21 @@ export function verifyStripeSignature(
 export function signStripePayload(rawBody: string, secret: string, t: number): string {
   return `t=${t},v1=${createHmac("sha256", secret).update(`${t}.${rawBody}`).digest("hex")}`;
 }
+
+/** Placeholder webhook secrets that must never run a real server (examples, docs, tutorials). */
+export const KNOWN_DEFAULT_WEBHOOK_SECRETS = new Set([
+  "", "whsec_", "whsec_test", "whsec_xxx", "whsec_123", "whsec_...", "whsec_placeholder", "whsec_changeme",
+  "secret", "changeme", "test", "password",
+]);
+
+/**
+ * Startup check (outside DEMO_MODE): the webhook secret must be set, not a known placeholder, at least 24 characters,
+ * and not one of the server's own simulated secrets. In DEMO_MODE the simulated checkout signs with a random secret.
+ */
+export function assertWebhookSecret(secret: string | undefined, demoMode: boolean): void {
+  if (demoMode) return;
+  const s = (secret ?? "").trim();
+  if (KNOWN_DEFAULT_WEBHOOK_SECRETS.has(s) || s.length < 24 || s.startsWith("whsec_simulated_")) {
+    throw new Error("STRIPE_WEBHOOK_SECRET is missing or a placeholder. Set the real webhook secret, or run with DEMO_MODE=1 for the simulated checkout.");
+  }
+}

@@ -62,8 +62,12 @@ async function waitHealthy(url: string, what: string) {
   throw new Error(`${what} did not start`);
 }
 
+/** The platform credential for release, refund and settle (random per run). */
+const PLATFORM_TOKEN = randomBytes(24).toString("hex");
+
 async function call(base: string, method: string, path: string, body?: unknown) {
-  const r = await fetch(base + path, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const headers: Record<string, string> = { ...(body ? { "content-type": "application/json" } : {}), "x-platform-token": PLATFORM_TOKEN };
+  const r = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const json: any = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`${method} ${path} -> ${r.status} ${json.code ?? ""} ${json.error ?? ""}`);
   return json;
@@ -140,6 +144,7 @@ async function main() {
       ...rpcEnv, ...llmEnv, LLM_TIMEOUT_MS: "90000", CHAIN: chain.key, TREASURY_PRIVATE_KEY: env("TREASURY_PRIVATE_KEY"),
       AGENT_SIGNER_PRIVATE_KEY: env("AGENT_SIGNER_PRIVATE_KEY"), ARBITER_ADDRESS: wallet("ARBITER").address,
       POLICY_URL: POLICY, INTERNAL_TOKEN: internalToken, BACKEND_DATA_DIR: dir, BACKEND_PORT: String(backendPort),
+      DEMO_MODE: "1", PLATFORM_TOKEN,
       DEMO_WALLET_SEED: seed, AGENT_MODE: env("AGENT_MODE") || "live+replay",
     }));
     await waitHealthy(`${POLICY}/v1/policy`, "Policy Service");

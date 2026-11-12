@@ -25,7 +25,8 @@ import { createHttpServer, listen } from "./http";
 import { createIdentityCheck } from "./identity";
 import { createOrchestrator } from "./orchestrator";
 import { createPolicyClient } from "./policyClient";
-import { createTreasury, type Treasury } from "./treasury";
+import { createTreasury, maxMilestoneCents, type Treasury } from "./treasury";
+import { assertWebhookSecret } from "./stripe";
 import { randomBytes } from "node:crypto";
 import { createSimulatedCheckout, createStripeCheckout } from "./checkout";
 import { migrateContracts } from "./contracts";
@@ -34,7 +35,7 @@ import { createAgent, loadSavedProposals, parseAgentMode } from "./replay";
 // Only the backend's own settings and keys. It never receives the Policy Service or operator key.
 loadEnvOnly(resolve(__dirname, "../../../.env"), [
   "CHAIN", "RPC_URL_*", "TREASURY_PRIVATE_KEY", "AGENT_SIGNER_PRIVATE_KEY", "ARBITER_ADDRESS", "POLICY_URL", "INTERNAL_TOKEN",
-  "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
+  "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "DEMO_MODE", "PLATFORM_TOKEN", "MAX_MILESTONE_USD_CENTS", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
   "BACKEND_DATA_DIR", "BACKEND_PORT", "HOST", "CARD_HOLD_SECONDS", "MILESTONE_TIMEOUT_SECONDS",
   "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED", "PHONE_HASH_SALT", "X402_CAP_PER_RUN", "CORS_ORIGINS",
 ]);
@@ -61,7 +62,16 @@ const tracer = createTracerFromEnv(process.env);
 
 // Real Stripe only when both keys are set. Otherwise the Simulated checkout signs its events with a secret of
 // its own, and the treasury verifies them with that secret through the same webhook code.
+const demoMode = process.env.DEMO_MODE === "1" || process.env.DEMO_MODE === "true";
 const stripeEnabled = Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+// Outside DEMO_MODE a real webhook secret is required; the simulated checkout (random secret) is DEMO_MODE only.
+try {
+  assertWebhookSecret(process.env.STRIPE_WEBHOOK_SECRET, demoMode);
+} catch (e) {
+  console.error((e as Error).message);
+  process.exit(1);
+}
+maxMilestoneCents(); // fails at startup if MAX_MILESTONE_USD_CENTS is set to something unusable
 const webhookSecret = stripeEnabled ? process.env.STRIPE_WEBHOOK_SECRET! : `whsec_simulated_${randomBytes(24).toString("hex")}`;
 const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
 
@@ -119,7 +129,7 @@ const orchestrator = createOrchestrator({
   agent: createAgent(llm, loadSavedProposals()),
   defaultAgentMode: parseAgentMode(process.env.AGENT_MODE, "live+replay"),
 });
-const simulatedCheckout = stripeEnabled ? undefined : createSimulatedCheckout({ db, webhookSecret, treasury: () => treasury, publicBaseUrl, now });
+const simulatedCheckout = stripeEnabled || !demoMode ? undefined : createSimulatedCheckout({ db, webhookSecret, treasury: () => treasury, publicBaseUrl, now });
 const checkout = stripeEnabled ? createStripeCheckout({ secretKey: process.env.STRIPE_SECRET_KEY! }) : simulatedCheckout!.provider;
 
 // WDK user wallets (client, payees, subcontractor) for the wallet-layer API; demo custody of a test seed.
@@ -136,6 +146,7 @@ const operator = createOperator({ db, chain, treasury, policy: policyClient, now
 
 listen(createHttpServer({
   db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets, phoneHashSalt: process.env.PHONE_HASH_SALT, operator, x402,
+  platformToken: process.env.PLATFORM_TOKEN ?? "",
   corsOrigins: (process.env.CORS_ORIGINS ?? "http://localhost:3000,http://127.0.0.1:3000").split(","),
 }), port, host).then(
   (p) => console.log(`backend listening on ${host}:${p} (chain ${chainCfg.name} ${chainCfg.chainId}; checkout ${checkout.name}; agent ${process.env.AGENT_MODE ?? "live+replay"})`),

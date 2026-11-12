@@ -196,6 +196,8 @@ it, because the backend cannot approve on the client's behalf.
 
 #### `POST /milestones/{id}/release` — pay the escrow into the provider's vault
 
+**Platform only:** send `x-platform-token: <PLATFORM_TOKEN>`; without it `401 PLATFORM_ONLY`.
+
 Runs the identity check (**simulated**) first. Response:
 
 ```json
@@ -205,6 +207,8 @@ Runs the identity check (**simulated**) first. Response:
 Errors: `409` not approved yet, `409 IDENTITY_MISMATCH` (release held), `409 HOLD_ACTIVE` (card hold running).
 
 #### `POST /milestones/{id}/refund` — return the funds to the treasury
+
+**Platform only:** send `x-platform-token: <PLATFORM_TOKEN>`; without it `401 PLATFORM_ONLY`.
 
 After the timeout (Funded or Disputed), or the rescue of an Approved milestone after hold + 3 days. Response:
 
@@ -218,6 +222,8 @@ Errors: `409 TIMEOUT_NOT_REACHED`, `409` nothing to refund.
 ### Settlement (built)
 
 #### `POST /milestones/{id}/settle` — run the agent, the Policy Service and the payouts
+
+**Platform only:** send `x-platform-token: <PLATFORM_TOKEN>`; without it `401 PLATFORM_ONLY`.
 
 For a `released` milestone. One Opik trace per run. If an earlier run was approved but stopped part-way, this
 resumes its payouts without asking the agent again.
@@ -453,6 +459,10 @@ The release check is **strict**: no identity record, or names that differ, hold 
 (`409 IDENTITY_MISMATCH` on `POST /milestones/{id}/release`) and open an identity hold for the operator.
 
 ### Operator (built)
+
+- `GET /operator/vault-check?payee_id=&amount=` → asks the vault contract (view call, the same rule `execute` applies)
+  whether it would pay `amount` base units to that payee now: `{ "ok": false, "reason": "OVER_PER_TX_CAP", "per_tx_cap": "5000000", "policy_version": 7, … }`.
+- `GET /operator/policy`, `GET /operator/audit` → read-only relays of the Policy Service.
 
 - `GET /operator/queue` → `{ "identity_holds": [{ "milestone_id": "…", "reason": "payer and customer names differ", "status": "open", "opened_at": "…" }], "policy_approvals": [ …Policy Service pending approvals… ], "reconciliation_queue": "/reconciliation/queue", "simulated_identity": true }`
 - `GET /operator/identity-holds/{milestoneId}/typed-data?decision=release|hold` → the EIP-712 payload to sign:
@@ -953,6 +963,11 @@ carries a printed invoice number.
 
 #### `GET /reconciliation/queue`
 
+Also lists `refund_needed` items: a card payment the escrow will not take (the milestone is already funded, another
+payment is in progress, or the amount differs). The webhook records the event, queues the refund and answers 200; a
+transient failure (5xx) is not recorded, so Stripe retries it.
+
+
 Failed, disputed and suspicious items, each with a reason and the record it points to. Kinds: `funding_failed`,
 `funding_mismatch`, `dispute_or_chargeback`, `disputed_milestone`, `plan_rejected`, `plan_escalated`, `payout_failed`,
 `offchain_failed` (simulated), `identity_mismatch` (simulated).
@@ -1013,3 +1028,26 @@ never blocks a settlement; it is recorded in the trace. Nothing is bought in `re
 `POST /milestones` accepts an optional `scenario` (one of the nine seeded names), which selects the saved proposal
 in `replay` mode. `POST /milestones/{id}/settle` without `agent_mode` uses the server's `AGENT_MODE` (it used to
 fall back to `live`).
+
+## Treasury rules (v0.9)
+
+- `POST /milestones`: `amount_usd_cents` must be a safe whole number of cents, at most `MAX_MILESTONE_USD_CENTS` (default
+  10,000,000 = $100,000), else `400 AMOUNT_TOO_LARGE`.
+- Funding: a second payment for a milestone while another is still being funded is `409 FUNDING_IN_PROGRESS`.
+- `POST /milestones/{id}/deposit/confirm`: only Transfer logs of our token contract count, in a successful transaction
+  on this chain, from the client to the treasury, made after the milestone was created (two minutes of clock slack).
+- Startup: outside `DEMO_MODE` the backend refuses to start without a real `STRIPE_WEBHOOK_SECRET` (not empty, not a
+  placeholder, at least 24 characters). The simulated checkout exists only in `DEMO_MODE`.
+
+## Demo signer (DEMO_MODE only; not part of the backend)
+
+Started by `npm run demo` in the presenter's process on `DEMO_SIGNER_PORT` (default 18789), with CORS for the app. It holds
+the operator, arbiter and provider TEST keys; the backend and the Policy Service never do. The app shows "Sign with demo
+key" only when it answers, and labels each such action "Demo: signed with a test key".
+- `GET /health` → `{ "demo": true, "roles": { "operator": "0x…", "arbiter": "0x…", "provider": "0x…" } }`
+- `POST /sign` `{ "role": "operator", "typed": { domain, types, message } }` → `{ "signer", "signature", "demo": true }`. Only
+  TethranOperator.IdentityDecision and TethranPolicy.ApprovalDecision (operator), TethranEscrow.Attestation on the
+  configured escrow (arbiter), TethranContract.ContractSignature (provider); anything else `403`.
+- `POST /operator/limits` `{ "per_tx_cap": "5000000" }` (base units; optional `per_tx_soft_limit`, `daily_cap`) → signs the
+  policy document and the vault `SetPolicy` with the operator's test key and submits them to the Policy Service, which
+  relays the vault update on-chain; waits until the vault shows the new cap.

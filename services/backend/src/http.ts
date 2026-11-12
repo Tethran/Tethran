@@ -25,6 +25,8 @@ import { reconciliationRoutes, type RawResponse } from "./reconciliation";
 const MAX_BODY = 256 * 1024;
 
 export interface HttpDeps {
+  /** Credential for platform actions (release, refund, settle); those routes refuse every caller when it is empty. */
+  platformToken?: string;
   /** Origins allowed by CORS (default http://localhost:3000, the web app in development). */
   corsOrigins?: string[];
   db: DatabaseSync;
@@ -86,6 +88,12 @@ export function createHttpServer(deps: HttpDeps): Server {
     return h(ctx);
   };
 
+  const platform = (h: Handler): Handler => async (ctx) => {
+    const token = String(ctx.req.headers["x-platform-token"] ?? "");
+    if (!deps.platformToken || !sameSecret(token, deps.platformToken)) throw new ApiError(401, "platform action: x-platform-token required", "PLATFORM_ONLY");
+    return h(ctx);
+  };
+
   const needWallets = () => {
     if (!deps.wallets) throw new ApiError(404, "WDK wallets are not configured (set DEMO_WALLET_SEED)");
     return deps.wallets;
@@ -136,9 +144,12 @@ export function createHttpServer(deps: HttpDeps): Server {
       if (m.state === "funded") milestones.setState(db, m.id, "in_review");
       return { evidence_id: Number(id), milestone_state: milestones.get(db, m.id)!.state };
     }],
-    ["POST", /^\/milestones\/([^/]+)\/release$/, async ({ params }) => treasury.release(params[1])],
-    ["POST", /^\/milestones\/([^/]+)\/refund$/, async ({ params }) => treasury.refund(params[1])],
-    ["POST", /^\/milestones\/([^/]+)\/settle$/, async ({ params, body }) => {
+    // Platform actions: only the platform (x-platform-token) may release, refund or settle. Funding never has a public
+    // route of its own: card funding comes only through the signature-verified webhook (or, in DEMO_MODE, the
+    // simulated checkout), stablecoin funding only from a deposit proven on-chain.
+    ["POST", /^\/milestones\/([^/]+)\/release$/, platform(async ({ params }) => treasury.release(params[1]))],
+    ["POST", /^\/milestones\/([^/]+)\/refund$/, platform(async ({ params }) => treasury.refund(params[1]))],
+    ["POST", /^\/milestones\/([^/]+)\/settle$/, platform(async ({ params, body }) => {
       let agentMode;
       // No mode in the request: the server default (AGENT_MODE) applies. Passing undefined as the fallback would
       // fall through to parseAgentMode's own default of "live".
@@ -149,7 +160,7 @@ export function createHttpServer(deps: HttpDeps): Server {
       // Start the off-chain leg (SIMULATED rails) of every payout the vault just confirmed.
       if (result?.decision === "approved") result.offchain = await processConfirmedPayouts(db, deps.now);
       return result;
-    }],
+    })],
     ["POST", /^\/milestones\/([^/]+)\/evidence\/summary$/, async ({ params }) => orchestrator.summarize(params[1])],
     ["POST", /^\/milestones\/([^/]+)\/escalations\/([^/]+)\/execute$/, async ({ params, body }) => {
       const result: any = await orchestrator.executeApproval(params[1], params[2], body ?? {});

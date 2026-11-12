@@ -37,7 +37,8 @@ export function fakeChain(opts: { now: () => Date; policySigner: string }) {
   const usedActions = new Set<string>();
   const keys = new Map<string, TxRef>();
   const sent: string[] = [];
-  const deposits = new Map<string, { from: string; to: string; value: string }[]>();
+  // Deposits by tx hash; blockTime defaults to the harness clock (a test can set an earlier one).
+  const deposits = new Map<string, { from: string; to: string; value: string; blockTime?: number }[]>();
   let n = 0;
   let failNextPay = false;
   const bal = (a: string) => balances.get(getAddress(a)) ?? 0n;
@@ -156,7 +157,7 @@ export function fakeChain(opts: { now: () => Date; policySigner: string }) {
     async receiptOf(id) { return receipts.get(id); },
     async balance(a) { return bal(a).toString(); },
     async waitConfirmed() {},
-    async usdtTransfersInTx(h) { return deposits.get(h) ?? []; },
+    async usdtTransfersInTx(h) { return (deposits.get(h) ?? []).map((t) => ({ ...t, blockTime: t.blockTime ?? Math.floor(opts.now().getTime() / 1000) })); },
   };
   return { chain, escrow, balances, receipts, sent, deposits, bal, add };
 }
@@ -250,8 +251,9 @@ export function harness(opts: { decision?: PolicyDecision["decision"]; reply?: u
   db.prepare("INSERT INTO payees VALUES ('payee_amara', 'prov-1', 'Amara Studio (demo)', '0x00000000000000000000000000000000000000b2', 'usdt', 0, 'Amara Studio')").run();
   db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-1', 'Kofi Print Works (demo)', '0x00000000000000000000000000000000000000b3', 'mpesa', 1, 'Kofi Print Works')").run();
   const identity = createIdentityCheck(db);
+  const tracer = new MemoryTracer();
   const treasury = createTreasury({
-    db, chain: fc.chain, identity, now,
+    db, chain: fc.chain, identity, now, tracer,
     config: {
       chainId: CHAIN_ID, chainName: "Hardhat local", treasuryAddress: TREASURY, usdtAddress: USDT, arbiterAddress: ARBITER,
       defaultTimeoutSeconds: 7 * 24 * 3600, cardHoldSeconds: 600, stripeWebhookSecret: WEBHOOK_SECRET,
@@ -259,7 +261,6 @@ export function harness(opts: { decision?: PolicyDecision["decision"]; reply?: u
   });
   const { policy, submitted } = fakePolicy(policySigner, { decision: opts.decision, now });
   const llm = opts.failLlm ? failingLlm() : fixedLlm(opts.reply ?? GOOD_PROPOSAL);
-  const tracer = new MemoryTracer();
   const agentSigner = createAgentSigner(agentKey, async () => policySigner.address, now);
   const agent = createAgent(llm, loadSavedProposals());
   const orchestrator = createOrchestrator({ db, chain: fc.chain, policy, agentSigner, agent, defaultAgentMode: opts.mode ?? "live", tracer, chainName: "Hardhat local", now });

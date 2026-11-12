@@ -22,11 +22,12 @@ test("settle: agent -> Policy -> both signatures -> vault payouts -> receipt, al
   assert.equal(h.receipts.get(M1)?.settlementHash, "0x" + "ab".repeat(32));
 
   // one trace, with the trace id on the plan and passed to the Policy Service
-  assert.equal(h.tracer.runs.length, 1);
+  // One settlement trace (the funding and release before it are their own treasury traces).
+  assert.equal(h.tracer.runs.filter((r) => r.name === "settlement").length, 1);
   assert.equal(h.submitted[0].traceId, r.trace_id);
   const plan = h.db.prepare("SELECT trace_id, decision FROM settlement_plans").get() as { trace_id: string; decision: string };
   assert.deepEqual([plan.trace_id, plan.decision], [r.trace_id, "paid_out"]);
-  const names = h.tracer.runs[0].spans.map((s) => s.name);
+  const names = h.tracer.runs.find((r) => r.name === "settlement")!.spans.map((s) => s.name);
   for (const n of ["get_policy_summary", "build_agent_input", "policy.submit", "agent_signer.sign", "vault.execute", "receipt.mint"]) {
     assert.ok(names.includes(n), `span ${n} missing: ${names.join(", ")}`);
   }

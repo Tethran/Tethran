@@ -34,7 +34,7 @@ export interface TxSender {
 /** The part of an ethers JsonRpcProvider this client uses. */
 export type ChainReader = Pick<
   JsonRpcProvider,
-  "send" | "call" | "getTransactionReceipt" | "getTransaction" | "getTransactionCount" | "getBlockNumber"
+  "send" | "call" | "getTransactionReceipt" | "getTransaction" | "getTransactionCount" | "getBlockNumber" | "getBlock"
 >;
 
 const ESCROW_ABI = [
@@ -535,17 +535,25 @@ export class EvmChainClient implements ChainClient {
    * Transfers of the configured USDT token inside one transaction, read from its receipt.
    * Empty if the transaction is unknown, still pending, or failed. Used to confirm stablecoin deposits.
    */
-  async usdtTransfersInTx(txHash: string): Promise<{ from: string; to: string; value: string }[]> {
+  /**
+   * Test-USDT transfers in a transaction, for deposit checks. Only a successful transaction on this client's chain
+   * (ready() checks the chain id) counts, and only Transfer logs emitted by our configured token contract: a Transfer
+   * event from any other contract, even one with the same signature, is ignored. Each entry carries the block time so
+   * the caller can refuse a transfer made before the milestone existed.
+   */
+  async usdtTransfersInTx(txHash: string): Promise<{ from: string; to: string; value: string; blockTime: number }[]> {
     await this.ready();
     const receipt = await this.provider.getTransactionReceipt(txHash);
     if (!receipt || receipt.status !== 1) return [];
     const topic = this.erc20.getEvent("Transfer")!.topicHash;
-    return receipt.logs
-      .filter((l) => l.address.toLowerCase() === this.config.usdt.toLowerCase() && l.topics[0] === topic)
-      .map((l) => {
-        const parsed = this.erc20.parseLog({ topics: [...l.topics], data: l.data })!;
-        return { from: parsed.args[0] as string, to: parsed.args[1] as string, value: (parsed.args[2] as bigint).toString() };
-      });
+    const ours = receipt.logs.filter((l) => l.address.toLowerCase() === this.config.usdt.toLowerCase() && l.topics[0] === topic);
+    if (ours.length === 0) return [];
+    const block = await this.provider.getBlock(receipt.blockNumber);
+    if (!block) return [];
+    return ours.map((l) => {
+      const parsed = this.erc20.parseLog({ topics: [...l.topics], data: l.data })!;
+      return { from: parsed.args[0] as string, to: parsed.args[1] as string, value: (parsed.args[2] as bigint).toString(), blockTime: Number(block.timestamp) };
+    });
   }
 
 

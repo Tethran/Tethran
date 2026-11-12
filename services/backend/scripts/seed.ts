@@ -97,8 +97,13 @@ async function waitHealthy(url: string, what: string) {
   throw new Error(`${what} did not start`);
 }
 
+/** The platform credential for release, refund and settle (generated per seed, kept in demo.json). */
+let PLATFORM_TOKEN = "";
+
 async function call(base: string, method: string, path: string, body?: unknown): Promise<any> {
-  const r = await fetch(base + path, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const headers: Record<string, string> = body ? { "content-type": "application/json" } : {};
+  if (base === BACKEND && PLATFORM_TOKEN) headers["x-platform-token"] = PLATFORM_TOKEN;
+  const r = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const json: any = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(`${method} ${path} -> ${r.status} ${json.code ?? ""} ${json.error ?? ""}`), { status: r.status, code: json.code });
   return json;
@@ -168,9 +173,18 @@ function serviceEnv(chainKey: string, internalToken: string) {
       ...rpcEnv, ...llmEnv, LLM_TIMEOUT_MS: "90000", CHAIN: chainKey, TREASURY_PRIVATE_KEY: env("TREASURY_PRIVATE_KEY"),
       AGENT_SIGNER_PRIVATE_KEY: env("AGENT_SIGNER_PRIVATE_KEY"), ARBITER_ADDRESS: wallet("ARBITER").address,
       POLICY_URL: POLICY, INTERNAL_TOKEN: internalToken, BACKEND_DATA_DIR: DATA, BACKEND_PORT: String(BACKEND_PORT),
+      DEMO_MODE: "1", PLATFORM_TOKEN,
       CORS_ORIGINS: APP_ORIGINS.join(","), DEMO_WALLET_SEED: env("DEMO_WALLET_SEED"), AGENT_MODE: env("AGENT_MODE") || "replay", X402_CAP_PER_RUN: env("X402_CAP_PER_RUN") || "50000",
     },
   };
+}
+
+/** The seeded state's platform token; an older demo.json without one gets one now (the services restart with it). */
+function platformTokenFor(meta: Record<string, unknown>): string {
+  if (typeof meta.platform_token === "string" && meta.platform_token) return meta.platform_token;
+  const t = randomBytes(24).toString("hex");
+  writeFileSync(join(DATA, "demo.json"), JSON.stringify({ ...meta, platform_token: t }, null, 2));
+  return t;
 }
 
 /** DEMO MODE ONLY: one-click test-key signing for the web app (see demo-signer.ts). */
@@ -210,6 +224,7 @@ async function main() {
   if (SERVE_ONLY) {
     const meta = JSON.parse(readFileSync(join(DATA, "demo.json"), "utf8"));
     if (meta.chain !== chain.key) throw new Error(`.demo-data was seeded on "${meta.chain}", not "${chain.key}"`);
+    PLATFORM_TOKEN = platformTokenFor(meta);
     const se = serviceEnv(chain.key, meta.internal_token);
     children.push(start("policy", join(ROOT, "services/policy/src/main.ts"), se.policy, false));
     children.push(start("backend", join(ROOT, "services/backend/src/main.ts"), se.backend, false));
@@ -235,12 +250,14 @@ async function main() {
     const meta = JSON.parse(readFileSync(join(DATA, "demo.json"), "utf8"));
     if (meta.chain !== chain.key) throw new Error(`${basename(DATA)} was seeded on "${meta.chain}", not "${chain.key}"`);
     internalToken = meta.internal_token;
+    PLATFORM_TOKEN = platformTokenFor(meta);
   } else {
     if (!/^\.demo-data[A-Za-z0-9_-]*$/.test(basename(DATA)) || resolve(DATA, "..") !== ROOT) throw new Error("refusing to wipe an unexpected directory");
     rmSync(DATA, { recursive: true, force: true });
     mkdirSync(DATA, { recursive: true });
     internalToken = randomBytes(24).toString("hex");
-    writeFileSync(join(DATA, "demo.json"), JSON.stringify({ chain: chain.key, internal_token: internalToken, seeded_at: new Date().toISOString() }, null, 2));
+    PLATFORM_TOKEN = randomBytes(24).toString("hex");
+    writeFileSync(join(DATA, "demo.json"), JSON.stringify({ chain: chain.key, internal_token: internalToken, platform_token: PLATFORM_TOKEN, seeded_at: new Date().toISOString() }, null, 2));
   }
 
   const provider = newProvider(chain);

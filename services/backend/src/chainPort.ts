@@ -30,5 +30,6 @@ export interface TreasuryChain {
   /** TEST TOKEN FAUCET: stands in for the simulated fiat-to-USDT conversion. */
   mintTestUsdt(to: string, amount: string, idempotencyKey: string): Promise<TxRef>;
   /** Transfers of the configured USDT inside a confirmed transaction. */
-  usdtTransfersInTx(txHash: string): Promise<{ from: string; to: string; value: string }[]>;
+  /** Our token's Transfer logs in a successful tx on this chain, with the block time (see EvmChainClient). */
+  usdtTransfersInTx(txHash: string): Promise<{ from: string; to: string; value: string; blockTime: number }[]>;
 }

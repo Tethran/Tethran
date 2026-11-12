@@ -22,6 +22,7 @@ import type { TreasuryChain } from "./chainPort";
 import { milestones, vaultOf, type FundingSource, type MilestoneRow, type MilestoneState } from "./db";
 import { ApiError, bad, safeErrorMessage } from "./errors";
 import { openIdentityHold, type IdentityCheck } from "./identity";
+import { openTreasuryIssue } from "./issues";
 import { StripeSignatureError, verifyStripeSignature } from "./stripe";
 import { currentRun, noopTracer, type Tracer } from "../../llm/src/index";
 import { traceActions, tracedChain } from "./traced";
@@ -51,11 +52,23 @@ export interface TreasuryDeps {
   tracer?: Tracer;
 }
 
+/** Largest milestone, in USD cents, unless MAX_MILESTONE_USD_CENTS sets another (default $100,000). */
+export const DEFAULT_MAX_MILESTONE_USD_CENTS = 10_000_000;
+export function maxMilestoneCents(env: NodeJS.ProcessEnv = process.env): number {
+  const v = Number(env.MAX_MILESTONE_USD_CENTS ?? DEFAULT_MAX_MILESTONE_USD_CENTS);
+  if (!Number.isSafeInteger(v) || v <= 0) throw new Error("MAX_MILESTONE_USD_CENTS must be a positive integer");
+  return v;
+}
+
 /** USD cents to USDT base units (6 decimals) at the SIMULATED rate of 1 USD = 1 USDT. */
-export function centsToBaseUnits(cents: number): string {
-  if (!Number.isInteger(cents) || cents <= 0) throw new ApiError(400, "amount_usd_cents must be a positive integer");
+export function centsToBaseUnits(cents: number, max = maxMilestoneCents()): string {
+  if (typeof cents !== "number" || !Number.isSafeInteger(cents) || cents <= 0) throw new ApiError(400, "amount_usd_cents must be a positive whole number of cents");
+  if (cents > max) throw new ApiError(400, `amount_usd_cents is above the maximum of ${max}`, "AMOUNT_TOO_LARGE");
   return (BigInt(cents) * 10_000n).toString();
 }
+
+/** Slack between block time and this server's clock when checking that a deposit came after the milestone. */
+export const DEPOSIT_CLOCK_SLACK_S = 120;
 
 const ESCROW_TO_DB: Record<string, MilestoneState> = {
   None: "draft", Funded: "funded", Approved: "approved", Disputed: "disputed", Released: "released", Refunded: "refunded",
@@ -143,6 +156,10 @@ export function createTreasury(deps: TreasuryDeps) {
       if (m.state !== "draft") throw new ApiError(409, `milestone is ${m.state}, not draft`);
       const otherFunding = db.prepare("SELECT reference FROM fundings WHERE milestone_id = ? AND status = 'funded'").get(id);
       if (otherFunding) throw new ApiError(409, "milestone already funded by another payment");
+      // One payment funds a milestone at a time: a second payment while another is still being funded is refused (it
+      // would otherwise race the first into the escrow). A retry of the same reference is fine.
+      const otherPending = db.prepare("SELECT reference FROM fundings WHERE milestone_id = ? AND status = 'pending' AND reference <> ?").get(id, reference);
+      if (otherPending) throw new ApiError(409, "another payment for this milestone is still being funded", "FUNDING_IN_PROGRESS");
 
       if (prior && prior.source !== source) throw new ApiError(409, "payment reference was first used with another funding source");
       // The absolute timeout is fixed at the first attempt, so a retry sends exactly the same call.
@@ -200,8 +217,12 @@ export function createTreasury(deps: TreasuryDeps) {
       const m = need(id);
       if (!isHexString(txHash, 32)) bad("tx_hash must be a 32-byte hex string");
       const transfers = await chain.usdtTransfersInTx(txHash);
+      // A transfer made before this milestone existed cannot be its deposit (an old payment reused). Block time can drift
+      // from this clock by a little, so two minutes of slack.
+      const createdS = Math.floor(Date.parse(m.created_at) / 1000) - DEPOSIT_CLOCK_SLACK_S;
       const paid = transfers
         .filter((t) => getAddress(t.from) === m.client_address && getAddress(t.to) === getAddress(config.treasuryAddress))
+        .filter((t) => t.blockTime >= createdS)
         .reduce((sum, t) => sum + BigInt(t.value), 0n);
       if (paid === 0n) throw new ApiError(409, "no confirmed test USDT transfer from the client to the treasury in that transaction", "DEPOSIT_NOT_FOUND");
       if (paid < BigInt(m.amount)) throw new ApiError(409, `deposit of ${paid} is less than the milestone amount ${m.amount}`, "DEPOSIT_TOO_SMALL");
@@ -246,10 +267,20 @@ export function createTreasury(deps: TreasuryDeps) {
         const m = need(milestoneId);
         const cents = event.type === "checkout.session.completed" ? obj.amount_total : obj.amount_received;
         if (String(obj.currency).toLowerCase() !== "usd" || cents !== m.amount_usd_cents) {
-          return record(`rejected: paid ${cents} ${obj.currency}, expected ${m.amount_usd_cents} usd`);
+          openTreasuryIssue(db, { kind: "refund_needed", milestone_id: milestoneId, reference: `stripe:${String(obj.payment_intent ?? obj.id)}`, detail: `paid ${cents} ${obj.currency}, expected ${m.amount_usd_cents} usd` }, deps.now());
+          return record(`rejected: paid ${cents} ${obj.currency}, expected ${m.amount_usd_cents} usd; refund needed`);
         }
         const reference = String(event.type === "checkout.session.completed" ? obj.payment_intent ?? obj.id : obj.id);
-        await this.fund(milestoneId, "card", `stripe:${reference}`);
+        try {
+          await this.fund(milestoneId, "card", `stripe:${reference}`);
+        } catch (e) {
+          // A transient failure (chain or RPC down, 5xx): not recorded, so Stripe's retry runs it again.
+          if (!(e instanceof ApiError) || e.status >= 500) throw e;
+          // A permanent refusal (already funded, another payment in progress, mismatch, ...): the client paid but the
+          // escrow will not be funded by this payment. Record it, queue a refund for a human, answer 200.
+          openTreasuryIssue(db, { kind: "refund_needed", milestone_id: milestoneId, reference: `stripe:${reference}`, detail: `${e.code ?? e.status}: ${e.message}` }, deps.now());
+          return record(`refund needed: ${e.code ?? e.status}`);
+        }
         outcome = "funded";
       } else if (event.type === "charge.dispute.created" || event.type === "charge.refunded") {
         if (!milestoneId) return record("ignored: no milestone_id in metadata");

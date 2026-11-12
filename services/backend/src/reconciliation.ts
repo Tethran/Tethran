@@ -6,6 +6,7 @@
 // Amounts are strings in USDT base units; sums use BigInt, never floating point. The CSV prints decimals with 6
 // places, derived from the base units.
 import type { DatabaseSync } from "node:sqlite";
+import { openTreasuryIssues } from "./issues";
 import { getCountryProfile } from "./countryProfiles";
 import { ApiError } from "./errors";
 import { formatMicro, legOf, migratePayouts, refreshLeg, type OffchainRow } from "./payouts";
@@ -156,6 +157,7 @@ export function createReconciliation(deps: ReconciliationDeps) {
     const items: { kind: string; reason: string; milestone_id: string | null; record: { table: string; id: string | number }; at: string | null; simulated?: true }[] = [];
     const add = (kind: string, reason: string, milestone_id: string | null, table: string, id: string | number, at: string | null, simulated?: true) =>
       items.push({ kind, reason, milestone_id, record: { table, id }, at, ...(simulated ? { simulated } : {}) });
+    for (const i of openTreasuryIssues(db)) add(i.kind, `refund needed: ${i.detail} (payment ${i.reference})`, i.milestone_id, "treasury_issues", i.id, i.at);
     for (const f of db.prepare("SELECT * FROM fundings WHERE status IN ('failed', 'mismatch') ORDER BY id").all() as any[]) {
       add(f.status === "mismatch" ? "funding_mismatch" : "funding_failed", `funding ${f.reference} is ${f.status}`, f.milestone_id, "fundings", f.id, f.at);
     }

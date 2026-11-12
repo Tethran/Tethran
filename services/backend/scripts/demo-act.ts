@@ -16,8 +16,14 @@ const fileEnv = existsSync(join(ROOT, ".env")) ? parse(readFileSync(join(ROOT, "
 const env = (k: string) => process.env[k] ?? fileEnv[k] ?? "";
 const BACKEND = `http://127.0.0.1:${env("DEMO_BACKEND_PORT") || 18788}`;
 
+/** The seeded state's platform credential (for the release after an identity decision). */
+function platformToken(): string {
+  try { return JSON.parse(readFileSync(join(ROOT, process.env.DEMO_DATA_DIR || ".demo-data", "demo.json"), "utf8")).platform_token ?? ""; } catch { return ""; }
+}
+
 async function call(method: string, path: string, body?: unknown): Promise<any> {
-  const r = await fetch(BACKEND + path, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const headers: Record<string, string> = { ...(body ? { "content-type": "application/json" } : {}), "x-platform-token": platformToken() };
+  const r = await fetch(BACKEND + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const json: any = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`${method} ${path} -> ${r.status} ${json.code ?? ""} ${json.error ?? ""}`);
   return json;
