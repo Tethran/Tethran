@@ -18,7 +18,16 @@
 - Receipt NFT (3.4a): holder is the provider; the treasury mints it after the vault payout is confirmed.
 - Stack and decisions (2, 3.1, 16): Hardhat 2 with ethers v6, SQLite, Opik cloud, Sepolia as primary chain, own TestUSDT token with EIP-3009; LLM through one provider-agnostic interface (Groq first, Gemini fallback, replay mode).
 - Stripe is simulated in this build behind the same interface as the real path; identity, mobile money and bank rails are simulated.
-- Marked as planned or not built yet: payout adapters, reconciliation, x402, a second chain, the web app, Stripe checkout creation.
+- Status notes now match the build after Blocks 2 and 3. Relaying operator-signed limit changes through `POST /v1/policy` is built and was enforced on Sepolia (4.4).
+- Checkout: a Simulated checkout (card, Apple Pay, Google Pay, PayPal, Cash App Pay, stablecoin) signs Stripe-format events into the real webhook path; the real Stripe Checkout path is built and off until `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are set.
+- Agent modes `live`, `replay` and `live+replay` are built (replay proposals are curated from the scenarios' expected replies for now). The escalation execute endpoint, the evidence summary endpoint and Opik tracing of treasury actions are built (5, 7).
+- Contracts (both-party EIP-712 signing, terms hash), country profiles NG, KE, ZA, GH as data, and invoicing (pay link and QR data, receipts, fee payer, recurring, simulated reminders) are built.
+- Agent: final system prompt, input guards, post-checks, tools with a spending cap (paid tools simulated; x402 itself is not built), Opik dataset, experiment runner and LLM-as-judge are built; the real nine-scenario run with the new prompt is incomplete because of free-tier rate limits.
+- WDK user wallets (client, payees, subcontractor) are built with a WDK transaction policy and ran on Sepolia, with the wallet-layer API (4.2). Demo custody: a demo wallet service holds the test seed; on the user's device in the product. Treasury, Policy Service, agent signer and operator keys are not WDK wallets. The Phase 0 note "no WDK policy hooks" is superseded (15). WDK multisig interfaces exist but no EVM implementation was used; the vault is our own contract.
+- Payout adapters, the phone registry and send-to-phone are built, rails simulated (10). The reconciliation ledger, failure and suspicious queue and CSV export are built.
+- Identity-matched release is strict (no record means hold), with operator holds decided by an operator EIP-712 signature; verification is simulated (11).
+- Operator queue and arbiter endpoints (disputes, attestation typed data, attestation collection that submits `escrow.decide` when two parties agree) are built.
+- Still not built: the seed script, x402, a second chain and the web app (separate workstream).
 
 ---
 
@@ -58,27 +67,27 @@ flowchart LR
 | Component | Responsibility | Trust |
 |---|---|---|
 | Mobile-first web app | Provider dashboard, client pay link and QR, operator console, arbiter view, wallet review screen. Not built yet (separate workstream, not in this repo) | Untrusted client |
-| Backend API | Milestones, funding, release, refunds, receipts, settlement orchestration (see `docs/API.md`). Contracts, invoices and pay links are planned | Trusted |
-| Payment bridge | Stripe webhook verification (built, tested with locally signed events). Stripe is **simulated** in this build behind the same interface as the real path; checkout session creation is not built yet | Trusted |
+| Backend API | Milestones, funding, release, refunds, receipts, settlement orchestration, contracts, invoices and pay links, checkout, wallets, payouts, reconciliation, operator and arbiter endpoints (see `docs/API.md`) | Trusted |
+| Payment bridge | Stripe webhook verification (built, tested with locally signed events). Stripe is **simulated** in this build behind the same interface as the real path: the Simulated checkout signs Stripe-format events into the real webhook path. The real Stripe Checkout path is built and off until `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are set | Trusted |
 | Treasury service | Holds test USDT. FUNDER and RELEASER of the escrow; funds, releases and refunds escrows, mints receipts. Runs inside the backend | Trusted; keys separate from agent |
 | Settlement Agent | LLM planner returning schema-valid proposals. Holds no keys and has no submit tool | **Untrusted** |
 | Orchestrator | Backend code: runs the agent, calls the Policy Service, asks the agent signer module to sign, submits the vault transaction, mints the receipt. One Opik trace per run | Trusted |
 | Agent signer module | Holds the agent key (first vault co-signer), separate from the LLM; signs only transfers the Policy Service has already signed | Trusted; key never in LLM context, prompts, logs or traces |
 | Policy Service | Deterministic limit checks, second signing key, approval queue. Separate process and credentials; reads the chain | Trusted |
 | Contracts | `MilestoneEscrow`, `ProviderVault` (one per provider, with the spending guard), `ReceiptNFT`, test token | Authoritative on-chain |
-| Wallet layer | Services sign with ethers v6 key wallets; a WDK spike confirmed it fits. WDK wallets for users arrive with the web app (planned) | Self-custodial for users |
+| Wallet layer | User wallets (client, payees, subcontractor) are WDK wallets (`@tetherto/wdk`, `@tetherto/wdk-wallet-evm`) with a WDK transaction policy, built and run on Sepolia; a demo wallet service holds the test seed (demo custody), on the user's device in the product. Treasury, Policy Service, agent signer and operator keys are ethers v6 key wallets, not WDK wallets | Self-custodial for users |
 | x402 module | Paid data endpoints and agent payments. Planned, not built yet | Trusted |
-| Payout adapters | Quote, initiate, status interface; simulated mobile money, bank and USDT; phone registry. Not built yet: in the current slice the vault pays an on-chain wallet that stands for a simulated rail | Trusted |
-| Identity service | Simulated verified names and national ID references; checked by the backend before release | Trusted (simulated) |
-| Reconciliation store | Invoice ↔ payment ↔ transaction ↔ trace. Not built yet; the milestone timeline endpoint is the first part | Trusted |
+| Payout adapters | Quote, initiate, status interface; simulated mobile money, bank and USDT; phone registry. Built, rails simulated; the on-chain leg goes to a wallet that stands for the rail | Trusted |
+| Identity service | Simulated verified names and national ID references; checked strictly (no record means hold) by the backend before release | Trusted (simulated) |
+| Reconciliation store | Invoice ↔ payment ↔ transaction ↔ trace. Built: the per-milestone ledger with gaps, the failure and suspicious queue and the CSV export; the milestone timeline endpoint came first | Trusted |
 | Opik | Tracing, evaluation, guardrails | Observer |
 
 ### Technology stack
-- Services: TypeScript (Node.js 22.13 or newer), ethers v6. WDK (@tetherto/wdk and the EVM wallet module) is for user wallets and is planned.
+- Services: TypeScript (Node.js 22.13 or newer), ethers v6. WDK (`@tetherto/wdk` and `@tetherto/wdk-wallet-evm`) is used for user wallets.
 - Contracts: Solidity with Hardhat 2 (the 2.x line) and ethers v6, OpenZeppelin 5.
-- Web: React, mobile-first. Not built yet. Whether WDK runs in the browser, React Native or Node for user wallets is still **[TBD]**; WDK documents Node.js and React Native support, and a Node spike worked.
+- Web: React, mobile-first. Not built yet. Whether WDK runs in the browser, React Native or Node for user wallets in the web app is still **[TBD]**; WDK documents Node.js and React Native support, and the built wallet layer runs on Node.
 - Database: SQLite, with an append-only audit table enforced by triggers.
-- Payments: Stripe, simulated in this build (webhook verified; the Express Checkout and Payment Element are planned).
+- Payments: Stripe, simulated in this build (webhook verified; the Simulated checkout is built; the real Stripe Checkout path is built and off until the Stripe keys are set; the Express Checkout and Payment Element are not built).
 - LLM: one provider-agnostic interface (`LlmProvider`, `services/llm`). Groq first (`openai/gpt-oss-120b`), Gemini fallback (`gemini-3.5-flash`), optional NVIDIA third, and a replay mode. Model names are configuration. Only seeded demo data and redacted text are sent.
 - Observability: Opik cloud (TypeScript SDK).
 
@@ -116,7 +125,7 @@ Rules that follow from this:
 - Trust assumption: the treasury is funder and RELEASER. It could decline to release an Approved milestone and take the funds back after the grace period. The provider relies on the platform to release.
 - A client paying in stablecoin sends it to a treasury deposit address and the treasury funds the escrow. This is a demo simplification and is labelled as such.
 
-Events are emitted for every transition so the reconciliation store (not built yet) can follow the chain.
+Events are emitted for every transition so the reconciliation store can follow the chain.
 
 ### 3.3 Vault and spending guard
 - The vault is `ProviderVault`, one plain contract per provider (no factory, no pooled vault). It is not a Safe or an ERC-4337 account: WDK's Safe account is single-owner, so a minimal custom contract was built instead. The spending guard is part of the vault.
@@ -173,7 +182,7 @@ sequenceDiagram
 ```
 
 ### 4.2 Wallet review and send
-Not built yet (it belongs to the web app).
+The wallet-layer API is built on WDK user wallets and ran on Sepolia; the screens belong to the web app and are not built yet. In this build a demo wallet service signs for the test wallets (demo custody); in the product the user's device does.
 
 1. The user selects a saved recipient or enters an address or phone number.
 2. The app validates the address and network, then shows the review screen: recipient, network, amount and fee separately.
@@ -186,7 +195,7 @@ Not built yet (it belongs to the web app).
 A dispute can start only while the milestone is Funded and before the timeout, and it extends the timeout to at least now + 7 days. Two of three valid attestations (from two different parties) decide, before the timeout. The agent only summarises evidence for the arbiter. If nothing is decided before the timeout, the milestone refunds to the funder (decided; there is no release-on-timeout setting).
 
 ### 4.4 Policy update
-The operator signs the vault's own typed-data actions (`SetPolicy`, `SetPayees`), once per on-chain action. `POST /v1/policy` takes the new policy document and those signed actions; the Policy Service checks that each signature recovers to the vault's operator, that the versions continue from the vault's `policyVersion` and that the signed on-chain values equal the policy document, and then relays each action to the vault unchanged. The Policy Service has no typed data of its own for this. The agent has no access to this path. Relaying to the vault through the endpoint is not wired yet: it is a labelled stub until the operator console is built, and the off-chain fields (soft limit, tax share, confidence threshold, hold length) are signed by the operator with the Policy Service's own policy typed data for now. Whether that is enough is still open (INTERFACES.md section 2b).
+The operator signs the vault's own typed-data actions (`SetPolicy`, `SetPayees`), once per on-chain action. `POST /v1/policy` takes the new policy document and those signed actions; the Policy Service checks that each signature recovers to the vault's operator, that the versions continue from the vault's `policyVersion` and that the signed on-chain values equal the policy document, and then relays each action to the vault unchanged. The Policy Service has no typed data of its own for this. The agent has no access to this path. Relaying to the vault through the endpoint is built and was enforced on Sepolia (the operator lowered the per-transaction cap and the vault refused a payout it had allowed); the relay goes through the backend, the treasury pays gas and adds no authority, and if the relay fails the policy does not change. The off-chain fields (soft limit, tax share, confidence threshold, hold length) are signed by the operator with the Policy Service's own policy typed data for now. Whether that is enough is still open (INTERFACES.md section 2b).
 
 Policy rules and reason codes (rejected: `SCHEMA_INVALID`, `DUPLICATE_PROPOSAL`, `HOLD_ACTIVE`, `PAYEE_NOT_ALLOWED`, `OVER_PER_TX_CAP`, `OVER_DAILY_CAP`, `BELOW_VAULT_RESERVE`, `TAX_RESERVE_TOO_LOW`; escalated: `LOW_CONFIDENCE`, `NEEDS_HUMAN`, `IDENTITY_MISMATCH`, `OVER_SOFT_LIMIT`) are defined in INTERFACES.md section 2. Points worth knowing here:
 - The tax reserve is measured on the gross milestone payout amount (what the escrow released to the vault).
@@ -206,7 +215,7 @@ Contract and milestone, delivery evidence, active policy summary, tax profile, c
 |---|---|
 | get_contract, get_milestone, get_evidence | Read-only |
 | get_policy_summary | Read-only |
-| buy_corridor_rules, buy_fx_quote | Pays x402 endpoints within a spending cap (planned, not built yet) |
+| buy_corridor_rules, buy_fx_quote | Paid-data tools under a spending cap; the paid tools are simulated and x402 itself is not built |
 | propose_settlement | Returns the structured plan |
 
 The agent has no submit tool. `submit_cosigned_tx` is not an LLM tool: after the Policy Service approves and co-signs, the orchestrator (backend code) submits the vault transaction through `ChainClient`. The agent never holds keys. The agent key (first vault co-signer) lives in the separate agent signer module, never in the LLM context, prompt, tool results, logs or traces; the module signs a transfer only if the Policy Service has already signed the same transfer and the deadline is valid. WDK's agent-oriented tooling (an MCP toolkit) is not used in this build.
@@ -237,7 +246,7 @@ Outputs that do not validate are rejected and logged. Every model reply is valid
 5. Output schema and refusal or escalation rules.
 6. Worked examples, including an injection attempt and an over-limit request.
 
-Full prompt texts are produced in the build phase with matching evaluation cases.
+The final prompt is built and versioned, with matching evaluation cases. Input guards, post-checks (which add flags and force `needs_human`, never removing actions), evidence summaries and the modes `live`, `replay` and `live+replay` are built; replay proposals are curated from the scenarios' expected replies for now.
 
 ## 6. Guardrails (defence in depth)
 
@@ -255,24 +264,24 @@ Layers 3 and 4 are authoritative; layers 0 to 2 reduce how often they are exerci
 
 ## 7. Observability with Opik
 
-- Opik cloud. One trace per settlement run, with a span for each LLM attempt (provider, model, latency, attempt, tokens) and each tool call. No prompts or keys are sent. Treasury actions are not traced yet.
+- Opik cloud. One trace per settlement run, with a span for each LLM attempt (provider, model, latency, attempt, tokens) and each tool call. No prompts or keys are sent. Treasury actions are traced too: one trace each, with chain calls as spans.
 - The trace ID is stored in the reconciliation record; only a plan hash goes on-chain.
-- Evaluation experiments run the seeded scenario set; results are compared across prompt versions.
-- Online LLM-as-judge metrics (for example hallucination) are attached to runs.
+- Evaluation experiments run the seeded scenario set (Opik dataset and experiment runner, built); results are compared across prompt versions. The real nine-scenario run with the new prompt is incomplete because of free-tier rate limits.
+- An LLM-as-judge is built; online judge metrics (for example hallucination) attached to runs are the target.
 - Guardrail events are logged and shown in the demo dashboard.
 
 ## 8. Data model (core entities)
 
-Storage is SQLite. Chain (config), Vault (provider, chain, vault address, operator, provider payout address), Payee (payee ID, address, rail, simulated), Receipt (token ID, milestone, chain, mint transaction), Contract, Milestone (chain), Invoice, Funding (Stripe payment reference, source type, chain, idempotency key), EscrowRecord (transaction hashes), SettlementPlan (agent output, hash, trace ID), PolicyVersion, PolicyDecision (result, reasons, proposal hash), Attestation (signer, signature, type), Payout (adapter, status, simulated flag), Dispute, IdentityRecord (verified name, simulated ID reference), PhoneRegistryEntry (consented), AuditLog (append-only), TraceRef (Opik ID). The core tables are listed in INTERFACES.md section 5; contracts, invoices and the phone registry are not built yet.
+Storage is SQLite. Chain (config), Vault (provider, chain, vault address, operator, provider payout address), Payee (payee ID, address, rail, simulated), Receipt (token ID, milestone, chain, mint transaction), Contract, Milestone (chain), Invoice, Funding (Stripe payment reference, source type, chain, idempotency key), EscrowRecord (transaction hashes), SettlementPlan (agent output, hash, trace ID), PolicyVersion, PolicyDecision (result, reasons, proposal hash), Attestation (signer, signature, type), Payout (adapter, status, simulated flag), Dispute, IdentityRecord (verified name, simulated ID reference), PhoneRegistryEntry (consented), AuditLog (append-only), TraceRef (Opik ID). The core tables are listed in INTERFACES.md section 5; contracts, invoices, the phone registry and the treasury actions table are built.
 
 ## 9. x402 module
-Planned, not built yet. The x402 packages exist (`@x402/core`, `@x402/evm`) and the EVM "exact" scheme settles with EIP-3009, which `TestUSDT` implements; the flow has not been run. If the real flow does not run, a mock x402 server and client, labelled simulated, is the fallback.
+Not built (the agent's paid tools are simulated). The x402 packages exist (`@x402/core`, `@x402/evm`) and the EVM "exact" scheme settles with EIP-3009, which `TestUSDT` implements; the flow has not been run. If the real flow does not run, a mock x402 server and client, labelled simulated, is the fallback.
 - The agent buys corridor and tax-rule data from our own x402 endpoint, paying in test USDT on an EVM test network.
 - Our invoice-status and settlement-proof endpoints are payable the same way.
 - Implementation follows the x402 protocol libraries and a facilitator **(verify chain and token support)**.
 
 ## 10. Payout adapters and phone registry
-Not built yet. Today the vault pays an on-chain deposit wallet that stands for a simulated mobile-money or bank rail; the payout is marked `simulated` in the timeline. The adapter interface is:
+Built, with the rails simulated. The off-chain leg starts after each approved settlement; the vault pays an on-chain wallet that stands for a simulated mobile-money or bank rail, and the payout is marked `simulated`. The adapter interface is:
 ```text
 interface PayoutAdapter {
   quote(request) -> Quote
@@ -280,13 +289,13 @@ interface PayoutAdapter {
   status(ref) -> PayoutStatus
 }
 ```
-Implementations: MobileMoneySim (M-Pesa, MTN MoMo, Airtel), BankSim, UsdtSim. The phone registry maps a consented phone number to a wallet address; resolution is simulated.
+Implementations: MobileMoneySim (M-Pesa, MTN MoMo, Airtel), BankSim, UsdtSim. The phone registry maps a consented phone number to a wallet address; it stores only a hash of the number, honours withdrawal of consent, and resolution returns a masked number and is simulated. Send-to-phone is built. Fees, FX and the status flow (pending, processing, delivered or failed) are simulated placeholders.
 
 ## 11. Identity-matched release
-At release, the Identity service compares the verified name on the payment record with the verified customer. A match proceeds; a mismatch holds the release and creates an escalation. Verification here is simulated and enforced by the backend before it calls `release`, not on-chain. A missing identity record is currently treated as a match; making the check strict is planned. The design mirrors the traceability direction of Nigeria's November 2026 rules for P2P providers (name and BVN matching, reconciliation of crypto and fiat legs, handling of disputed or suspicious transactions). Production use needs licensed verification providers and legal counsel.
+At release, the Identity service compares the verified name on the payment record with the verified customer. A match proceeds; a mismatch holds the release and creates an escalation. Verification here is simulated and enforced by the backend before it calls `release`, not on-chain. The check is strict: a missing identity record is a hold, not a match. A held release opens an identity hold, which the vault's operator decides with an EIP-712 signature. The design mirrors the traceability direction of Nigeria's November 2026 rules for P2P providers (name and BVN matching, reconciliation of crypto and fiat legs, handling of disputed or suspicious transactions). Production use needs licensed verification providers and legal counsel.
 
 ## 12. Country profiles
-A profile is data: currency, tax identifier fields, invoice fields, applicable rule sources, available payout rails and corridor notes. Initial set: Nigeria, Kenya, South Africa, Ghana. Tax rates and thresholds are configured per profile and verified before use.
+Built as data, with tax rates as unverified placeholders. A profile is data: currency, tax identifier fields, invoice fields, applicable rule sources, available payout rails and corridor notes. Initial set: Nigeria, Kenya, South Africa, Ghana. Tax rates and thresholds are configured per profile and verified before use.
 
 ## 13. Security and key management
 - The LLM never holds any key. The agent key lives in the agent signer module; the treasury key and the Policy Service key are held by their own services. Each service loads only its own variables, and the slice runner starts each with an explicit environment.
@@ -301,7 +310,7 @@ A profile is data: currency, tax identifier fields, invoice fields, applicable r
 - Unit tests for policy rules, schema validation, the LLM router, the backend and `ChainClient`. Identity matching is simulated.
 - Integration: the full slice (`npm run slice`) runs the two services as separate processes on a local chain or Sepolia: fund, approve, release, agent proposal, Policy Service decision, two co-signatures, vault payout, receipt. Refund and over-limit rejection are covered by contract and unit tests and a vault proof script.
 - Scenario evaluations (`npm run eval:agent`, nine seeded scenarios, traced in Opik): clean delivery, disputed delivery, prompt injection in evidence, over-limit request, unknown payee, low confidence, duplicate send, wrong network, identity mismatch.
-- Seed scripts rebuild accounts, balances and demo data (deploy scripts, wallet generation, gas top-up).
+- Seed scripts rebuild accounts, balances and demo data (deploy scripts, wallet generation, gas top-up). The seed script is not built yet.
 
 ## 15. Verification checklist (before building on each assumption)
 Status after the Phase 0 checks:
@@ -310,7 +319,7 @@ Status after the Phase 0 checks:
 3. WDK fiat on-ramp: a MoonPay module exists and needs an account and key; not tested. The fiat-to-USDT step is a labelled treasury simulation.
 4. x402 flow on an EVM test network, including facilitator support: still open (planned).
 5. Stripe sandbox wallet behaviour on the team's test devices; Cash App Pay region limits: still open; Stripe is simulated in this build.
-6. WDK transaction-policy hooks: none found. The Policy Service plus the on-chain guard are used. Done.
+6. WDK transaction-policy hooks: Phase 0 found none; superseded. The installed WDK core has a policy engine and it is used on user wallets. The platform's limits stay in the Policy Service and the on-chain guard. WDK multisig interfaces exist but no EVM implementation was used. Done.
 7. WDK module availability per chain: the EVM wallet module takes any RPC URL; our own `TestUSDT` is redeployed per chain. A second chain is not built yet.
 
 ## 16. Open items

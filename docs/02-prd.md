@@ -17,7 +17,16 @@
 - M14 receipts: the holder is the provider, minted by the treasury after the vault payout (the earlier [TBD] is closed).
 - Section 9 (simulated versus real): Stripe is simulated in this build behind the same interface as the real path; identity, mobile money and bank rails are simulated. Each module now carries a build status.
 - Decisions recorded: LLM through one provider-agnostic interface (Groq first, Gemini fallback, replay mode); Sepolia primary; own TestUSDT token with EIP-3009; SQLite; Opik cloud. Open questions 3 and 4 are updated.
-- Planned or not built yet: payout adapters, reconciliation, x402, a second chain, the web app, invoicing and Stripe checkout.
+- Status lines now match the build after Blocks 2 and 3. Relaying operator-signed limit changes through `POST /v1/policy` is built and was enforced on Sepolia.
+- Checkout: a Simulated checkout (card, Apple Pay, Google Pay, PayPal, Cash App Pay, stablecoin) signs Stripe-format events into the real webhook path. The real Stripe Checkout path is built and switched off until `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are set.
+- Agent modes `live`, `replay` and `live+replay` are built; replay proposals are curated from the scenarios' expected replies for now. The escalation execute endpoint, the evidence summary endpoint and Opik tracing of treasury actions are built.
+- Contracts with both-party EIP-712 signing and a terms hash, country profiles NG, KE, ZA, GH as data, and invoicing (pay link and QR data, receipts, fee payer, recurring, simulated reminders) are built.
+- Agent: final system prompt, input guards, post-checks, tools with a spending cap (paid tools simulated; x402 itself is not built), Opik dataset, experiment runner and LLM-as-judge are built. The real nine-scenario run with the new prompt is incomplete because of free-tier rate limits.
+- WDK user wallets (client, payees, subcontractor) are built on `@tetherto/wdk` and `@tetherto/wdk-wallet-evm` with a WDK transaction policy, and ran on Sepolia. The wallet-layer API (review with the fee shown separately, duplicate-send blocking, wrong-network detection before signing, reconnect recheck of the same hash) is built. Custody is a demo wallet service holding the test seed; in the product it is the user's device.
+- Payout adapters (MobileMoneySim, BankSim, UsdtSim), the phone registry (hashed numbers, consent) and send-to-phone are built, with rails simulated. The reconciliation ledger, failure and suspicious queue and CSV export are built.
+- Identity-matched release is strict (no record means hold); operator holds are decided by an operator EIP-712 signature; verification is simulated.
+- Operator queue and arbiter endpoints (disputes, attestation typed data, attestation collection that submits `escrow.decide` when two parties agree) are built.
+- Still not built: the seed script, x402, a second chain and the web app (separate workstream).
 
 ---
 
@@ -62,7 +71,7 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 | M3 | Payment bridge | Stripe sandbox (card, Apple Pay, Google Pay, PayPal, Cash App) → webhook → treasury → escrow |
 | M4 | Escrow contract | USDT escrow: createAndFund, approve, release, refund, timeout, dispute, chargeback and rescue refunds |
 | M5 | Settlement Agent | LLM planner: invoices, evidence review, splits, tax reserve, conversion, anomaly flags. Holds no keys |
-| M6 | Policy Service, vault and operator console | Deterministic limits, co-signing, the vault with its built-in spending guard, approval queue. The operator console is not built yet |
+| M6 | Policy Service, vault and operator console | Deterministic limits, co-signing, the vault with its built-in spending guard, approval queue. The operator endpoints are built; the operator console UI is not built yet |
 | M7 | x402 services | Agent pays for data; our APIs are payable |
 | M8 | Payout adapters and send-to-phone | Mobile money, bank, USDT; phone-number resolution |
 | M9 | Country profiles | NG, KE, ZA, GH currency, tax fields, rails, corridor rules |
@@ -78,7 +87,7 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 - FR-1.1 Provider creates a contract with parties, currency, milestones, amounts and acceptance criteria.
 - FR-1.2 Both parties sign; the signed contract hash is recorded.
 - FR-1.3 Milestone states: draft, funded, in-review, approved, disputed, released, paid out, refunded (INTERFACES.md section 0 maps them to the on-chain states).
-- Status: milestone creation and states are built; contracts with signing are planned.
+- Status: built. Milestone creation and states, and contracts with both-party EIP-712 signing and a terms hash, are built.
 
 ### M2 Invoicing and collection
 - FR-2.1 Generate a USD invoice per milestone with country-specific fields.
@@ -86,7 +95,7 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 - FR-2.3 Provider chooses who covers transaction fees.
 - FR-2.4 Receipts are automatic; recurring invoices supported.
 - FR-2.5 Unpaid invoices are tracked with reminders.
-- Status: not built yet.
+- Status: built: USD invoices with country fields, fee-payer choice, pay link and QR data without personal data, receipts, recurring issuance and simulated reminders. The reminders are simulated.
 
 ### M3 Payment bridge
 - FR-3.1 Client can pay by card, Apple Pay, Google Pay, PayPal, Cash App Pay (Stripe sandbox) or stablecoin.
@@ -94,7 +103,7 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 - FR-3.3 Funding source (card or stablecoin) is recorded and drives release rules.
 - FR-3.4 The simulated fiat-to-USDT conversion is labelled on screen.
 - FR-3.5 A client paying in stablecoin sends it to a treasury deposit address and the treasury funds the escrow. This is a demo simplification and is labelled as such.
-- Status: Stripe is simulated in this build behind the same interface as the real path. The webhook (signature check, idempotency, funding, chargeback handling) is built and tested with locally signed events; checkout session creation, the pay link and the payment methods other than card are not built yet. The stablecoin deposit flow is built.
+- Status: built. A Simulated checkout for card, Apple Pay, Google Pay, PayPal, Cash App Pay and stablecoin signs Stripe-format events into the real webhook path (signature check, idempotency, funding, chargeback handling), so those checks run for real. The real Stripe Checkout path is built and switched off until `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are set. The stablecoin deposit flow is built.
 
 ### M4 Escrow contract
 - FR-4.1 Only the treasury (FUNDER role) funds a milestone escrow with test USDT, through `createAndFund`. The parties, the provider's vault, the amount, a timeout and the chargeback hold are stored per milestone. The timeout must be at least a minimum set at deployment.
@@ -110,11 +119,11 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 - FR-5.1 Receives contract, milestone, evidence, policy summary, tax profile and corridor data.
 - FR-5.2 Returns only schema-valid structured proposals (splits, tax reserve, conversion, payouts, flags, confidence).
 - FR-5.3 Summarises delivery evidence for the client or arbiter; never decides releases or disputes.
-- FR-5.4 May buy data over x402 within a spending cap.
+- FR-5.4 May buy data over x402 within a spending cap (the spending cap is built on simulated paid tools; x402 itself is not built).
 - FR-5.5 Treats contract text and evidence as untrusted input.
-- FR-5.6 The agent holds no keys and has no submit tool. It has read tools, the x402 purchase tools (planned) and `propose_settlement` only. The orchestrator (backend code) submits the vault transaction after the Policy Service co-signs.
+- FR-5.6 The agent holds no keys and has no submit tool. It has read tools, paid-data tools under a spending cap (simulated; x402 itself is not built) and `propose_settlement` only. The orchestrator (backend code) submits the vault transaction after the Policy Service co-signs.
 - FR-5.7 The model is called through one provider-agnostic interface: Groq first, Gemini as fallback, optional NVIDIA third, and a replay mode. Replies are validated against the schema, retried at most three attempts in total, and a total failure is a rejection (`SCHEMA_INVALID`), never executed as text. Only seeded demo data and redacted text are sent.
-- Status: built; the nine seeded scenarios pass against Groq and Gemini and are traced in Opik. x402 purchases are not built yet.
+- Status: built: the final system prompt, input guards, post-checks, tools with a spending cap (paid tools simulated), the escalation execute endpoint, the evidence summary endpoint, and the modes `live`, `replay` and `live+replay` (replay proposals are curated from the scenarios' expected replies for now). The nine seeded scenarios are traced in Opik; the real nine-scenario run with the new prompt is incomplete because of free-tier rate limits. x402 purchases are not built.
 
 ### M6 Policy Service, vault and operator console
 - FR-6.1 Each provider has one vault (`ProviderVault`). A transfer needs two co-signatures over the same typed data, which includes a deadline and a per-action id used once: the agent signer module and the Policy Service. Neither can move funds or change policy alone.
@@ -124,7 +133,7 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 - FR-6.5 Violations or low-confidence proposals go to a human approval queue.
 - FR-6.6 Every decision is logged with reasons, before anything is signed.
 - Trust boundary: the operator key is effectively the owner of the vault. A compromised operator key can drain the vault: it can rotate both co-signers, allow any payee and raise the caps. The two-signature rule and the limits protect against a compromised agent or Policy Service and against mistakes, not against the operator. The fixed payout address constrains only the withdrawal function.
-- Status: the Policy Service, co-signing, approval queue and the vault are built and tested; the vault is deployed on Sepolia. Relaying operator-signed limit changes through `POST /v1/policy` is a labelled stub until the operator console is built (not built yet).
+- Status: the Policy Service, co-signing, approval queue and the vault are built and tested; the vault is deployed on Sepolia. Relaying operator-signed limit changes through `POST /v1/policy` is built and was enforced on Sepolia. The operator queue endpoints (identity holds, Policy approvals) are built; the operator console (UI) is not built.
 
 ### M7 x402
 - FR-7.1 The agent pays an x402 endpoint for corridor and tax-rule data.
@@ -135,18 +144,19 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 - FR-8.1 Common adapter interface: quote, initiate, status.
 - FR-8.2 Simulated adapters: M-Pesa, MTN MoMo, Airtel, bank, USDT.
 - FR-8.3 Users can send to a phone number resolved through a consented phone-to-wallet registry (simulated).
-- Status: the adapters and the registry are not built yet. In the current slice the vault pays an on-chain wallet that stands for a simulated rail, and the payout is marked simulated.
+- Status: built, rails simulated: MobileMoneySim (M-Pesa, MTN MoMo, Airtel), BankSim and UsdtSim; the phone registry stores only a hash of the number, needs consent and honours withdrawal; send-to-phone is built. The off-chain leg starts after each approved settlement, and the on-chain leg goes to a wallet that stands for the rail. All are labelled simulated.
 
 ### M9 Country profiles
 - FR-9.1 Profiles for NG, KE, ZA, GH define currency, tax identifiers, invoice fields, rails and rule sources.
 - FR-9.2 Adding a country requires configuration only.
+- Status: built as data (NG, KE, ZA, GH), with tax rates marked unverified placeholders.
 
 ### M10 Reconciliation and identity
 - FR-10.1 Each invoice links to payment, funding, escrow, settlement transactions and the agent trace.
 - FR-10.2 Identity-matched release: the verified name on the payment record must match the verified customer before release; mismatches are held and escalated (simulated verification).
 - FR-10.3 Tax-ready exports (CSV) per period and country profile.
 - FR-10.4 Failed, disputed and suspicious payments are listed in a dedicated queue.
-- Status: reconciliation and exports are not built yet; a per-milestone timeline endpoint exists. The identity check is simulated and enforced by the backend before release, not on-chain.
+- Status: built: the reconciliation ledger, the failure and suspicious queue and the CSV export; the per-milestone timeline endpoint also exists. The identity check is strict (no record means hold), simulated, and enforced by the backend before release, not on-chain; operator holds are decided by an operator EIP-712 signature.
 
 ### M14 NFT receipts
 - FR-14.1 After the vault payout is confirmed, a non-transferable ERC-721 receipt is minted by the receipt contract. The treasury mints it.
@@ -161,7 +171,7 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 - FR-11.2 The evaluation dataset covers: clean delivery, disputed delivery, injection attempt, over-limit request, unknown payee, low confidence, duplicate send, wrong network, identity mismatch.
 - FR-11.3 Online LLM-as-judge scores are recorded per run.
 - FR-11.4 A demo dashboard shows runs, scores and guardrail events.
-- Status: Opik cloud. One trace per settlement run with a span per LLM attempt and tool call is built, and the nine eval scenarios are traced. Online LLM-as-judge scores, treasury-action tracing and the dashboard are not built yet.
+- Status: Opik cloud. One trace per settlement run with a span per LLM attempt and tool call is built, the nine eval scenarios are traced, and treasury actions are traced (one trace each, chain calls as spans). The Opik dataset, the experiment runner and an LLM-as-judge are built. The dashboard is not built yet.
 
 ### M12 Wallet experience
 - FR-12.1 Self-custodial wallets via WDK for client, provider and subcontractor.
@@ -170,7 +180,7 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 - FR-12.4 Network mismatches are detected before signing.
 - FR-12.5 After a connection loss, the app shows the last known status and rechecks the same transaction on reconnect.
 - FR-12.6 Anything above operator limits requires explicit human approval.
-- Status: the web app is not built yet (separate workstream). The Policy Service's approval queue exists on the backend side. The runtime for user wallets (browser, React Native or Node) is still **[TBD]**.
+- Status: the wallet layer is built on `@tetherto/wdk` and `@tetherto/wdk-wallet-evm` with a WDK transaction policy and ran on Sepolia: review with the fee shown separately, duplicate-send blocking, wrong-network detection before signing, and a reconnect recheck of the same hash. In this build a demo wallet service holds the test seed (demo custody); in the product it is on the user's device. The web app (UI) is not built yet (separate workstream). The runtime for user wallets in the web app (browser, React Native or Node) is still **[TBD]**.
 
 ### M13 Multi-chain
 - FR-13.1 One EVM test network works end to end first. Sepolia is the primary network and the full slice has run on it.
@@ -194,7 +204,7 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 - **Security:** Keys kept outside the LLM (the agent signer module is separate from it); each service loads only its own keys; secrets never in prompts, logs or traces; webhook signatures verified. The operator key is effectively the vault owner (FR-6).
 - **Auditability:** Append-only audit log of policy decisions, approvals and identity checks. Storage is SQLite.
 - **Privacy:** Personal data redacted before model calls where possible; only hashes on-chain.
-- **Reliability:** Seed scripts rebuild test-network state.
+- **Reliability:** Seed scripts rebuild test-network state (the seed script is not built yet).
 - **Reproducibility:** Demo scenarios are seeded and repeatable.
 - **Mobile-first:** Primary design target is a phone screen with weak connectivity.
 
@@ -216,16 +226,16 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 
 | Area | Status |
 |---|---|
-| Stripe checkout (card, wallets, PayPal, Cash App) | Simulated in this build, behind the same interface as the real path. The webhook is verified and tested with locally signed events; checkout creation is not built yet |
+| Stripe checkout (card, wallets, PayPal, Cash App) | Simulated in this build, behind the same interface as the real path. The simulated checkout signs Stripe-format events into the real webhook path; the real Stripe Checkout path is built and off until the Stripe keys are set |
 | Fiat → USDT conversion | Simulated (test treasury, 1:1) |
 | Off-chain refund to the client | Simulated |
 | Escrow contract, vault, receipt NFT, transfers | Real on Sepolia, with our own TestUSDT token (not Tether USDT) |
 | Stablecoin deposit to the treasury | Real on-chain transfer; a demo simplification |
-| Wallets | Services use ethers v6 key wallets; WDK user wallets are planned with the web app |
+| Wallets | User wallets use WDK (demo custody: a demo wallet service holds the test seed; on the user's device in the product). Treasury, Policy Service, agent signer and operator keys are ethers v6 key wallets, not WDK wallets |
 | x402 payments | Planned, not built yet **(verify)** |
-| Identity verification, mobile money, bank payouts | Simulated (the on-chain leg goes to a wallet standing for the rail; adapters not built yet) |
+| Identity verification, mobile money, bank payouts | Simulated (adapters built: MobileMoneySim, BankSim, UsdtSim; identity verification is simulated and strict; the on-chain leg can go to a wallet standing for the rail) |
 | LLM calls (Groq, Gemini) | Real, with seeded demo data only |
-| Opik tracing | Real (Opik cloud); evaluation scoring partly built |
+| Opik tracing | Real (Opik cloud); treasury actions traced; experiment runner and LLM-as-judge built, the real nine-scenario run with the new prompt incomplete (free-tier rate limits) |
 
 ## 10. Success criteria
 
@@ -237,7 +247,7 @@ Let a freelancer or small agency in Africa invoice any client worldwide, receive
 ## 11. Assumptions and dependencies
 
 - A self-deployed test token (`TestUSDT`, with EIP-3009) is used; no Tether test USDT is relied on.
-- The two-signature vault is a custom contract, because WDK's smart account is single-owner (checked in Phase 0).
+- The two-signature vault is a custom contract, because WDK's smart account is single-owner (checked in Phase 0). WDK multisig interfaces exist but no EVM implementation was used. The installed WDK core has a transaction-policy engine, which is used on user wallets.
 - Stripe sandbox wallet methods work on our test devices (not yet checked); Cash App Pay is US-only.
 - The project is new work started at the event.
 
