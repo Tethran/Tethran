@@ -163,12 +163,13 @@ unused, the same proposal cannot be re-signed; the agent must make a new proposa
   and that the versions continue from the vault's `policyVersion`, then relays each action unchanged.
 - The request is rejected unless the on-chain values in `policy` (`per_tx_cap`, `daily_cap`, `vault_min_reserve`,
   and `payee_allowlist` resolved to addresses) equal what the signed actions set.
-- **Open:** the off-chain-only fields (`per_tx_soft_limit`, `min_tax_reserve_bps`, `confidence_threshold`,
-  `chargeback_hold_seconds`) are not covered by any vault signature. Until that is decided, a change to them is
-  accepted only together with a signed `setPolicy` action in the same request, and that is weaker than a
-  signature over the fields themselves.
+- **Decided:** the off-chain-only fields (`per_tx_soft_limit`, `min_tax_reserve_bps`, `confidence_threshold`,
+  `chargeback_hold_seconds`) are covered by the operator's `PolicyDocument` signature (Policy Service typed data).
 - Approval decisions (`POST /v1/approvals/{id}/decision`) keep an operator signature of their own, since they
   have no on-chain action.
+- As built (12 Nov 2026): the body also carries `version`, `operator_signature` (the operator's `PolicyDocument`
+  signature over the whole document, which covers the off-chain-only fields) and `vault` (the provider's vault
+  address). Off-chain-only changes need no vault action. Full request and response: `docs/API.md`.
 
 `proposalHash` on-chain is `proposal_hash` (sha256, 32 bytes) with a `0x` prefix. The Policy Service signs only
 after its own decision is `approved` and written to the audit log. The agent signer module signs the same

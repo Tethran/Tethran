@@ -211,6 +211,18 @@ Errors: `409 TIMEOUT_NOT_REACHED`, `409` nothing to refund.
 For a `released` milestone. One Opik trace per run. If an earlier run was approved but stopped part-way, this
 resumes its payouts without asking the agent again.
 
+Optional body: `{ "agent_mode": "live" | "replay" | "live+replay" }` (default from `AGENT_MODE`, normally
+`live+replay`).
+
+| Mode | What the agent does | `agent_mode` in the response |
+|---|---|---|
+| `live` | calls the model (Groq, then Gemini) | `"live"` |
+| `replay` | serves the saved proposal for the milestone's scenario; no model call | `"Replay"` |
+| `live+replay` | live first; if every live attempt fails (for example a free-tier rate limit) it serves the saved proposal | `"live"`, or `"Replay (live failed: HTTP 429)"` |
+
+A replayed proposal gets no special treatment: the Policy Service decides and co-signs it exactly like a live
+one, and the vault enforces its limits. `replay_source` says where the saved proposal came from.
+
 ```json
 {
   "decision": "approved",
@@ -223,6 +235,7 @@ resumes its payouts without asking the agent again.
   ],
   "receipt": { "token_id": 1, "mint_tx": "0x…", "holder": "0x24e1…" },
   "resumed": false,
+  "agent_mode": "live",
   "trace_id": "01a1cda7-bea5-74de-8063-77cdf30ab174"
 }
 ```
@@ -239,8 +252,39 @@ When nothing is paid:
 { "decision": "escalated", "reasons": ["OVER_SOFT_LIMIT"], "rejected_by": "policy service", "approval_id": "…", "plan_id": 3, "resumed": false, "trace_id": "…" }
 ```
 
-Errors: `409` milestone not released, `502 POLICY_UNREACHABLE` / `POLICY_ERROR`, `502 PAYOUT_FAILED` (call again
-to resume), `409 EXPIRED` (co-signatures older than 15 minutes; the proposal must be made again).
+Errors: `400` bad agent_mode, `409` milestone not released, `502 POLICY_UNREACHABLE` / `POLICY_ERROR`, `502 PAYOUT_FAILED`
+(call again to resume), `409 EXPIRED` (co-signatures older than 15 minutes; the proposal must be made again).
+
+#### `POST /milestones/{id}/escalations/{approvalId}/execute` — act on an escalated settlement
+
+For a settlement that came back `escalated`. The operator's signed decision goes to the Policy Service, which
+re-runs every rejecting rule against the current policy and the chain and only then co-signs. A human can
+override an escalation reason, never a rejecting rule or an on-chain limit.
+
+```json
+{ "decision": "approve", "operator_signature": "0x…" }
+```
+
+`operator_signature` is the operator's EIP-712 signature of `ApprovalDecision(string approvalId, string decision,
+bytes32 proposalHash)` (domain `TethranPolicy`, version `1`). Response, approved:
+
+```json
+{ "decision": "approved", "reasons": ["OVER_SOFT_LIMIT"], "plan_id": 3, "payouts": [ … ], "receipt": { … },
+  "trace_id": "…", "settlement_trace_id": "…" }
+```
+
+`reasons` are the escalation reasons the human overrode. Rejected: `{ "decision": "rejected", "reasons": [ … ], "plan_id": 3, "trace_id": "…" }`
+and nothing is paid. Calling again after an approval resumes the payouts and never pays twice. Errors: `400`, `403`
+no signature, `404` no such escalation, `409` not escalated.
+
+#### `POST /milestones/{id}/evidence/summary` — evidence summary for the client or arbiter
+
+No body. A live model call (no replay), traced. Advisory only: it never decides a release or a dispute.
+
+```json
+{ "ok": true, "summary": { "summary": "…", "supporting": ["…"], "against": ["…"], "missing": ["…"], "confidence": 0.8,
+    "disclaimer": "…" }, "trace_id": "…" }
+```
 
 ### Receipts (built)
 
@@ -262,12 +306,78 @@ Need header `x-internal-token: <INTERNAL_TOKEN>`; otherwise `401`.
 
 - `GET /internal/payees` → `{ "payee_amara": { "address": "0x…", "rail": "usdt", "simulated": false }, … }`
 - `GET /internal/milestones/{id}/identity` → `{ "match": true, "simulated": true, "reason": "names match" }`
+- `POST /internal/vault-actions` `{ "vault": "0x…", "actions": [ …operator-signed vault actions… ] }` → submits them
+  in order with the treasury account (gas only, no authority) → `{ "transactions": [{ "type": "setPolicy", "version": 7, "tx": "0x…" }] }`
+
+### Checkout (built; Simulated until Stripe keys are set)
+
+Two providers behind one interface. With `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` set, sessions are real
+Stripe Checkout Sessions (test mode) and Stripe calls `POST /webhooks/stripe`. Without them the checkout is
+**Simulated**: completing a session produces the same Stripe-format event, signed the way Stripe signs it, and
+hands it to the same webhook handler, so signature verification, once-only handling and the amount check run for
+real. No money moves and no Stripe account is used.
+
+#### `GET /checkout/options`
+
+```json
+{ "provider": "simulated", "simulated": true, "label": "Simulated: no money moves and no Stripe account is used",
+  "methods": [
+    { "id": "card", "label": "Card", "via": "stripe" },
+    { "id": "apple_pay", "label": "Apple Pay", "via": "stripe", "note": "Shown by Stripe on supported devices and browsers" },
+    { "id": "google_pay", "label": "Google Pay", "via": "stripe", "note": "Shown by Stripe on supported devices and browsers" },
+    { "id": "paypal", "label": "PayPal", "via": "stripe", "note": "Availability depends on the Stripe account's country" },
+    { "id": "cashapp", "label": "Cash App Pay", "via": "stripe", "note": "US customers only" },
+    { "id": "stablecoin", "label": "Stablecoin (test USDT)", "via": "treasury_deposit", "note": "Demo simplification: pay the treasury deposit address" }
+  ] }
+```
+
+#### `POST /checkout/sessions` — start paying a draft milestone
+
+```json
+{ "milestone_id": "c9fe85ad-…", "method": "google_pay" }
+```
+
+```json
+{ "session_id": "cs_sim_3f…", "provider": "simulated", "simulated": true, "milestone_id": "c9fe85ad-…", "method": "google_pay",
+  "amount_usd_cents": 10000, "currency": "usd", "status": "open", "url": "http://localhost:3000/pay/simulated/cs_sim_3f…", "label": "Simulated" }
+```
+
+With real Stripe, `url` is the Stripe-hosted page and `label` is `"Stripe (test mode)"`. For `"stablecoin"` the
+response carries `deposit` (the same object as `GET /milestones/{id}/deposit`) and the client confirms with
+`POST /milestones/{id}/deposit/confirm`. Errors: `400` unknown method, `404`, `409` milestone already paid.
+
+#### `GET /checkout/sessions/{id}` (Simulated only) — the session, as above
+
+#### `POST /checkout/sessions/{id}/complete` (Simulated only) — the client finishes paying
+
+```json
+{ "outcome": "paid" }
+```
+
+`outcome` is `paid`, `failed` or `cancelled`. A paid session sends a signed `checkout.session.completed` event
+through the webhook path:
+
+```json
+{ "session": { "status": "paid", "…": "…" }, "already": false,
+  "webhook": { "event_id": "evt_sim_…", "duplicate": false, "outcome": "funded", "trace_id": "…" } }
+```
+
+The escrow is funded card-funded, with the chargeback hold. Completing again returns `already: true`.
+
+#### `POST /checkout/sessions/{id}/dispute` (Simulated only) — a chargeback on a paid session
+
+Sends a signed `charge.dispute.created` event. Inside the card hold the escrow is refunded to the treasury
+(`"outcome": "refunded: chargeback during the hold"`); after it the case is flagged for a human.
+
+### Treasury traces
+
+Every treasury action (`POST /milestones`, deposit confirm, webhook, release, refund, chargeback) is one Opik
+trace with its chain calls as spans. Responses carry `trace_id`; the funding record stores it too.
 
 ### Planned (INTERFACES.md section 4 and the build plan)
 
-`POST /contracts`, `POST /contracts/{id}/sign`, `POST /milestones/{id}/invoice`, `GET /pay/{invoiceId}`, Stripe
-checkout session creation (Block 2); `POST /payouts/{id}/status`, reconciliation, wallet review endpoints, operator
-and arbiter endpoints (Blocks 3 and 4). They are added to this file as they are built.
+`POST /payouts/{id}/status`, reconciliation, wallet review endpoints, operator and arbiter endpoints (Blocks 3 and
+4). They are added to this file as they are built.
 
 ---
 
@@ -309,13 +419,35 @@ INTERFACES.md section 2.
 { "policy": { "version": 2, "per_tx_cap": "1000000000", "per_tx_soft_limit": "800000000", "daily_cap": "1000000000000",
     "vault_min_reserve": "0", "payee_allowlist": ["payee_amara", "payee_kofi"], "min_tax_reserve_bps": 1000,
     "confidence_threshold": 0.7, "chargeback_hold_seconds": 600 },
-  "version": 2, "operator_signature": "0x…" }
+  "version": 2, "operator_signature": "0x…",
+  "vault": "0xeE59D8994620A9125641b36848A636E04e24feA8",
+  "vault_actions": [
+    { "type": "setPolicy", "version": 7, "perTxCap": "1000000000", "dailyCap": "1000000000000", "minReserve": "0", "operator_signature": "0x…" },
+    { "type": "setPayees", "version": 8, "payees": ["0x…", "0x…"], "allowed": true, "operator_signature": "0x…" }
+  ] }
 ```
 
-`operator_signature` is the operator's EIP-712 signature of `PolicyDocument(uint256 version, bytes32 policyHash)`
-(domain `TethranPolicy`, version `1`). Rejected unless it recovers to the operator and the version is the next one.
-The on-chain limits are set on the vault with the vault's own operator-signed `SetPolicy` and `SetPayees`
-(relayed through `ChainClient`); relaying them through this endpoint is planned with the operator console.
+Two kinds of operator signature, as decided:
+
+- `operator_signature` signs the whole document (all fields, including the off-chain-only ones: soft limit, tax
+  share, confidence threshold, hold length) with `PolicyDocument(uint256 version, bytes32 policyHash)`, domain
+  `TethranPolicy` v1. It must recover to the operator and `version` must be the next one.
+- each `vault_actions` entry is signed in the vault's own format (`SetPolicy`, `SetPayees`, domain `TethranVault`
+  v1 with the chain id and vault address). Each must recover to the vault's **on-chain** operator (which must be
+  the operator above), and the versions must continue from the vault's on-chain `policyVersion`.
+
+After the actions, the vault's limits must equal the document's `per_tx_cap`, `daily_cap` and `vault_min_reserve`,
+and every payee on `payee_allowlist` must be allowed on the vault; otherwise `409` "the policy and the vault would
+disagree". `vault_actions` can be empty when only off-chain fields change. The actions are relayed to the vault
+(through the backend) and confirmed **before** the new policy becomes active; if the relay fails the policy is not
+changed (`502`). Response:
+
+```json
+{ "policy": { … }, "version": 3, "vault": "0xeE59…", "vault_transactions": [{ "type": "setPolicy", "version": 7, "tx": "0x2bba…" }] }
+```
+
+Errors: `400` malformed, `403` a signature does not verify, `409` wrong version or policy and vault would disagree,
+`502` relay failed.
 
 ### `GET /v1/approvals?status=pending` and `POST /v1/approvals/{id}/decision`
 

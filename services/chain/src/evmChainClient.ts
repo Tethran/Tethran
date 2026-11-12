@@ -181,7 +181,42 @@ export function assertMilestoneMatches(
  * two sends a few milliseconds apart read the same cached account nonce and the second one is refused.
  */
 export function newProvider(config: ChainConfig): JsonRpcProvider {
-  return new JsonRpcProvider(config.rpcUrl, config.chainId, { staticNetwork: true, cacheTimeout: -1 });
+  return new RetryingJsonRpcProvider(config.rpcUrl, config.chainId, { staticNetwork: true, cacheTimeout: -1 });
+}
+
+/** JSON-RPC methods that change nothing, so asking again is always safe. */
+const READ_ONLY_RPC = new Set([
+  "eth_chainId", "eth_blockNumber", "eth_call", "eth_estimateGas", "eth_gasPrice", "eth_maxPriorityFeePerGas",
+  "eth_feeHistory", "eth_getBalance", "eth_getBlockByNumber", "eth_getBlockByHash", "eth_getTransactionCount",
+  "eth_getTransactionByHash", "eth_getTransactionReceipt", "eth_getLogs", "eth_getCode",
+]);
+
+/**
+ * A provider that survives a flaky RPC endpoint: each request times out after 20 seconds instead of ethers'
+ * default 5 minutes, and a read-only request that times out or hits a network error is sent again, up to three
+ * attempts. eth_sendRawTransaction is never resent here: if it times out, the transaction may already be out,
+ * and the idempotency rules in EvmChainClient decide what happens next.
+ */
+export class RetryingJsonRpcProvider extends JsonRpcProvider {
+  _getConnection() {
+    const req = super._getConnection();
+    req.timeout = 20_000;
+    return req;
+  }
+
+  async _send(payload: any): Promise<any[]> {
+    const items = Array.isArray(payload) ? payload : [payload];
+    const retryable = items.every((p) => READ_ONLY_RPC.has(p.method));
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await super._send(payload);
+      } catch (e) {
+        const transient = isError(e, "TIMEOUT") || isError(e, "NETWORK_ERROR") || isError(e, "SERVER_ERROR");
+        if (!retryable || !transient || attempt >= 3) throw e;
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+    }
+  }
 }
 
 export type EvmChainClientOptions = {

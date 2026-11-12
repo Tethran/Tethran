@@ -29,7 +29,11 @@ Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer tra
 | Policy Service HTTP API, co-signing, approvals queue | Built, tested; reads the chain; relaying on-chain limit changes not wired yet |
 | `LlmProvider` (Groq first, Gemini fallback, optional NVIDIA) and agent eval runner | Built; run against Groq and Gemini; traced in Opik |
 | Backend: treasury (Stripe webhook, stablecoin deposits, funding, release, refunds, chargebacks), settlement orchestrator, agent signer | Built, tested; full slice passes on Sepolia |
-| Contracts, invoicing, Stripe checkout, payout adapters, reconciliation, operator endpoints | Not built yet |
+| Contracts (both-party signing, terms hash), country profiles, invoicing (pay link, QR data, receipts, recurring, reminders) | Built, tested |
+| Checkout: card, Apple Pay, Google Pay, PayPal, Cash App Pay, stablecoin | **Simulated** (signed events through the real webhook path); real Stripe path built, off until keys are set |
+| Agent: final prompts, input guards, evidence summaries, tools, replay mode, Opik dataset, experiment and LLM-as-judge | Built, tested offline; real runs limited by free-tier rate limits |
+| Operator limit changes relayed to the vault through the Policy Service | Built, tested, run on Sepolia |
+| Payout adapters, reconciliation, wallet-layer endpoints, operator console | Not built yet |
 | Web app | Not in this repo (separate workstream) |
 
 ## Known trust assumptions
@@ -45,6 +49,8 @@ Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer tra
   escape-hatch withdrawal.
 - **The operator address cannot be changed.** If that key is lost, the vault's limits, payees and signers are
   frozen and the escape withdrawal is gone; if a co-signer key is then lost too, the funds are stranded.
+- **Policy changes take effect at once.** The operator is the provider or agency admin; a limit change is
+  relayed to the vault immediately. The vault still pays nothing to an address outside its allowlist.
 - **The daily cap resets at 00:00 UTC**, so up to twice the cap can leave within minutes around midnight.
   To pause payouts, the operator signs a policy with zero caps.
 - **Stablecoin funding is a demo simplification.** A client paying in stablecoin sends it to a treasury deposit

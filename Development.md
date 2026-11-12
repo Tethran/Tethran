@@ -506,3 +506,88 @@ Gemini 429 (the API now says which layer rejected and why).
 **Not done in Block 1:** real Stripe sandbox (no Stripe keys; webhook tested with locally signed events);
 treasury actions are not traced in Opik (only the settlement run); identity record missing = treated as a match
 (Block 3 makes the identity check strict); `docs/API.md` written.
+
+---
+
+## 2026-11-12 — Session 010: Block 2
+
+### Lead decisions applied
+Opik project `tethran` (workspace `benedict258`); test trace written and read back. Stripe mocked: a Simulated
+checkout behind the same interface as the real Stripe path. Groq primary, Gemini fallback; replay mode with a
+live toggle. Known gaps closed now: Opik tracing of treasury actions, execute endpoint for approved escalations,
+on-chain limit relay through `POST /v1/policy`. Strict identity check stays in Block 3.
+
+### On-chain limit relay (demo-critical)
+- `services/policy/src/vaultActions.ts` (needs review): parses and checks operator-signed vault actions. Every
+  signature must recover to the vault's on-chain operator, which must be the operator the Policy Service trusts;
+  versions continue from the vault's on-chain version; after the actions the vault's limits must equal the
+  document's `per_tx_cap`, `daily_cap`, `vault_min_reserve` and every allowlisted payee must be allowed on the
+  vault, otherwise 409. Off-chain-only fields are covered by the operator's `PolicyDocument` signature.
+- The actions are relayed through the backend (`POST /internal/vault-actions`, treasury pays gas, adds no
+  authority) and confirmed before the policy becomes active; if the relay fails the policy does not change.
+- Policy Service tests: 117 (9 new for the relay).
+- Sepolia: the slice runner now sets the vault limits through `POST /v1/policy`; then the operator lowers the
+  per-transaction cap from 1000 to 5 and the vault refuses a 6 USDT payout (`OVER_PER_TX_CAP`) that it allowed a
+  moment earlier; then the cap is restored. Relayed transactions `0x234c3015…` (setPayees v6) and `0x2bba4645…`
+  (setPolicy v7).
+
+### Simulated checkout (`services/backend/src/checkout.ts`)
+- `CheckoutProvider` with two implementations. Real Stripe Checkout Sessions over Stripe's REST API (no SDK),
+  off until `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are set; request shape unit-tested, never called.
+- Simulated: completing a session signs a Stripe-format `checkout.session.completed` (or `charge.dispute.created`)
+  event and passes it to the same `handleStripeWebhook`, so signature, once-only and amount checks run for real.
+  Methods: card, Apple Pay, Google Pay, PayPal, Cash App Pay (Stripe), stablecoin (treasury deposit). Labelled
+  "Simulated" in code, responses and docs/API.md. The simulated webhook secret is random per process.
+
+### Agent modes (`services/backend/src/replay.ts`)
+- `live`, `replay`, `live+replay` (default). Replay serves a saved proposal for the milestone's scenario, scaled
+  by parts per million of the gross amount, labelled "Replay" with its source; it still goes through the Policy
+  Service. `replay/proposals.json` is generated from the nine scenarios' expected replies (`scripts/make-replay.ts`),
+  so it is curated, not model output.
+
+### Escalations, summaries, tracing
+- `POST /milestones/{id}/escalations/{approvalId}/execute`: operator-signed decision -> Policy Service re-runs the
+  rejecting rules and co-signs -> payouts and receipt. Resumes, never pays twice.
+- `POST /milestones/{id}/evidence/summary`: advisory evidence summary, traced.
+- Treasury actions are each one Opik trace with chain calls as spans (`src/traced.ts`); trace ids in responses,
+  in `fundings.trace_id`, `milestones.release_trace_id` and the new `treasury_actions` table.
+
+### Contracts, country profiles, invoicing (helper agent; cherry-picked and checked)
+`src/contracts.ts`, `src/countryProfiles.ts`, `src/invoices.ts`, `src/contractRoutes.ts`: contracts with a keccak256
+terms hash, EIP-712 signatures by both parties (`TethranContract` domain), terms frozen once signed, milestone
+state mapping from the escrow table; NG, KE, ZA, GH profiles as data with `rates_verified: false` tax placeholders;
+USD invoices with country fields, fee-payer choice (placeholder fee 1% + 30 cents), public pay payload and QR data
+without personal data, receipts, recurring issuance and simulated reminders. Funding marks the linked invoice paid.
+24 tests. Open points it raised: the escrow amount is the milestone amount even when the client pays the fee;
+recurring occurrences get derived escrow ids but are not activated automatically; country rails were assigned by
+the helper agent (the PRD does not list them).
+
+### Settlement Agent (helper agent; cherry-picked and checked)
+Final system prompt (`PROMPT_VERSION 2026-11-12.1`) in the six-part skeleton; input guards (deterministic injection
+detection, redaction, per-call random delimiters, size limits) recorded as guardrail spans; post-checks (unlisted
+payee, invalid amount, total above gross, tax below the minimum) that add flags and force `needs_human`, never
+removing actions; evidence summaries; read tools and simulated paid-data tools with a spending cap (single-shot:
+inputs gathered first, one model call); Opik dataset `tethran-agent-scenarios`, deterministic metrics, an
+LLM-as-judge through the router, and `npm run eval:experiment`. 59 tests.
+
+### Real model runs (kept few, free tiers)
+- `eval:agent` on Groq (before the new prompt): **8 of 9 passed**, prompt injection included; `identity_mismatch`
+  failed because Groq failed once and the Gemini fallback answered 429.
+- Experiment `agent-2026-11-12.1-20261112T0341` (new prompt): 4 of 9 produced a proposal, all four passed the
+  deterministic checks; the other five hit 429 on both providers. Judge average 0.63 over the four. The judge then
+  got the payee network and verified names (prompt `2026-11-12.2`), checked offline only.
+
+### Sepolia slice (after all of the above)
+Passed with the live agent (Groq): deposit `0xf1cd6a68…`, funded `0xa6c178d7…`, approved `0x087f3f72…`, released
+`0x4cdd0cb6…`, payouts `0x1047235b…` (60) and `0xac867248…` (30, simulated M-Pesa rail), receipt token #2, limit
+change enforced, trace `01a1cdeb-6e3c-7158-bcf9-27116d760494`.
+
+### Errors on the way
+- Sepolia RPC timeouts ("request timeout") made two slice runs fail at the limit relay (nothing changed, nothing
+  paid). `newProvider` now returns `RetryingJsonRpcProvider`: 20-second request timeout, read-only RPC methods
+  retried up to three times; `eth_sendRawTransaction` is never resent.
+- The first limit-change check asked about 60 USDT when the vault held 10, so the balance floor blocked it before
+  the cap did; the check now uses an amount within the balance.
+
+### Test counts
+Contracts 122, ChainClient 29, Policy Service 117, LLM 59, backend 65.

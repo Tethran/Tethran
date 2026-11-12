@@ -112,6 +112,7 @@ export function createHttpServer(deps: HttpDeps): Server {
       try { agentMode = parseAgentMode(body?.agent_mode, undefined); } catch (e) { throw new ApiError(400, (e as Error).message); }
       return orchestrator.settle(params[1], { agentMode });
     }],
+    ["POST", /^\/milestones\/([^/]+)\/evidence\/summary$/, async ({ params }) => orchestrator.summarize(params[1])],
     ["POST", /^\/milestones\/([^/]+)\/escalations\/([^/]+)\/execute$/, async ({ params, body }) => orchestrator.executeApproval(params[1], params[2], body ?? {})],
     // Checkout. Real Stripe when its keys are set; otherwise Simulated (signed events into the same webhook path).
     ["GET", /^\/checkout\/options$/, async () => ({

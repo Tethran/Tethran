@@ -1782,6 +1782,202 @@
         "Block 2: contracts and milestones, invoicing, Stripe checkout, Settlement Agent prompts, tools, guards and Opik evaluation"
       ],
       "notes": "Stopped after Block 1 as instructed. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
+    },
+    {
+      "session_id": "session_010",
+      "timestamp": "2026-11-12T04:06:33Z",
+      "ai_agent": "Executing engineer (main session) with two helper agents (contracts and invoicing; agent prompts, guards and evaluation)",
+      "current_phase": "Block 2 complete",
+      "progress": {
+        "completed": [
+          "Opik project tethran verified",
+          "On-chain limit relay through POST /v1/policy, enforced on Sepolia",
+          "Execute endpoint for approved escalations",
+          "Opik tracing of treasury actions",
+          "Simulated checkout for six payment methods through the real webhook path; real Stripe path built and off",
+          "Agent replay mode with live toggle",
+          "Contracts, country profiles and invoicing",
+          "Final agent prompt, input guards, post-checks, evidence summaries, tools, Opik dataset, experiment and LLM-as-judge",
+          "Retrying RPC provider; Sepolia slice passed with the live agent"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "A full real-model run of the nine scenarios with the new prompt: free-tier rate limits"
+        ]
+      },
+      "last_session_summary": "Session 009 built Block 1: ReceiptNFT, the backend (treasury, agent signer, orchestrator), the Policy Service chain reader and the full slice on Sepolia, with Opik tracing of settlements.",
+      "changes_made": [
+        "services/policy: vaultActions.ts, backendRelay.ts, setPolicy relay, chain reader additions, tests",
+        "services/backend: checkout.ts, replay.ts, traced.ts, vaultRelay.ts, escalation execute and summary in orchestrator, routes, block2 tests, replay/proposals.json, make-replay script",
+        "services/backend (helper agent): contracts.ts, countryProfiles.ts, invoices.ts, contractRoutes.ts and tests",
+        "services/llm (helper agent): prompt, guards, postcheck, summarize, tools, eval experiment, judge, metrics and tests",
+        "services/chain: RetryingJsonRpcProvider, vaultPayeeAllowed",
+        "docs/API.md, docs/INTERFACES.md (2b as built), README, .env.example, Development.md"
+      ],
+      "file_module_map": [
+        {
+          "file": "services/policy/src/vaultActions.ts",
+          "purpose": "Checks operator-signed vault actions against chain and policy. Needs review",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/backend/src/checkout.ts",
+          "purpose": "Real Stripe (off) and Simulated checkout",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/backend/src/replay.ts",
+          "purpose": "Agent modes live, replay, live+replay",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/backend/src/traced.ts",
+          "purpose": "Opik tracing of treasury actions",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/backend/src/vaultRelay.ts",
+          "purpose": "Relays operator-signed vault actions (gas only)",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/backend/src/orchestrator.ts",
+          "purpose": "Agent modes, escalation execute, evidence summary",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/backend/src/contracts.ts",
+          "purpose": "Contracts, hash, signatures",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/backend/src/invoices.ts",
+          "purpose": "Invoicing logic",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/llm/src/guards.ts",
+          "purpose": "Input guards",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/llm/src/prompt.ts",
+          "purpose": "Final system prompt",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/llm/eval/experiment.ts",
+          "purpose": "Opik experiment runner with judge",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "services/chain/src/evmChainClient.ts",
+          "purpose": "RetryingJsonRpcProvider",
+          "last_modified": "2026-11-12T04:06:33Z"
+        },
+        {
+          "file": "docs/API.md",
+          "purpose": "Every endpoint with examples",
+          "last_modified": "2026-11-12T04:06:33Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Decisions: Opik project tethran; Stripe mocked with a Simulated provider on the real webhook path; Groq primary, Gemini fallback; replay mode with live toggle; limit relay, escalation execute and treasury tracing now; strict identity check in Block 3",
+          "reason": "Relayed by the lead developer",
+          "alternatives_considered": "Waiting for Stripe keys"
+        },
+        {
+          "decision": "Vault actions relayed through the backend's treasury account",
+          "reason": "The Policy Service key holds no gas and should not send transactions; the vault checks the operator signatures itself",
+          "alternatives_considered": "Policy Service sending transactions"
+        },
+        {
+          "decision": "The new policy becomes active only after the vault actions are confirmed",
+          "reason": "Policy Service and guard must never disagree",
+          "alternatives_considered": "Activate first, relay after"
+        },
+        {
+          "decision": "Default agent mode live+replay; live mode never falls back silently",
+          "reason": "A rate limit cannot break the demo, and the response always says when a saved proposal was used",
+          "alternatives_considered": "Replay only when asked"
+        },
+        {
+          "decision": "Simulated webhook secret random per process",
+          "reason": "Only the simulated checkout in the same process can produce valid events",
+          "alternatives_considered": "A fixed secret in .env"
+        },
+        {
+          "decision": "Retry read-only RPC calls, never eth_sendRawTransaction",
+          "reason": "Intermittent Sepolia RPC timeouts broke the relay; resending a transaction could double-send",
+          "alternatives_considered": "Longer timeouts only"
+        },
+        {
+          "decision": "Replay proposals curated from the scenarios' expected replies",
+          "reason": "The real experiment was rate-limited for five of nine scenarios",
+          "alternatives_considered": "Saved model outputs (to replace once a clean run exists)"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "Nine-scenario real run with the new prompt incomplete: 4 of 9 got through the free tiers; prompt injection has no real result on the new prompt",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Replay proposals are curated, not model output",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Escrow amount is the milestone amount even when the client pays the invoice fee",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Missing identity record still counts as a match (Block 3)",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "No authentication on backend routes other than /internal",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Real Stripe path never called against Stripe (no keys)",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Policy changes take effect at once (accepted by the lead)",
+          "severity": "low",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "request timeout [TIMEOUT] at POST /v1/policy on Sepolia, twice",
+          "context": "Intermittent RPC timeouts during the relay",
+          "resolution": "RetryingJsonRpcProvider for read-only calls; rerun passed"
+        },
+        {
+          "error": "Limit-change check failed although the vault followed the change",
+          "context": "Checked 60 USDT against a vault holding 10",
+          "resolution": "Check uses an amount within the balance"
+        },
+        {
+          "error": "Helper agent experiment: HTTP 429 on Groq and Gemini for five scenarios",
+          "context": "Free tiers",
+          "resolution": "Not retried; reported"
+        }
+      ],
+      "next_steps": [
+        "Lead: review vaultActions.ts, checkout.ts, replay.ts, orchestrator.ts escalation path",
+        "One real nine-scenario experiment when the free tiers reset, then save its proposals as the replay set",
+        "Block 3: strict identity-matched release, payout adapters and phone registry, reconciliation, wallet-layer endpoints, operator and arbiter endpoints, seed script and handled failure"
+      ],
+      "notes": "Stopped after Block 2 as instructed. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
     }
   ]
 }

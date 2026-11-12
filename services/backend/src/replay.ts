@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AgentInput, LlmProvider, ProposeResult } from "../../llm/src/index";
-import { proposeSettlement } from "../../llm/src/index";
+import { proposeSettlement, summarizeEvidence } from "../../llm/src/index";
 
 export type AgentMode = "live" | "replay" | "live+replay";
 
@@ -66,6 +66,9 @@ export function createAgent(llm: LlmProvider, saved: Map<string, SavedProposal>)
   }
 
   return {
+    /** Evidence summary for the client or arbiter (live only; it never decides release or disputes). */
+    summarize: (input: AgentInput) => summarizeEvidence(input, llm),
+
     async propose(input: AgentInput, mode: AgentMode, scenario: string): Promise<AgentRun> {
       if (mode === "replay") return replay(input, scenario, "Replay");
       const live = await proposeSettlement(input, llm);

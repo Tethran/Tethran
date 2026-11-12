@@ -189,6 +189,20 @@ export function createOrchestrator(deps: OrchestratorDeps) {
       return { ...result, resumed: false, trace_id: traceId };
     },
 
+    /** A short, structured summary of the delivery evidence for the client or arbiter. Advisory only. */
+    async summarize(milestoneId: string) {
+      const m = milestones.get(db, milestoneId);
+      if (!m) throw new ApiError(404, "milestone not found");
+      const { traceId, result } = await deps.tracer.run(
+        { name: "evidence.summary", input: { milestone_id: m.id }, metadata: { milestone_id: m.id }, tags: ["summary"] },
+        async () => {
+          const { policy } = await traceTool("get_policy_summary", {}, () => deps.policy.getPolicy());
+          return deps.agent.summarize(agentInput(m, policy));
+        },
+      );
+      return { ...result, trace_id: traceId };
+    },
+
     /**
      * Executes an escalated settlement after a human decision. The operator's signed decision goes to the
      * Policy Service, which re-runs every rejecting rule against the current policy and chain state and only then
