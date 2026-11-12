@@ -334,3 +334,197 @@ Approving re-runs the rejecting rules; a human can override an escalation reason
 → `{ "valid": true }`
 
 ### `GET /v1/audit?milestone_id=…` — append-only decision log
+
+---
+
+## Contracts, country profiles and invoicing (built)
+
+Backend routes from `services/backend/src/contractRoutes.ts` (`contractRoutes(deps)`, registered by the main session).
+Offline: no chain, no Stripe, no email. Money is USD cents (integers). Dates are `YYYY-MM-DD`. A contract
+milestone's id is the escrow milestone id. Simulated: reminder delivery (recorded and returned, `simulated: true`),
+all tax rates (placeholders with `rates_verified: false`), and every payout rail except `usdt`.
+
+### `POST /contracts` — provider creates a contract
+
+```json
+{
+  "provider_id": "prov-demo", "provider_name": "Amara Design Studio",
+  "provider_address": "0x24e1b06a88Ee7C924eac9A2708b590b4c1a98815",
+  "client_name": "Kofi Traders Ltd", "client_email": "kofi@example.com",
+  "client_address": "0x29ec214d198abCc11583647dA2De3BF20350c623",
+  "currency": "USD", "country": "NG",
+  "recurrence": { "frequency": "monthly", "count": 3 },
+  "milestones": [
+    { "title": "Brand identity pack", "amount_usd_cents": 10000, "acceptance_criteria": "Logo, palette and guide as PDF",
+      "due_date": "2026-03-15", "recurrence": { "frequency": "weekly", "end_date": "2026-04-30" } }
+  ]
+}
+```
+
+`client_email`, `provider_name` (defaults to `provider_id`), `recurrence` (contract level, inherited by milestones
+without their own) and milestone `id` are optional. `recurrence` needs `frequency` (`monthly` or `weekly`) and a `count`
+(total invoices including the first, 2 to 120) or an `end_date`. Response `200`:
+
+```json
+{
+  "id": "5b1c…", "status": "draft", "provider_id": "prov-demo", "provider_name": "Amara Design Studio",
+  "provider_address": "0x24e1…", "client_name": "Kofi Traders Ltd", "client_email": "kofi@example.com",
+  "client_address": "0x29ec…", "currency": "USD", "country": "NG",
+  "contract_hash": "0x9f…", "hash_algorithm": "keccak256",
+  "signatures": [], "created_at": "2026-03-01T09:00:00.000Z", "signed_at": null,
+  "milestones": [
+    { "id": "c9fe85ad-…", "contract_id": "5b1c…", "index": 0, "title": "Brand identity pack", "amount_usd_cents": 10000,
+      "acceptance_criteria": "Logo, palette and guide as PDF", "due_date": "2026-03-15",
+      "recurrence": { "frequency": "weekly", "end_date": "2026-04-30" }, "state": "draft",
+      "invoice_id": null, "invoice_number": null }
+  ]
+}
+```
+
+The hash is keccak256 of the UTF-8 canonical JSON (sorted keys at every level, no timestamps or signatures) of the
+terms: parties, country, currency, recurrence and the milestone list including milestone ids. Any change to the terms
+changes it. Errors: `400` bad amounts (not a positive integer), unknown country, currency other than USD, missing or
+invalid parties, bad dates.
+
+### `GET /contracts/{id}`, `PATCH /contracts/{id}`
+
+`GET` returns the contract above. `PATCH` takes any of the creation fields (milestones replace the whole list; keep a
+milestone's `id` to keep it) and returns the contract with a new hash; earlier signatures are dropped. `409`
+`TERMS_FROZEN` once both parties have signed.
+
+### `GET /contracts/{id}/typed-data?party=provider|client`
+
+What the wallet signs: EIP-712 `ContractSignature(bytes32 contractHash, string party)`, domain
+`{ "name": "TethranContract", "version": "1" }` (no chain id; it is an off-chain document).
+
+```json
+{ "domain": { "name": "TethranContract", "version": "1" },
+  "types": { "ContractSignature": [{ "name": "contractHash", "type": "bytes32" }, { "name": "party", "type": "string" }] },
+  "primaryType": "ContractSignature", "message": { "contractHash": "0x9f…", "party": "client" } }
+```
+
+### `POST /contracts/{id}/sign`
+
+```json
+{ "party": "client", "signer": "0x29ec214d198abCc11583647dA2De3BF20350c623", "signature": "0x…" }
+```
+
+The signature must recover to that party's wallet in the contract, over the contract's current hash. Response: the
+contract. When both parties have signed, `status` is `signed` and `signed_at` is set. Re-signing is idempotent.
+`400` `WRONG_SIGNER` (signer is not that party's wallet) or `BAD_SIGNATURE` (wrong party, other hash, wrong domain).
+
+### `GET /contracts/{id}/milestones`
+
+`{ "milestones": [ …contract milestones with state… ] }`. `state` is the `state` of the row in the `milestones` table
+with the same id (`draft`, `funded`, `in_review`, `approved`, `disputed`, `released`, `paid_out`, `refunded`, per
+`docs/INTERFACES.md` section 0), and `draft` when there is no such row.
+
+### `POST /contracts/{id}/milestones/{mid}/activate`
+
+Allowed only when the contract is signed (`409` `NOT_SIGNED` otherwise). Creates the milestone's invoice if it does not
+exist and returns the body for the existing `POST /milestones`. It does not call the treasury; the main session posts
+this body to it.
+
+```json
+{ "id": "c9fe85ad-…", "provider_id": "prov-demo", "title": "Brand identity pack",
+  "client_address": "0x29ec…", "amount_usd_cents": 10000, "invoice_ref": "INV-2026-0001" }
+```
+
+### `POST /invoices/{id}/activate`
+
+The same body for any invoice, including a recurring occurrence (whose escrow id is derived from the milestone id).
+
+### `GET /country-profiles` and `GET /country-profiles/{code}`
+
+Profiles are data in `src/countryProfiles.ts`; adding a country is configuration only. Rates are placeholders.
+
+```json
+{ "code": "KE", "name": "Kenya", "currency": "KES",
+  "tax_identifiers": [{ "field": "KRA_PIN", "label": "KRA PIN", "required": true }],
+  "required_invoice_fields": ["invoice_number", "issue_date", "due_date", "provider_name", "client_name", "currency",
+    "line_items", "subtotal", "total", "provider_tax_ids.KRA_PIN"],
+  "payout_rails": ["mpesa", "airtel", "bank", "usdt"],
+  "tax_rates": [{ "name": "VAT", "rate_bps": 1600, "rates_verified": false, "note": "Placeholder rate. Verify against the current local tax rules before use." }],
+  "rule_sources": ["Kenya Revenue Authority (to verify)"] }
+```
+
+The list is `{ "profiles": [ … ] }` (GH, KE, NG, ZA). Unknown code: `404`.
+
+### `POST /milestones/{mid}/invoice` — create the invoice for a contract milestone
+
+`mid` is a contract milestone id; the contract must be signed. Idempotent: a second call returns the same invoice
+(`created: false`) and ignores the body.
+
+```json
+{ "fee_payer": "client", "provider_tax_ids": { "TIN": "1234567-0001" } }
+```
+
+`fee_payer` is `provider` (default) or `client`. Fee model (placeholder, configurable with `FEE_BPS` and
+`FEE_FIXED_CENTS`, defaults 100 and 30): `fee = round_half_up(subtotal x bps / 10000) + fixed_cents`. If the client pays,
+`total = subtotal + fee` and the payout is the subtotal; if the provider pays, `total = subtotal` and the payout is
+`subtotal - fee`. Numbers are `INV-{year}-{seq}`, sequential per provider and year.
+
+```json
+{ "id": "0d3e…", "number": "INV-2026-0001", "provider_id": "prov-demo", "contract_id": "5b1c…", "milestone_id": "c9fe85ad-…",
+  "occurrence": 0, "escrow_milestone_id": "c9fe85ad-…", "country": "NG", "currency": "USD",
+  "provider_name": "Amara Design Studio", "client_name": "Kofi Traders Ltd",
+  "provider_tax_ids": { "TIN": "1234567-0001" }, "missing_required_fields": [],
+  "line_items": [{ "description": "Brand identity pack", "quantity": 1, "unit_amount_cents": 10000, "amount_cents": 10000 }],
+  "subtotal_cents": 10000, "fee_cents": 130, "total_cents": 10130, "provider_payout_cents": 10000,
+  "fee_payer": "client", "issue_date": "2026-03-01", "due_date": "2026-03-15", "status": "unpaid",
+  "paid_at": null, "paid_reference": null, "pay_url": "http://localhost:3000/pay/0d3e…", "created": true }
+```
+
+### `GET /pay/{invoiceId}` — public payment payload (no account)
+
+Never includes the client's email or wallet address. `PUBLIC_BASE_URL` (default `http://localhost:3000`) builds the
+URL; the UI renders the QR from `qr_data`. `amount_usd_cents` is what the client pays (the total).
+
+```json
+{ "invoice_id": "0d3e…", "invoice_number": "INV-2026-0001", "provider_name": "Amara Design Studio",
+  "amount_usd_cents": 10130, "currency": "USD", "due_date": "2026-03-15", "status": "unpaid",
+  "escrow_milestone_id": "c9fe85ad-…", "pay_url": "http://localhost:3000/pay/0d3e…",
+  "qr_data": "http://localhost:3000/pay/0d3e…", "payment_options_endpoint": "/checkout/options" }
+```
+
+### `GET /invoices/{id}` and `GET /invoices?status=unpaid|paid&provider_id=…`
+
+The invoice above; the list is `{ "invoices": [ … ] }` with a `days_overdue` on each (0 when paid or not yet due).
+An invoice is paid when its escrow milestone row exists in a state other than `draft`, or after `markInvoicePaid`.
+
+### `GET /invoices/{id}/receipt`
+
+`409` `NOT_PAID` until paid. The on-chain link fields are read from the `receipts` table and are `null` until minted.
+
+```json
+{ "receipt_for": "INV-2026-0001", "invoice_id": "0d3e…", "provider_name": "Amara Design Studio", "client_name": "Kofi Traders Ltd",
+  "currency": "USD", "line_items": [ … ], "subtotal_cents": 10000, "fee_cents": 130, "fee_payer": "client", "total_paid_cents": 10130,
+  "paid_at": null, "payment_reference": null, "escrow_milestone_id": "c9fe85ad-…", "escrow_state": "funded",
+  "receipt_token_id": null, "chain_id": null }
+```
+
+### `POST /invoices/recurring/run` — issue recurring invoices that are due
+
+```json
+{ "now": "2026-04-08T00:00:00Z" }
+```
+
+`now` is optional (defaults to the server clock). Occurrence 0 is the milestone's own invoice; occurrence `k` is due
+`k` periods after the milestone due date and is issued 7 days before it, with the same fee payer and tax ids. Idempotent.
+Response: `{ "now": "…", "issued": [ …invoices with "occurrence": 1 … ] }`.
+
+### `POST /invoices/reminders/run` — SIMULATED reminders
+
+```json
+{ "now": "2026-03-12T09:00:00Z" }
+```
+
+Unpaid invoices get one reminder of each kind, once: `before_due` (3 days before the due date), `due_today`,
+`overdue_7` (7 days after). If several are already past, only the latest is sent. Nothing is emailed.
+
+```json
+{ "now": "2026-03-12T09:00:00.000Z", "simulated": true,
+  "reminders": [{ "invoice_id": "0d3e…", "invoice_number": "INV-2026-0001", "kind": "before_due", "to_client": "Kofi Traders Ltd",
+    "due_date": "2026-03-15", "days_overdue": 0, "amount_usd_cents": 10130, "pay_url": "http://localhost:3000/pay/0d3e…",
+    "sent_at": "2026-03-12T09:00:00.000Z", "simulated": true, "message": "Invoice INV-2026-0001 is due on 2026-03-15." }] }
+```
