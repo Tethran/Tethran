@@ -63,7 +63,9 @@ test("untrusted text is delimited, redacted and cannot close its delimiter", () 
   assert.ok(msg.includes("<<<UNTRUSTED_CONTRACT_TEXT"));
   assert.ok(msg.includes("<<<UNTRUSTED_EVIDENCE"));
   assert.ok(!msg.includes("bob@example.com") && !msg.includes("1234567890123") && !msg.includes("801 234 5678"));
-  assert.equal(msg.split("UNTRUSTED_CONTRACT_TEXT>>>").length, 2); // only the real closing delimiter
+  // only the real closing delimiter (which carries the per-call token) exists
+  assert.equal(msg.match(/UNTRUSTED_CONTRACT_TEXT#[0-9a-f]+>>>/g)?.length, 1);
+  assert.ok(!msg.includes("UNTRUSTED_CONTRACT_TEXT>>>"));
 });
 
 test("redact cases", () => {
