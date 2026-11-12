@@ -771,3 +771,53 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   Sepolia RPC timeouts (`over_limit_request` deposit confirm; `prompt_injection` Policy Service chain read). Both
   services now log unexpected errors (sanitised); the seed keeps full service logs in `.demo-data/logs/`, and a
   failed scenario no longer stops the rest.
+
+---
+
+## Session 014 — 2026-11-13 — Policy v0.8, RPC reliability, all nine on Sepolia, web app
+
+### Policy engine v0.8 (lead's review; for line-by-line review)
+- `OVER_MILESTONE_AMOUNT`: payouts plus tax reserve may not exceed `grossAmount` (hard rule, money-moving plans).
+  `grossAmount` is the escrow's on-chain milestone amount, read by the Policy Service's own chain reader; `release`
+  pays it to the vault in full. It never comes from the agent or the request.
+- `ZERO_AMOUNT_PAYOUT`: any payout of 0 is rejected, for every proposal. "Moves money" is now payout total > 0.
+- Conversion actions: confirmed they cannot move funds (the Policy Service co-signs only payout and
+  mobile_money_payout; the vault pays nothing without that co-signature). No cap needed.
+- Tax comment fixed to `min_tax_reserve_bps / 10000`.
+- Tests: 6 new branch tests (including a zero payout that is never approved and a payout over the milestone amount
+  but under every cap that is rejected). Test fixtures: a test that does not set a milestone (or sets gross "0") is
+  not about amounts and gets a large gross and a 0% tax rule.
+- `NO_PAYOUTS` decision (lead): only "request a new plan" or "reject". The Policy Service refuses `approve` (409)
+  for any escalated plan with a zero payout total; `new_plan` closes the approval (stored as rejected) with
+  `new_plan_requested: true`; the backend records `new_plan_requested`, pays and mints nothing, the milestone stays
+  released and settle may run again. INTERFACES v0.8.
+
+### RPC reliability
+- The API-key RPC (`RPC_URL_<chainId>`, Alchemy) is the primary everywhere, now including the seed and slice
+  scripts; the public RPC in chains.json is a read-only fallback. Requests 45 s; reads 5 attempts then 3 on the
+  fallback; sends exactly once, primary only; confirmation wait 300 s. 3 tests with local endpoints.
+- Seed: `--retry-failed` reruns only failed scenarios on the seeded state (new signed contract) and merges the
+  summary; `DEMO_DATA_DIR` (guarded name) for a fresh run while an old one holds files.
+- Sepolia: all nine scenarios pass (prompt_injection and over_limit_request on the reseed; disputed_delivery on
+  one retry after a wallet send connection reset; the first dispute never landed, verified on-chain).
+
+### Web app (`app/`)
+- From the design project: Vite kept, TanStack Start. Generator scrubbed: its Vite wrapper replaced by an explicit
+  config (TanStack Start, React, Tailwind, tsconfig paths, nitro Node build), component tagger and devtools gone with
+  it, its error-reporting hook, SSR wrapper, comments, README, AGENTS file, project file, lockfile and default OG,
+  Twitter and author meta removed; own favicon. The 3D renders were pointers into the generator's hosted storage;
+  replaced with the 20 original PNGs (sizes verified) in `public/objects/`. No database, auth, server functions or
+  env files; `.env` ignored. Dev server on port 3000.
+- `src/api`: one module mapping every screen to the backend (contracts, milestones, invoices, simulated checkout and
+  stablecoin deposit, receipts read from the chain, reconciliation and the backend CSV export, operator queue,
+  identity holds, audit, limits, disputes, wallet review and send). Reason codes in plain language from INTERFACES
+  v0.8 (`src/api/reasons.ts`). Operator, arbiter and provider signatures come from the user's own browser wallet
+  (EIP-712 typed data prepared by the backend); the client's from its WDK wallet through the backend.
+- Backend additions for the app: `GET /providers/{id}`, `POST /wallets/client/contracts/{id}/sign`,
+  `GET /operator/policy`, `GET /operator/audit`, CORS also for 127.0.0.1:3000.
+- Router plugin bug: generated `import()` strings contain the unescaped absolute path, which breaks on the
+  apostrophe in the folder name; route code splitting turned off (`defaultBehavior: []`).
+- Checked: typecheck, 8 tests, production build, every page renders, every API read against the live Sepolia demo
+  with CORS on every response.
+- Open: limits are read-only in the app (changing them needs the operator's signatures on the policy and the vault
+  update); release and settle stay platform actions (not in the app).

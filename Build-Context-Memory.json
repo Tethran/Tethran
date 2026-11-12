@@ -2264,6 +2264,75 @@
         "Tell the web app workstream about INTERFACES v0.7 and the API screen map"
       ],
       "notes": "Evaluation traces are in Opik project tethran; each replay proposal names its trace."
+    },
+    {
+      "session_id": "session_014",
+      "timestamp": "2026-11-12T15:07:16Z",
+      "ai_agent": "Executing engineer (main session)",
+      "current_phase": "Policy v0.8, RPC reliability, all nine scenarios on Sepolia, web app wired to the API",
+      "progress": {
+        "completed": [
+          "Policy v0.8: OVER_MILESTONE_AMOUNT, ZERO_AMOUNT_PAYOUT, moves money = payout total > 0; NO_PAYOUTS only new plan or reject",
+          "RPC: Alchemy primary everywhere, public fallback for reads, longer timeouts; seed --retry-failed",
+          "All nine scenarios pass on Sepolia",
+          "Web app in app/: generator scrubbed, API module, plain-language reason codes, wallet signing, local 3D renders"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "Second chain: waiting for Base Sepolia test ETH",
+          "Push: waiting for the lead (force push after the final rewrite)"
+        ]
+      },
+      "last_session_summary": "Session 013: Policy rule order for no-payout plans, second history rewrite, evaluation 8/9, app readiness.",
+      "changes_made": [
+        "services/policy: engine.ts, types.ts, service.ts (no-money approvals), tests",
+        "services/backend: orchestrator.ts (new_plan), operator.ts (relays), http.ts (providers, client contract signing), wallets.ts, policyClient.ts, seed.ts (retry, data dir, RPC), run-slice.ts",
+        "services/chain: config.ts and evmChainClient.ts (fallback RPC, timeouts), rpcFallback test",
+        "app/: the web app",
+        "docs/INTERFACES.md v0.8, docs/API.md, docs/DEMO.md, README.md, Development.md"
+      ],
+      "file_module_map": [
+        {
+          "file": "app/src/api/index.ts",
+          "purpose": "The app's only API boundary; maps backend responses to screen types"
+        },
+        {
+          "file": "app/src/api/reasons.ts",
+          "purpose": "Reason codes in plain language (INTERFACES v0.8 is the source of truth)"
+        },
+        {
+          "file": "app/src/api/wallet.ts",
+          "purpose": "EIP-712 signing with the user's own browser wallet (operator, arbiter, provider)"
+        },
+        {
+          "file": "services/chain/test/rpcFallback.test.ts",
+          "purpose": "Primary/fallback RPC behaviour"
+        }
+      ],
+      "decisions_log": [
+        "NO_PAYOUTS escalations: request a new plan or reject only; no approve, no receipt (lead)",
+        "OVER_MILESTONE_AMOUNT and ZERO_AMOUNT_PAYOUT added (lead); INTERFACES v0.8",
+        "Alchemy primary RPC, public RPC read-only fallback (lead)",
+        "Web app keeps Vite; port 3000; no generator traces; interface only through the API module (lead)",
+        "Operator, arbiter and provider keys never in the backend or the app: the browser wallet signs"
+      ],
+      "known_issues": [
+        "Limits are read-only in the app",
+        "Route code splitting off because of the apostrophe in the folder path",
+        "identity_mismatch: the live model does not flag it (backstops hold)",
+        "Orphaned demo processes from earlier runs may hold ports 18787/18788 and 3000 on the lead's machine"
+      ],
+      "errors_encountered": [
+        "Wallet send connection reset on Sepolia (dispute): retried on a fresh milestone; the first never landed",
+        "Old services held .demo-data files open: guarded DEMO_DATA_DIR added",
+        "TanStack router plugin import() string broken by the apostrophe in the path"
+      ],
+      "next_steps": [
+        "Final history rewrite (file-name mentions, early LLM line), backup tag, grep and secrets scan; do not push",
+        "Deploy the second chain when Base Sepolia test ETH arrives",
+        "Lead: line-by-line review of the Policy v0.8 engine and the approval rule"
+      ],
+      "notes": "App: cd app && npm install && npm run dev (http://localhost:3000), with npm run demo running."
     }
   ]
 }

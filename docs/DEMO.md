@@ -3,8 +3,10 @@
 A step-by-step demo from a clean state, about seven minutes. Everything runs on a test network with test keys
 and our own test token. Anything simulated says so in the response (`simulated`, `Simulated`, `SIMULATED`).
 
-Each step below is an API call. The web app is a separate workstream; where it exists, the same calls sit behind
-its screens. Run the commands from `services/backend`, in a second terminal, after:
+Each step below is an API call, and each has a screen in the web app (`cd app && npm run dev`, http://localhost:3000):
+Dashboard, Milestone, Operator, Arbiter, Ledger, Send, Settings, the client's Pay page and the public Receipt page.
+Operator and arbiter decisions in the app are signed by a browser wallet holding that party's test key; without one,
+use `npm run demo:act` as below. Run the commands from `services/backend`, in a second terminal, after:
 
 ```bash
 export DEMO_MODE=1 B=http://127.0.0.1:18788 P=http://127.0.0.1:18787   # backend and Policy Service from the seed

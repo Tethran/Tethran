@@ -39,8 +39,10 @@ prints a short summary. Rerun it at any time; every run starts from an empty `.d
 restarts the services on the last seeded state; `DEMO_MODE=1 npm run seed` seeds without serving. The agent mode
 defaults to `replay`: saved proposals, eight of them real model outputs from the evaluation run (each names its
 Opik trace) and one curated (labelled). Set `AGENT_MODE=live+replay` to call the model and fall back to replay if
-it fails. The web app's origin `http://localhost:3000` is allowed by CORS (`CORS_ORIGINS` to change it). The
-step-by-step demo is in [docs/DEMO.md](docs/DEMO.md).
+it fails. The step-by-step demo is in [docs/DEMO.md](docs/DEMO.md).
+
+The web app (`app/`, see [app/README.md](app/README.md)): with the demo running, `cd app && npm install && npm run dev`,
+then open http://localhost:3000. The backend's CORS allows that origin (`CORS_ORIGINS` to change it).
 
 ## Architecture in a few lines
 
@@ -57,6 +59,8 @@ client wallet (WDK) ──deposit──> treasury ──createAndFund──> Mil
   mainnet deny-list), and the WDK wallet layer.
 - `services/policy/`: the Policy Service. Its own process and its own key; reason codes; audit log.
 - `services/llm/`: `LlmProvider` (Groq first, Gemini fallback), agent prompt, input guards, Opik tracing, evals.
+- `app/`: the web app (Vite, React, TanStack Start, Tailwind, shadcn/ui). An interface only: it reads and writes
+  through `app/src/api`, holds no keys, and asks the user's own wallet for operator, arbiter and provider signatures.
 - `services/backend/`: treasury, settlement orchestrator, agent signer, contracts and invoices, checkout,
   payouts, reconciliation, operator and arbiter queues, x402 endpoints. See [docs/API.md](docs/API.md).
 - Config: `config/chains.json` holds chain id, RPC and contract addresses per chain. Nothing is hard-coded.
