@@ -79,9 +79,12 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
     ["spentTodayBaseUnits", ctx.spentTodayBaseUnits],
     ["vaultBalance", ctx.vaultBalance],
     ["milestone.grossAmount", ctx.milestone.grossAmount],
+    ["settled.allocated", ctx.settled?.allocated],
   ]) {
     if (typeof value !== "string" || !AMOUNT.test(value)) throw new Error("invalid context: " + name + " must be a numeric string");
   }
+  if (!Number.isInteger(ctx.settled.approvedCount) || ctx.settled.approvedCount < 0) throw new Error("invalid context: settled.approvedCount");
+  if (typeof ctx.milestone.released !== "boolean") throw new Error("invalid context: milestone.released must be a boolean");
   const proposal_hash = hashProposal(proposal);
 
   // Nothing else can be evaluated safely on a malformed proposal.
@@ -101,6 +104,10 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
   const rejected: RejectReason[] = [];
   const escalated: EscalateReason[] = [];
 
+  // One approved settlement per milestone. Once the Policy Service has signed a plan for this milestone, every further
+  // plan is refused, whatever it contains (the operator's approval of an escalation is checked the same way).
+  if (ctx.settled.approvedCount > 0) rejected.push("ALREADY_SETTLED");
+
   // A payout of zero is never valid: it would get a co-signature and an action id for nothing, and it must not
   // turn a plan that moves no money into one that looks like it does. Checked for every proposal with payouts.
   if (payoutAmounts.some((n) => n === 0n)) rejected.push("ZERO_AMOUNT_PAYOUT");
@@ -112,6 +119,10 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
   if (movesMoney) {
     // In INTERFACES.md order.
     if (ctx.seenProposalHashes.has(proposal_hash)) rejected.push("DUPLICATE_PROPOSAL");
+
+    // Money leaves the vault only for a milestone whose escrow released its funds to the vault, whatever the funding
+    // source. Read from the chain by the Policy Service; it does not rely on the caller.
+    if (!ctx.milestone.released) rejected.push("MILESTONE_NOT_RELEASED");
 
     if (ctx.milestone.cardFunded && !ctx.milestone.releaseEligible) rejected.push("HOLD_ACTIVE");
 
@@ -135,8 +146,9 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
     // Service reads it from the chain itself; it never comes from the agent or the request.
     const gross = BigInt(ctx.milestone.grossAmount);
 
-    // The plan may not allocate more than the milestone released: payouts plus the tax reserve.
-    if (payoutTotal + taxTotal > gross) rejected.push("OVER_MILESTONE_AMOUNT");
+    // The milestone's budget, cumulative: what earlier approved plans for this milestone allocated, plus this plan's
+    // payouts and tax reserve, may not exceed what the escrow released.
+    if (BigInt(ctx.settled.allocated) + payoutTotal + taxTotal > gross) rejected.push("OVER_MILESTONE_AMOUNT");
 
     // The tax reserve is a share of the gross milestone amount, required whenever money is paid out.
     // Rule: taxTotal / grossAmount >= min_tax_reserve_bps / 10000, checked as taxTotal * 10000 >= bps * gross.

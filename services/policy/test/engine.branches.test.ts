@@ -178,6 +178,6 @@ test("movesMoney is payoutTotal > 0: only a positive payout total switches the h
 });
 
 test("grossAmount must be a numeric base-unit string; the engine refuses any other context", () => {
-  assert.throws(() => evaluateProposal(goodProposal(), makeCtx({ milestone: { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount: "" } })));
-  assert.throws(() => evaluateProposal(goodProposal(), makeCtx({ milestone: { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount: "1.5" } })));
+  assert.throws(() => evaluateProposal(goodProposal(), makeCtx({ milestone: { cardFunded: false, releaseEligible: true, released: true, identityMatch: true, grossAmount: "" } })));
+  assert.throws(() => evaluateProposal(goodProposal(), makeCtx({ milestone: { cardFunded: false, releaseEligible: true, released: true, identityMatch: true, grossAmount: "1.5" } })));
 });

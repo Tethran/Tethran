@@ -43,9 +43,14 @@ export class VaultActionError extends Error {
 const NUM = /^[0-9]+$/;
 
 /** Validates the shape of the request's vault_actions. Throws VaultActionError(400). */
+/** Request size limits (each action is one on-chain transaction; each payee one storage write). */
+export const MAX_VAULT_ACTIONS = 10;
+export const MAX_PAYEES_PER_ACTION = 50;
+
 export function parseVaultActions(raw: unknown): VaultAction[] {
   if (raw === undefined) return [];
   if (!Array.isArray(raw)) throw new VaultActionError(400, "vault_actions must be an array");
+  if (raw.length > MAX_VAULT_ACTIONS) throw new VaultActionError(400, `at most ${MAX_VAULT_ACTIONS} vault actions per request`);
   return raw.map((a, i) => {
     const bad = (m: string): never => { throw new VaultActionError(400, `vault_actions[${i}]: ${m}`); };
     if (typeof a !== "object" || a === null) bad("must be an object");
@@ -56,6 +61,7 @@ export function parseVaultActions(raw: unknown): VaultAction[] {
       return { type: "setPolicy", version: a.version, perTxCap: a.perTxCap, dailyCap: a.dailyCap, minReserve: a.minReserve, operator_signature: a.operator_signature };
     }
     if (a.type === "setPayees") {
+      if (Array.isArray(a.payees) && a.payees.length > MAX_PAYEES_PER_ACTION) bad(`at most ${MAX_PAYEES_PER_ACTION} payees per action`);
       if (!Array.isArray(a.payees) || a.payees.length === 0 || !a.payees.every((p: unknown) => typeof p === "string" && isAddress(p))) bad("payees must be a non-empty array of addresses");
       if (typeof a.allowed !== "boolean") bad("allowed must be a boolean");
       return { type: "setPayees", version: a.version, payees: a.payees.map((p: string) => getAddress(p)), allowed: a.allowed, operator_signature: a.operator_signature };

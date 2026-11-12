@@ -48,6 +48,8 @@ export function createChainReader(opts: {
         cardFunded: m.cardFunded,
         // Released means the escrow already paid the vault, so any card hold has passed.
         releaseEligible: m.state === "Released",
+        // Payouts need the escrow's funds in the vault, whatever the funding source (MILESTONE_NOT_RELEASED).
+        released: m.state === "Released",
         identityMatch: identity.match === true,
         grossAmount: m.amount,
       };

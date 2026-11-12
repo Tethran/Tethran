@@ -394,7 +394,8 @@ test("no key material in any result, error or audit row", async () => {
   const seen: string[] = [];
 
   seen.push(JSON.stringify(await submit(h)));
-  const esc = await submit(h, escalatingProposal());
+  // A second milestone: the first is now settled, so a plan for it would be ALREADY_SETTLED.
+  const esc = await submit(h, { ...escalatingProposal(), milestone_id: "33333333-3333-4333-8333-333333333333" });
   seen.push(JSON.stringify(esc));
   seen.push(JSON.stringify(h.service.listApprovals("pending")));
   const sig = await signApproval(h.operator, esc.approval_id!, "approve", esc.proposal_hash);
@@ -430,7 +431,9 @@ test("retry after a signing failure: the same proposal is signed on the second t
   assert.equal(second.decision, "approved");
   assert.equal(second.cosignatures?.length, 1);
   const third = await submit(h);
-  assert.deepEqual([third.decision, third.reasons, third.cosignatures], ["rejected", ["DUPLICATE_PROPOSAL"], undefined]);
+  // The milestone now has an approved settlement: the same plan again is a duplicate, the milestone is settled, and
+  // its budget is spent.
+  assert.deepEqual([third.decision, third.reasons, third.cosignatures], ["rejected", ["ALREADY_SETTLED", "DUPLICATE_PROPOSAL", "OVER_MILESTONE_AMOUNT"], undefined]);
   // all three outcomes are in the audit log
   assert.deepEqual(h.audit.list({ milestone_id: MILESTONE }).map((r) => r.decision), ["approved", "approved", "rejected"]);
 });

@@ -135,6 +135,7 @@ export function createService(deps: ServiceDeps) {
         nowUnixSeconds: Math.floor(deps.now().getTime() / 1000),
         seenProposalHashes: seen,
         milestone,
+        settled: decisions.settledFor(milestoneId),
       };
       return { ctx, vault, chainId, payees };
     } catch (e) {
@@ -148,7 +149,10 @@ export function createService(deps: ServiceDeps) {
       const cosignatures = await cosignProposal({ signer, proposal, proposalHashHex: proposalHash, chainId: g.chainId, vault: g.vault, payees: g.payees, deadline });
       // Record that signatures exist BEFORE they leave this function. From here on the same proposal is a
       // duplicate. If signing or this write fails, nothing is returned, so a retry of the proposal is allowed.
-      decisions.markSigned(proposalHash);
+      const allocated = proposal.actions
+        .filter((a) => a.type === "payout" || a.type === "mobile_money_payout" || a.type === "tax_reserve")
+        .reduce((n, a) => n + BigInt((a as { amount: string }).amount), 0n);
+      decisions.markSigned(proposalHash, proposal.milestone_id, allocated.toString());
       return cosignatures;
     } catch {
       // The decision is already in the audit log. Never return a partial or unsigned "approved".
@@ -183,7 +187,8 @@ export function createService(deps: ServiceDeps) {
           vaultBalance: "0",
           nowUnixSeconds: 0,
           seenProposalHashes: seen,
-          milestone: { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount: "0" },
+          milestone: { cardFunded: false, releaseEligible: true, released: false, identityMatch: true, grossAmount: "0" },
+          settled: { approvedCount: 0, allocated: "0" },
         });
       }
 

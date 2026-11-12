@@ -31,7 +31,8 @@ export function makeCtx(overrides: Partial<EvaluationContext> = {}): EvaluationC
     vaultBalance: overrides.vaultBalance ?? "10000000000", // 10,000 USDT
     nowUnixSeconds: overrides.nowUnixSeconds ?? 1_800_000_000,
     seenProposalHashes: overrides.seenProposalHashes ?? new Set<string>(),
-    milestone: aboutAmounts ? overrides.milestone! : { cardFunded: false, releaseEligible: true, identityMatch: true, ...overrides.milestone, grossAmount: LARGE_GROSS },
+    settled: overrides.settled ?? { approvedCount: 0, allocated: "0" },
+    milestone: aboutAmounts ? { ...overrides.milestone!, released: overrides.milestone!.released ?? true } : { cardFunded: false, releaseEligible: true, released: true, identityMatch: true, ...overrides.milestone, grossAmount: LARGE_GROSS },
   };
 }
 // 450 USDT payout + 50 USDT tax reserve: tax is exactly 10% of the 500 USDT total.
@@ -51,7 +52,7 @@ export function goodProposal(): Record<string, unknown> {
 
 // Milestone facts with a given gross amount (base units).
 export function milestoneOf(grossAmount: string, extra: Partial<EvaluationContext["milestone"]> = {}) {
-  return { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount, ...extra };
+  return { cardFunded: false, releaseEligible: true, released: true, identityMatch: true, grossAmount, ...extra } as EvaluationContext["milestone"];
 }
 
 export function withActions(actions: unknown[], extra: Record<string, unknown> = {}): Record<string, unknown> {

@@ -25,7 +25,7 @@ export function makeHarness(overrides: Partial<ServiceDeps> = {}) {
 
   const fake = {
     state: { spentToday: "0", balance: "10000000000" },
-    facts: { cardFunded: false, releaseEligible: true, identityMatch: true, grossAmount: "500000000" } as MilestoneFacts,
+    facts: { cardFunded: false, releaseEligible: true, released: true, identityMatch: true, grossAmount: "500000000" } as MilestoneFacts,
     // The vault starts in agreement with the base policy: same limits, both payees allowed.
     vault: { policyVersion: 2, perTxCap: basePolicy.per_tx_cap, dailyCap: basePolicy.daily_cap, minReserve: basePolicy.vault_min_reserve, operator: operator.address },
     allowed: new Set(["0x00000000000000000000000000000000000000A1", "0x00000000000000000000000000000000000000A2"].map((a) => a.toLowerCase())),

@@ -12,7 +12,9 @@ export type RejectReason =
   | "BELOW_VAULT_RESERVE"
   | "TAX_RESERVE_TOO_LOW"
   | "OVER_MILESTONE_AMOUNT"
-  | "ZERO_AMOUNT_PAYOUT";
+  | "ZERO_AMOUNT_PAYOUT"
+  | "MILESTONE_NOT_RELEASED"
+  | "ALREADY_SETTLED";
 
 export type EscalateReason = "LOW_CONFIDENCE" | "NEEDS_HUMAN" | "IDENTITY_MISMATCH" | "OVER_SOFT_LIMIT" | "INJECTION_FLAGGED" | "NO_PAYOUTS";
 
@@ -56,6 +58,9 @@ export interface ResolvedPayee {
 export interface MilestoneFacts {
   cardFunded: boolean;
   releaseEligible: boolean;
+  // The escrow milestone is in state Released on-chain (its funds are in the vault). Payouts need this, whatever the
+  // funding source.
+  released: boolean;
   identityMatch: boolean;
   // Gross milestone payout amount: what the escrow released to the vault, in base units.
   // The minimum tax reserve is a share of this.
@@ -71,6 +76,9 @@ export interface EvaluationContext {
   nowUnixSeconds: number; // reserved for callers; the day-window is applied by whoever fills spentToday
   seenProposalHashes: ReadonlySet<string>;
   milestone: MilestoneFacts;
+  // From the Policy Service's own log of signed (approved) proposals for this milestone: how many, and how much they
+  // allocated (payouts plus tax reserve, base units).
+  settled: { approvedCount: number; allocated: string };
 }
 
 export interface EvaluationResult {

@@ -75,8 +75,11 @@ export interface DecisionRecord {
 
 export interface DecisionStore {
   add(d: DecisionRecord): void;
-  // Records that co-signatures were issued for this proposal hash.
-  markSigned(proposalHash: string): void;
+  // Records that co-signatures were issued for this proposal hash, for this milestone, allocating this much
+  // (payouts plus tax reserve, base units).
+  markSigned(proposalHash: string, milestoneId: string, allocated: string): void;
+  // Approved (signed) proposals for one milestone: how many, and how much they allocated in total.
+  settledFor(milestoneId: string): { approvedCount: number; allocated: string };
   // Hashes for which co-signatures were issued. Only these count as duplicates: a proposal whose earlier
   // decision produced no signatures (rejected, or approved but signing failed) may be submitted again.
   signedHashes(): Set<string>;
@@ -98,6 +101,11 @@ export function openDecisionStore(path: string): DecisionStore {
     CREATE INDEX IF NOT EXISTS policy_decisions_hash ON policy_decisions (proposal_hash);
     CREATE TABLE IF NOT EXISTS signed_proposals (proposal_hash TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT (datetime('now')));
   `);
+  // Older databases: add the milestone and allocation columns (rows from before have no milestone and count for none).
+  const cols = new Set((db.prepare("PRAGMA table_info(signed_proposals)").all() as { name: string }[]).map((c) => c.name));
+  if (!cols.has("milestone_id")) db.exec("ALTER TABLE signed_proposals ADD COLUMN milestone_id TEXT");
+  if (!cols.has("allocated")) db.exec("ALTER TABLE signed_proposals ADD COLUMN allocated TEXT NOT NULL DEFAULT '0'");
+  db.exec("CREATE INDEX IF NOT EXISTS signed_proposals_milestone ON signed_proposals (milestone_id)");
   const insert = db.prepare(
     "INSERT INTO policy_decisions (proposal_hash, decision, reasons, milestone_id, trace_id, at) VALUES (?, ?, ?, ?, ?, ?)",
   );
@@ -105,8 +113,13 @@ export function openDecisionStore(path: string): DecisionStore {
     add(d) {
       insert.run(d.proposal_hash, d.decision, JSON.stringify(d.reasons), d.milestone_id, d.trace_id, d.at);
     },
-    markSigned(proposalHash) {
-      db.prepare("INSERT OR IGNORE INTO signed_proposals (proposal_hash) VALUES (?)").run(proposalHash);
+    markSigned(proposalHash, milestoneId, allocated) {
+      if (!/^[0-9]+$/.test(allocated)) throw new Error("allocated must be base units");
+      db.prepare("INSERT OR IGNORE INTO signed_proposals (proposal_hash, milestone_id, allocated) VALUES (?, ?, ?)").run(proposalHash, milestoneId, allocated);
+    },
+    settledFor(milestoneId) {
+      const rows = db.prepare("SELECT allocated FROM signed_proposals WHERE milestone_id = ?").all(milestoneId) as { allocated: string }[];
+      return { approvedCount: rows.length, allocated: rows.reduce((n, r) => n + BigInt(r.allocated), 0n).toString() };
     },
     signedHashes() {
       const rows = db.prepare("SELECT proposal_hash FROM signed_proposals").all() as { proposal_hash: string }[];

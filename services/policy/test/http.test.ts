@@ -66,7 +66,8 @@ test("GET /v1/policy and POST /v1/policy", async () => {
 });
 
 test("approvals queue: list pending and decide", async () => {
-  const esc = await call("POST", "/v1/proposals", { proposal: escalatingProposal(), trace_id: "t3" });
+  // Its own milestone: an earlier test in this file already settled the default one (ALREADY_SETTLED).
+  const esc = await call("POST", "/v1/proposals", { proposal: { ...escalatingProposal(), milestone_id: "33333333-3333-4333-8333-333333333333" }, trace_id: "t3" });
   assert.equal(esc.json.decision, "escalated");
   const list = await call("GET", "/v1/approvals?status=pending");
   assert.equal(list.status, 200);
@@ -108,7 +109,9 @@ test("GET /v1/audit with and without milestone_id", async () => {
   const none = await call("GET", "/v1/audit?milestone_id=does-not-exist");
   assert.deepEqual(none.json, []);
   const one = await call("GET", "/v1/audit?milestone_id=11111111-1111-4111-8111-111111111111");
-  assert.ok(one.json.length >= 3);
+  assert.ok(one.json.length >= 1);
+  assert.ok(one.json.every((r: any) => r.milestone_id === "11111111-1111-4111-8111-111111111111"));
+  assert.ok(one.json.length < all.json.length); // the approvals test used its own milestone
 });
 
 test("malformed JSON is 400", async () => {

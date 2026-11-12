@@ -86,13 +86,14 @@ test("DUPLICATE_PROPOSAL", () => {
 });
 
 test("HOLD_ACTIVE: card-funded and not release-eligible", () => {
-  const ctx = makeCtx({ milestone: { cardFunded: true, releaseEligible: false, identityMatch: true, grossAmount: "0" } });
+  const ctx = makeCtx({ milestone: { cardFunded: true, releaseEligible: false, released: false, identityMatch: true, grossAmount: "0" } });
   const r = evaluateProposal(goodProposal(), ctx);
-  assert.deepEqual([r.decision, r.reasons], ["rejected", ["HOLD_ACTIVE"]]);
+  // Not released on-chain: both the hold and the release rule refuse it.
+  assert.deepEqual([r.decision, r.reasons], ["rejected", ["MILESTONE_NOT_RELEASED", "HOLD_ACTIVE"]]);
 });
 
 test("HOLD_ACTIVE does not fire for card-funded and release-eligible", () => {
-  const ctx = makeCtx({ milestone: { cardFunded: true, releaseEligible: true, identityMatch: true, grossAmount: "0" } });
+  const ctx = makeCtx({ milestone: { cardFunded: true, releaseEligible: true, released: true, identityMatch: true, grossAmount: "0" } });
   assert.equal(evaluateProposal(goodProposal(), ctx).decision, "approved");
 });
 
@@ -256,7 +257,7 @@ test("NEEDS_HUMAN", () => {
 });
 
 test("IDENTITY_MISMATCH", () => {
-  const ctx = makeCtx({ milestone: { cardFunded: false, releaseEligible: true, identityMatch: false, grossAmount: "0" } });
+  const ctx = makeCtx({ milestone: { cardFunded: false, releaseEligible: true, released: true, identityMatch: false, grossAmount: "0" } });
   const r = evaluateProposal(goodProposal(), ctx);
   assert.deepEqual([r.decision, r.reasons], ["escalated", ["IDENTITY_MISMATCH"]]);
 });
@@ -266,7 +267,7 @@ test("IDENTITY_MISMATCH", () => {
 test("all escalating codes are returned together", () => {
   const ctx = makeCtx({
     policy: { ...policy, min_tax_reserve_bps: 0 },
-    milestone: { cardFunded: false, releaseEligible: true, identityMatch: false, grossAmount: "0" },
+    milestone: { cardFunded: false, releaseEligible: true, released: true, identityMatch: false, grossAmount: "0" },
   });
   const p = withActions([payout("600000000")], { confidence: 0.1, needs_human: true });
   const r = evaluateProposal(p, ctx);
@@ -278,7 +279,7 @@ test("rejected beats escalated, and every rejecting code is returned in rule ord
   const p = withActions([payout("2000000000", "payee-9")], { confidence: 0.1, needs_human: true });
   const pCtx = makeCtx({
     vaultBalance: "1000000000", // less than the payout
-    milestone: { cardFunded: true, releaseEligible: false, identityMatch: false, grossAmount: "2000000000" },
+    milestone: { cardFunded: true, releaseEligible: false, released: false, identityMatch: false, grossAmount: "2000000000" },
   });
   const ctx = { ...pCtx, seenProposalHashes: new Set([hashProposal(p)]) };
   const r = evaluateProposal(p, ctx);
@@ -286,6 +287,7 @@ test("rejected beats escalated, and every rejecting code is returned in rule ord
   // 2000 USDT equals the daily cap exactly, so OVER_DAILY_CAP is not in this list (see next test).
   assert.deepEqual(r.reasons, [
     "DUPLICATE_PROPOSAL",
+    "MILESTONE_NOT_RELEASED",
     "HOLD_ACTIVE",
     "PAYEE_NOT_ALLOWED",
     "OVER_PER_TX_CAP",
@@ -408,7 +410,7 @@ test("scenario: duplicate send is rejected on the second attempt", () => {
 });
 
 test("scenario: identity mismatch escalates", () => {
-  const ctx = makeCtx({ milestone: { cardFunded: false, releaseEligible: true, identityMatch: false, grossAmount: "0" } });
+  const ctx = makeCtx({ milestone: { cardFunded: false, releaseEligible: true, released: true, identityMatch: false, grossAmount: "0" } });
   assert.deepEqual(evaluateProposal(goodProposal(), ctx).reasons, ["IDENTITY_MISMATCH"]);
 });
 
