@@ -80,7 +80,7 @@ export function createWalletLayer(deps: WalletLayerDeps) {
     async list() {
       const out = [];
       for (const r of Object.keys(WALLET_ROLES) as WalletRole[]) out.push({ role: r, address: await wallets.address(r), chain_id: wallets.chainId });
-      return { wallets: out, provider: "Tether WDK (@tetherto/wdk, @tetherto/wdk-wallet-evm)", custody: CUSTODY };
+      return { wallets: out, provider: "Tether WDK (@tetherto/wdk, @tetherto/wdk-wallet-evm, @tetherto/wdk-failover-provider)", custody: CUSTODY };
     },
 
     async balance(r: unknown) {

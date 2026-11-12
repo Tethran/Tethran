@@ -4,6 +4,8 @@
 //   @tetherto/wdk             the WDK core: seed-based wallet registry and its transaction-policy engine
 //   @tetherto/wdk-wallet-evm  the EVM wallet: BIP-44 account derivation, native and token balances, fee quotes,
 //                             token transfers, transaction sending, typed-data signing, receipts
+//   @tetherto/wdk-failover-provider  the wallets' RPC: the API-key RPC (RPC_URL_<chainId>, e.g. Alchemy) first and the
+//                             chain file's public RPC second; a timeout or network error moves the call to the next one
 //
 // Every account comes from one BIP-39 test seed (DEMO_WALLET_SEED) through `wdk.getAccount(WALLET_ID, index)`.
 // The WDK policy engine guards every account before WDK signs anything:
@@ -16,12 +18,41 @@
 // Treasury, Policy Service, agent signer and operator keys do NOT use this module; they are unchanged.
 // TEST NETWORKS ONLY: the chain config must be a test network (checked by loadChain and here).
 import WDK, { PolicyViolationError } from "@tetherto/wdk";
+import FailoverProvider from "@tetherto/wdk-failover-provider";
 import WalletManagerEvm from "@tetherto/wdk-wallet-evm";
+import { FetchRequest, isError, JsonRpcProvider, Network, type AbstractProvider } from "ethers";
 import { assertTestNetwork } from "./config";
 import type { TxSender } from "./evmChainClient";
 import type { ChainConfig } from "./types";
 
 export const WALLET_ID = "tethran-evm";
+
+/** Per-request RPC timeout for the WDK wallets. A request that takes longer fails over to the next RPC. */
+export const WDK_RPC_TIMEOUT_MS = 20_000;
+
+/** Only connection trouble moves a call to the next RPC; a revert, a nonce or a funds error is the same everywhere. */
+export function isFailoverError(e: unknown): boolean {
+  return isError(e, "TIMEOUT") || isError(e, "NETWORK_ERROR") || isError(e, "SERVER_ERROR");
+}
+
+/**
+ * The WDK wallets' provider: @tetherto/wdk-failover-provider over the API-key RPC (primary) and the public RPC
+ * (fallback), each pinned to the chain id (never asked for it) with a per-request timeout. Calls go to the active
+ * RPC; on a timeout, network or server error they move to the next one, round robin, up to `retries` more times.
+ * A transaction send is the same signed bytes on either RPC (same nonce), so a resend cannot pay twice.
+ */
+export function createWdkProvider(chain: Pick<ChainConfig, "chainId" | "rpcUrl" | "fallbackRpcUrl">, opts: { timeoutMs?: number; retries?: number } = {}): AbstractProvider {
+  const network = Network.from(chain.chainId);
+  const urls = [chain.rpcUrl, ...(chain.fallbackRpcUrl && chain.fallbackRpcUrl !== chain.rpcUrl ? [chain.fallbackRpcUrl] : [])];
+  const failover = new FailoverProvider<AbstractProvider>({ retries: opts.retries ?? 3, shouldRetryOn: isFailoverError });
+  for (const url of urls) {
+    const req = new FetchRequest(url);
+    req.timeout = opts.timeoutMs ?? WDK_RPC_TIMEOUT_MS;
+    // cacheTimeout -1: no short response cache, so two quick sends never reuse one nonce read.
+    failover.addProvider(new JsonRpcProvider(req, network, { staticNetwork: network, cacheTimeout: -1 }));
+  }
+  return failover.initialize();
+}
 
 /** Which seed account each demo role uses. */
 export const WALLET_ROLES = { client: 0, payee_amara: 1, subcontractor: 2, client_b: 3, agent_budget: 4 } as const;
@@ -57,6 +88,8 @@ export function createWdkWallets(opts: {
   maxTransfer: bigint;
   /** Largest single EIP-3009 authorization (x402 data payment) the wallet policy allows to sign, base units. */
   maxAuthorization?: bigint;
+  /** Test only: the provider to use instead of the failover provider over the chain's RPCs. */
+  provider?: AbstractProvider;
 }): WdkWallets {
   const maxAuthorization = opts.maxAuthorization ?? 1_000_000n; // 1 test USDT
   const { chain } = opts;
@@ -68,7 +101,7 @@ export function createWdkWallets(opts: {
 
   const wdk = new WDK(opts.seed)
     // (cast: WDK core and the EVM wallet each bundle their own copy of the base wallet types)
-    .registerWallet(WALLET_ID, WalletManagerEvm as never, { provider: chain.rpcUrl, chainId: chain.chainId, retries: 3 } as never)
+    .registerWallet(WALLET_ID, WalletManagerEvm as never, { provider: opts.provider ?? createWdkProvider(chain), chainId: chain.chainId } as never)
     .registerPolicy({
       id: "tethran-user-wallet",
       name: "Tethran user wallet guard (test network)",
