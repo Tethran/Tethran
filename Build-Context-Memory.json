@@ -631,6 +631,134 @@
         "Get Base Sepolia test ETH and deploy the same contracts there"
       ],
       "notes": "Stopped for the lead review after decide, as instructed. Final submission is Fri 13 Nov 2026 at 22:59 WAT."
+    },
+    {
+      "session_id": "session_004",
+      "timestamp": "2026-11-12T00:03:41Z",
+      "ai_agent": "Executing engineer (Person A workstream) with a helper agent for services/policy",
+      "current_phase": "Phase 2 - Policy Service (rule engine), alongside Phase 1 review",
+      "progress": {
+        "completed": [
+          "Policy Service rule engine, reason codes and append-only audit log with 55 unit tests, merged into main"
+        ],
+        "in_progress": [
+          "Read-only contract reviewer helper agent (findings to be logged when it reports)"
+        ],
+        "blocked": [
+          "Vault and SpendingGuard wait for the line-by-line review of MilestoneEscrow"
+        ]
+      },
+      "last_session_summary": "Session 003 applied the lead decisions as INTERFACES v0.3, changed the dispute rule, added decide with EIP-712 tests, deployed TestUSDT and MilestoneEscrow to Sepolia, passed the proof there, and stopped for review.",
+      "changes_made": [
+        "Merged services/policy (schema, engine, audit log, tests) from the helper agent branch by fast-forward",
+        "Ignored local worktree directories",
+        "Development.md: session 004 entry"
+      ],
+      "file_module_map": [
+        {
+          "file": "services/policy/src/schema.ts",
+          "purpose": "SettlementProposal JSON schema and ajv validator",
+          "last_modified": "2026-11-12T00:03:41Z"
+        },
+        {
+          "file": "services/policy/src/types.ts",
+          "purpose": "Policy document, decision, reason codes, evaluation context",
+          "last_modified": "2026-11-12T00:03:41Z"
+        },
+        {
+          "file": "services/policy/src/engine.ts",
+          "purpose": "Deterministic rule engine. Needs line-by-line review",
+          "last_modified": "2026-11-12T00:03:41Z"
+        },
+        {
+          "file": "services/policy/src/audit.ts",
+          "purpose": "Append-only audit log on SQLite",
+          "last_modified": "2026-11-12T00:03:41Z"
+        },
+        {
+          "file": "services/policy/test/engine.test.ts",
+          "purpose": "Rule engine unit tests",
+          "last_modified": "2026-11-12T00:03:41Z"
+        },
+        {
+          "file": "services/policy/test/audit.test.ts",
+          "purpose": "Audit log tests including append-only triggers",
+          "last_modified": "2026-11-12T00:03:41Z"
+        },
+        {
+          "file": ".gitignore",
+          "purpose": "Ignores local worktree directories",
+          "last_modified": "2026-11-12T00:03:41Z"
+        },
+        {
+          "file": "Development.md",
+          "purpose": "Change log",
+          "last_modified": "2026-11-12T00:03:41Z"
+        }
+      ],
+      "decisions_log": [
+        {
+          "decision": "Policy rule engine is a pure function; the caller supplies the policy, payee table, spend so far today, seen hashes and milestone facts",
+          "reason": "Deterministic and easy to review and test; storage and HTTP come later around it",
+          "alternatives_considered": "Engine reading the database and clock itself"
+        },
+        {
+          "decision": "Tax reserve share is measured against payouts plus tax reserve of the same proposal",
+          "reason": "INTERFACES.md does not define the base; this is the most literal reading. Flagged for the lead",
+          "alternatives_considered": "Base of the milestone amount"
+        },
+        {
+          "decision": "ajv added as the JSON-schema validator in services/policy",
+          "reason": "INTERFACES.md specifies a draft 2020-12 JSON schema; ajv is the standard validator",
+          "alternatives_considered": "Hand-written validation"
+        },
+        {
+          "decision": "Merged the helper agent branch by fast-forward after checking it only touched services/policy and rerunning its tests on main",
+          "reason": "The lead asked for merges and logging to go through the main session",
+          "alternatives_considered": "Cherry-picking files"
+        }
+      ],
+      "known_issues": [
+        {
+          "issue": "vault_min_reserve has no Policy Service rule or reason code; only the planned on-chain guard would enforce it",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "Base of min_tax_reserve_bps is not defined in INTERFACES.md; the engine uses payouts plus tax reserve",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "flags items in the proposal schema accept extra keys",
+          "severity": "low",
+          "status": "open"
+        },
+        {
+          "issue": "Policy Service has no HTTP API, co-signing, operator signature check or approvals queue yet",
+          "severity": "medium",
+          "status": "open"
+        },
+        {
+          "issue": "services/policy has not had the line-by-line human review yet",
+          "severity": "medium",
+          "status": "open"
+        }
+      ],
+      "errors_encountered": [
+        {
+          "error": "Windows file lock in the audit-trigger test",
+          "context": "Reported by the helper agent: the SQLite handle stayed open when the test removed its temp file",
+          "resolution": "The audit log gained a close() method; tests unchanged otherwise"
+        }
+      ],
+      "next_steps": [
+        "Log the contract reviewer findings when it reports; fix nothing in the escrow without the lead",
+        "Lead: review MilestoneEscrow.sol and services/policy/src/engine.ts; answer the tax-base and vault_min_reserve questions",
+        "After the escrow review: 2-of-2 vault and SpendingGuard with tests, then stop for review",
+        "Then Policy Service HTTP API and co-signing, ReceiptNFT, treasury service"
+      ],
+      "notes": "Final submission is Fri 13 Nov 2026 at 22:59 WAT."
     }
   ]
 }

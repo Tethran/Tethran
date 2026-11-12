@@ -153,3 +153,45 @@ two signatures (not two or three). Both are in the memory file for confirmation.
 
 ### 6. Git
 - Repo-local git identity set from the name and email the lead gave. First commits made after 00:00 as asked.
+
+---
+
+## 2026-11-12 — Session 004: Policy Service rule engine merged
+
+Built by a helper agent in its own worktree while the lead reviews the escrow, as the lead allowed. It
+owned only `services/policy/` and did not touch INTERFACES.md. Merged into main by fast-forward (commit
+`43e304b`) after checking that the branch changed nothing outside its directory, rerunning typecheck and tests
+on main, and reading `engine.ts`.
+
+### What it is
+- `src/schema.ts`: the SettlementProposal JSON schema from INTERFACES.md section 1, validated with `ajv`.
+- `src/engine.ts`: `evaluateProposal(proposal, ctx)`, a pure function with no I/O and no clock. Returns
+  `{ decision, reasons, proposal_hash }`. Rule order and reason codes as in INTERFACES.md v0.3. All money maths
+  in BigInt. Throws on an invalid policy document instead of evaluating with it.
+- `src/audit.ts`: append-only audit log on `node:sqlite`; only `append` and `list`; SQLite triggers abort any
+  UPDATE or DELETE.
+- 55 unit tests passing: every reason code, the approved path, rejected beats escalated, boundaries, amounts
+  above 2^53, hash stability, bad policy documents, the audit triggers, and the rule-level seeded scenarios
+  (over-limit, unknown payee, low confidence, duplicate send, identity mismatch, three injection-style proposals).
+- New dependency: `ajv` (JSON-schema validation), in `services/policy` only.
+
+### Not built yet (deliberately out of this task)
+HTTP API, co-signing and the Policy Service key, operator signature verification, the approvals queue.
+**Needs the lead's line-by-line review** (Policy Service rules).
+
+### Assumptions the engine makes, for the lead to confirm
+1. Tax reserve base: `tax_reserve total / (payouts + tax_reserve total) >= min_tax_reserve_bps / 10000`.
+2. `conversion` actions count towards no cap and are not in the tax base.
+3. `OVER_SOFT_LIMIT` is never reported next to a hard-cap failure, because rejected wins.
+4. The caller computes `spentTodayBaseUnits` for the current UTC day; the engine only adds this proposal to it.
+5. The duplicate check hashes the proposal only, not the trace id.
+6. A schema-invalid proposal returns only `SCHEMA_INVALID`.
+
+### Gaps in INTERFACES.md found while building it (not changed; for the lead)
+- `vault_min_reserve` has no Policy Service rule and no reason code. The engine only validates the field; the
+  on-chain guard is meant to enforce the floor.
+- The base of `min_tax_reserve_bps` is not defined (assumption 1).
+- Items of `flags` allow extra keys (no `additionalProperties: false`).
+
+### Housekeeping
+- Local worktree directories are ignored.
