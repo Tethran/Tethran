@@ -1,0 +1,366 @@
+// The single API boundary. Screens import only from here. Every call goes to the Tethran backend (docs/API.md);
+// responses are mapped into the screen types in ./types. Anything the backend labels simulated stays labelled.
+import { ApiError, API_BASE, centsToDollars, dollars, get, post } from "./http";
+import { POLICY_ESCALATE_CODES, POLICY_REJECT_CODES } from "./reasons";
+import { signTyped } from "./wallet";
+import type {
+  ApprovalItem, AuditEntry, Contract, Country, Decision, Dispute, IdentityHold, Invoice, Limits, Milestone, MilestoneStatus,
+  Proposal, Receipt, ReconRow, WalletReview,
+} from "./types";
+
+export { ApiError, API_BASE } from "./http";
+export { reasonInfo } from "./reasons";
+
+/** The demo provider (the seed creates it). */
+export const PROVIDER_ID = "prov-demo";
+
+// ---------- mapping ----------
+
+const STATUS: Record<string, MilestoneStatus> = {
+  draft: "Draft", funded: "Funded", in_review: "In review", approved: "Approved", disputed: "Disputed",
+  released: "Released", paid_out: "Paid out", refunded: "Refunded",
+};
+const statusOf = (s: string | null | undefined): MilestoneStatus => STATUS[s ?? "draft"] ?? "Draft";
+
+function decisionOf(d: string): Decision {
+  if (d === "approved" || d === "paid_out") return "APPROVED";
+  if (d === "escalated") return "ESCALATED";
+  return "REJECTED"; // rejected, new_plan_requested
+}
+
+const COUNTRIES: Country[] = ["NG", "KE", "ZA", "GH"];
+const countryOf = (c: unknown): Country | null => (COUNTRIES as string[]).includes(String(c)) ? (c as Country) : null;
+
+const methodOfRail = (rail: string): "phone" | "bank" | "wallet" =>
+  rail === "bank" ? "bank" : rail === "usdt" || rail === "evm" ? "wallet" : "phone";
+
+type PayeeInfo = { payee_id: string; name: string; rail: string; simulated: boolean };
+type ProviderInfo = { provider_id: string; chain_id: number; vault: string; operator: string; provider_address: string; payees: PayeeInfo[] };
+
+let providerCache: Promise<ProviderInfo> | undefined;
+const provider = () => (providerCache ??= get<ProviderInfo>(`/providers/${PROVIDER_ID}`).catch((e) => { providerCache = undefined; throw e; }));
+
+const isPayout = (a: any) => a?.type === "payout" || a?.type === "mobile_money_payout";
+
+/** A plain-language summary of the agent's plan, built from its actions (the agent's own text is not shown). */
+function summarize(actions: any[], payees: PayeeInfo[]): string {
+  const name = (id: string) => payees.find((p) => p.payee_id === id)?.name ?? id;
+  const pays = actions.filter(isPayout).map((a) => `$${dollars(a.amount).toLocaleString("en-US")} to ${name(a.payee_id)}`);
+  const tax = actions.filter((a) => a?.type === "tax_reserve").reduce((n, a) => n + dollars(a.amount), 0);
+  if (pays.length === 0) return tax > 0 ? `Pays nobody. Sets aside $${tax.toLocaleString("en-US")} for tax.` : "Pays nobody.";
+  return `Pays ${pays.join(" and ")}${tax > 0 ? `; sets aside $${tax.toLocaleString("en-US")} for tax` : ""}.`;
+}
+
+function proposalFrom(raw: any, meta: { id: string; milestoneId: string; decision: string; reasons: string[]; traceId?: string | null; agentMode?: string | null; approvalId?: string | null; at: string }, payees: PayeeInfo[]): Proposal {
+  const actions: any[] = Array.isArray(raw?.actions) ? raw.actions : [];
+  return {
+    id: meta.id,
+    milestoneId: meta.milestoneId,
+    summary: raw ? summarize(actions, payees) : "The agent produced no valid plan.",
+    payouts: actions.filter(isPayout).map((a) => {
+      const p = payees.find((x) => x.payee_id === a.payee_id);
+      return { to: p?.name ?? a.payee_id, method: methodOfRail(p?.rail ?? "usdt"), amount: dollars(a.amount) };
+    }),
+    decision: decisionOf(meta.decision),
+    reasons: meta.reasons ?? [],
+    flags: Array.isArray(raw?.flags) ? raw.flags : [],
+    needsHuman: raw?.needs_human === true,
+    confidence: typeof raw?.confidence === "number" ? raw.confidence : null,
+    agentMode: meta.agentMode ?? null,
+    traceId: meta.traceId ?? null,
+    approvalId: meta.approvalId ?? null,
+    createdAt: meta.at,
+  };
+}
+
+const payoutTotal = (raw: any) => (Array.isArray(raw?.actions) ? raw.actions : []).filter(isPayout)
+  .reduce((n: bigint, a: any) => n + BigInt(String(a.amount ?? "0")), 0n);
+
+const networkName = (chainId: number) => chainId === 11155111 ? "Sepolia (test network)" : chainId === 84532 ? "Base Sepolia (test network)" : chainId === 31337 ? "Local test chain" : `Test chain ${chainId}`;
+
+// ---------- contracts and milestones ----------
+
+async function contracts(): Promise<Contract[]> {
+  const [{ contracts: cs }, { milestones: live }, { invoices }] = await Promise.all([
+    get<{ contracts: any[] }>("/contracts"),
+    get<{ milestones: any[] }>("/milestones"),
+    get<{ invoices: any[] }>("/invoices"),
+  ]);
+  const escrow = new Map(live.map((m) => [m.id, m]));
+  return cs.map((c) => ({
+    id: c.id,
+    title: c.milestones?.[0]?.title ? `${c.client_name}: ${c.milestones[0].title}${c.milestones.length > 1 ? ` and ${c.milestones.length - 1} more` : ""}` : c.client_name,
+    provider: c.provider_name ?? c.provider_id,
+    client: c.client_name,
+    country: countryOf(c.country),
+    createdAt: String(c.created_at ?? "").slice(0, 10),
+    status: c.status,
+    milestones: (c.milestones ?? []).map((m: any): Milestone => {
+      const e = escrow.get(m.id);
+      const inv = invoices.find((i) => i.milestone_id === m.id && i.occurrence === 0);
+      return {
+        id: m.id, contractId: c.id, title: m.title, amount: centsToDollars(m.amount_usd_cents),
+        fee: inv ? centsToDollars(inv.fee_cents) : 0, status: statusOf(e?.state ?? m.state), criteria: m.acceptance_criteria,
+        dueDate: m.due_date, live: Boolean(e), escrowTx: e?.escrow_tx ?? null, releaseTx: e?.release_tx ?? null,
+      };
+    }),
+  }));
+}
+
+async function milestoneDetail(id: string) {
+  const all = await contracts();
+  const contract = all.find((c) => c.milestones.some((m) => m.id === id));
+  if (!contract) return null;
+  const base = contract.milestones.find((m) => m.id === id)!;
+  if (!base.live) return { milestone: base, contract, proposal: null as Proposal | null, history: [] as Proposal[] };
+  const [t, prov] = await Promise.all([get<any>(`/milestones/${id}/timeline`), provider()]);
+  const m = t.milestone;
+  const funding = (t.fundings ?? [])[0];
+  const holdEnds = m.card_funded && m.hold_seconds && funding?.at ? new Date(Date.parse(funding.at) + m.hold_seconds * 1000).toISOString() : undefined;
+  const history: Proposal[] = (t.settlement_plans ?? []).map((p: any) => proposalFrom(p.proposal, {
+    id: String(p.id), milestoneId: id, decision: p.decision, reasons: p.reasons, traceId: p.trace_id, agentMode: p.agent_mode, approvalId: p.approval_id, at: p.at,
+  }, prov.payees));
+  const milestone: Milestone = {
+    ...base, status: statusOf(m.state), escrowTx: m.escrow_tx, releaseTx: m.release_tx,
+    evidence: (t.evidence ?? []).map((e: any) => `Evidence #${e.id} · ${String(e.at).slice(0, 16).replace("T", " ")}`),
+    ...(holdEnds ? { cardHoldEndsAt: holdEnds } : {}),
+  };
+  return { milestone, contract, proposal: history.at(-1) ?? null, history };
+}
+
+// ---------- invoices and funding ----------
+
+function invoiceFrom(i: any): Invoice {
+  const tax = Object.entries(i.provider_tax_ids ?? {}).map(([k, v]) => `${k} ${v}`).join(", ");
+  return {
+    id: i.id, contractId: i.contract_id, milestoneId: i.escrow_milestone_id ?? i.milestone_id, number: i.number,
+    amount: centsToDollars(i.subtotal_cents), fee: centsToDollars(i.fee_cents), feePaidBy: i.fee_payer === "client" ? "client" : "provider",
+    status: i.status === "paid" ? "Paid" : "Unpaid", payLink: i.pay_url, issuedAt: i.issue_date, ...(tax ? { taxId: tax } : {}),
+    provider: i.provider_name, client: i.client_name, title: i.line_items?.[0]?.description ?? i.number,
+  };
+}
+
+const CHECKOUT_METHOD: Record<string, string> = { card: "card", apple: "apple_pay", google: "google_pay", paypal: "paypal", cashapp: "cashapp", coin: "stablecoin" };
+
+async function waitTransfer(ref: string) {
+  for (let i = 0; i < 100; i++) {
+    const st = await get<any>(`/wallets/transfers/${encodeURIComponent(ref)}`);
+    if (st.status === "confirmed") return st;
+    if (st.status === "failed") throw new ApiError("SEND_FAILED", "The transfer failed on the network. Nothing was taken twice; you can try again.");
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new ApiError("PENDING", "Still waiting for the network. Check again later; it will not be sent twice.");
+}
+
+// ---------- the API ----------
+
+export const api = {
+  listContracts: contracts,
+  getContract: async (id: string) => (await contracts()).find((c) => c.id === id) ?? null,
+  getMilestone: milestoneDetail,
+
+  /** The client's own on-chain action, signed by the client's WDK wallet (demo custody). */
+  setMilestoneStatus: async (id: string, status: MilestoneStatus) => {
+    if (status !== "Approved" && status !== "Disputed") throw new ApiError("UNSUPPORTED", "Only approve or dispute can be done here.");
+    return post<{ tx_hash: string }>(`/wallets/client/escrow/${id}/${status === "Approved" ? "approve" : "dispute"}`);
+  },
+  addEvidence: (id: string, text: string) => post(`/milestones/${id}/evidence`, { text }),
+  /** Advisory evidence summary (a live model call; it never decides). Returned as plain text. */
+  evidenceSummary: async (id: string): Promise<string> => {
+    const r = await post<any>(`/milestones/${id}/evidence/summary`);
+    const s = r?.summary ?? {};
+    const list = (label: string, xs: unknown) => (Array.isArray(xs) && xs.length ? `
+${label}: ${xs.join("; ")}` : "");
+    return `${s.summary ?? "No summary."}${list("Supports", s.supporting)}${list("Against", s.against)}${list("Missing", s.missing)}`;
+  },
+
+  listInvoices: async () => (await get<{ invoices: any[] }>("/invoices")).invoices.map(invoiceFrom),
+  getInvoice: async (id: string) => {
+    try { return invoiceFrom(await get<any>(`/invoices/${id}`)); } catch (e) { if ((e as ApiError).status === 404) return null; throw e; }
+  },
+  /**
+   * Pays an invoice. Card, Apple Pay, Google Pay, PayPal and Cash App go through the SIMULATED checkout (signed
+   * events through the real webhook handler). Stablecoin pays from the client's WDK wallet after the review checks.
+   */
+  payInvoice: async (id: string, method = "card") => {
+    const inv = await get<any>(`/invoices/${id}`);
+    const milestoneId = inv.escrow_milestone_id;
+    if ((CHECKOUT_METHOD[method] ?? "card") === "stablecoin") {
+      const dep = await get<any>(`/milestones/${milestoneId}/deposit`);
+      const transfer = { to: dep.deposit_address, amount: dep.amount, chain_id: dep.chain_id, payment_reference: `deposit:${milestoneId}` };
+      const review = await post<any>("/wallets/client/transfers/review", transfer);
+      if (!review.can_sign) throw new ApiError(review.blocked?.[0]?.code ?? "BLOCKED", "The payment can't be signed yet.");
+      const sent = await post<any>("/wallets/client/transfers", transfer);
+      await waitTransfer(transfer.payment_reference);
+      await post(`/milestones/${milestoneId}/deposit/confirm`, { tx_hash: sent.tx_hash });
+      return { paymentId: sent.tx_hash as string, simulated: false };
+    }
+    const s = await post<any>("/checkout/sessions", { milestone_id: milestoneId, method: CHECKOUT_METHOD[method] ?? "card" });
+    await post(`/checkout/sessions/${s.session_id}/complete`, {});
+    return { paymentId: s.session_id as string, simulated: true };
+  },
+
+  listReceipts: async (): Promise<Receipt[]> => {
+    const [{ milestones }, cs] = await Promise.all([get<{ milestones: any[] }>("/milestones?state=paid_out"), contracts()]);
+    const out = await Promise.all(milestones.map((m) => api.getReceipt(m.id, cs).catch(() => null)));
+    return out.filter((r): r is Receipt => r !== null);
+  },
+  getReceipt: async (id: string, cs?: Contract[]): Promise<Receipt | null> => {
+    let r: any;
+    try { r = await get<any>(`/receipts/${id}`); } catch (e) { if ((e as ApiError).status === 404) return null; throw e; }
+    const title = (cs ?? await contracts()).flatMap((c) => c.milestones).find((m) => m.id === id)?.title ?? "Milestone";
+    return {
+      id, milestoneId: id, milestoneTitle: title, amount: dollars(r.amount), date: new Date(r.mintedAt * 1000).toISOString().slice(0, 10),
+      tokenId: `#${String(r.tokenId).padStart(4, "0")}`, contentHash: r.settlementHash, txHash: r.releaseTx, network: networkName(r.chainId), holder: r.holder,
+    };
+  },
+  /** Reads the receipt from the chain again and checks it belongs to this milestone. */
+  verifyReceipt: async (id: string) => {
+    try { const r = await get<any>(`/receipts/${id}`); return { valid: r.verified_on_chain === true && r.tokenId > 0 }; } catch { return { valid: false }; }
+  },
+
+  listRecon: async (): Promise<ReconRow[]> => {
+    const list = await get<{ items: any[] }>("/reconciliation");
+    return Promise.all(list.items.map(async (it) => {
+      const l = await get<any>(`/reconciliation/milestones/${it.milestone_id}`);
+      return {
+        id: it.milestone_id, invoice: it.invoice_number, amount: dollars(it.gross), country: countryOf(it.country),
+        payment: l.payment?.fundings?.[0]?.reference ? String(l.payment.fundings[0].reference).slice(0, 14) : null,
+        escrow: l.escrow_tx ? String(l.escrow_tx).slice(0, 12) : null,
+        payout: (l.payouts ?? []).find((p: any) => p.tx)?.tx?.slice(0, 12) ?? null,
+        receipt: l.receipt?.token_id ? `#${l.receipt.token_id}` : null,
+        complete: it.complete, gaps: it.gaps ?? [],
+      };
+    }));
+  },
+  /** The backend's tax export (country from the contract's profile; refuses rows without one). */
+  reconCsvUrl: () => `${API_BASE}/reconciliation/export.csv`,
+
+  listApprovals: async (): Promise<ApprovalItem[]> => {
+    const [q, prov] = await Promise.all([get<any>("/operator/queue"), provider()]);
+    const rows: any[] = Array.isArray(q.policy_approvals) ? q.policy_approvals : [];
+    return rows.map((a) => {
+      const p = proposalFrom(a.proposal, { id: a.id, milestoneId: a.milestone_id, decision: "escalated", reasons: a.reasons, traceId: a.trace_id, approvalId: a.id, at: a.created_at }, prov.payees);
+      const total = payoutTotal(a.proposal);
+      return {
+        id: a.id, milestoneId: a.milestone_id, proposal: p, amount: dollars(total.toString()),
+        payee: p.payouts.map((x) => x.to).join(", ") || "Nobody", createdAt: a.created_at,
+        movesNoMoney: total === 0n || (a.reasons ?? []).includes("NO_PAYOUTS"),
+      };
+    });
+  },
+  listIdentityHolds: async (): Promise<IdentityHold[]> => {
+    const q = await get<any>("/operator/queue");
+    return (q.identity_holds ?? []).filter((h: any) => h.status === "open")
+      .map((h: any) => ({ milestoneId: h.milestone_id, reason: h.reason, status: h.status, openedAt: h.opened_at }));
+  },
+  /**
+   * The vault operator decides an escalated plan: approve, reject, or request a new plan. The operator signs with their
+   * own wallet; the Policy Service checks the signature. A plan that moves no money cannot be approved.
+   */
+  decideApproval: async (item: ApprovalItem, decision: "approve" | "reject" | "new_plan") => {
+    if (decision === "approve" && item.movesNoMoney) throw new ApiError("NO_PAYOUTS", "This plan pays nobody. Request a new plan or reject it.");
+    const typed = await get<any>(`/operator/approvals/${item.id}/typed-data?decision=${decision}`);
+    const { signature } = await signTyped(typed);
+    return post<any>(`/milestones/${item.milestoneId}/escalations/${item.id}/execute`, { decision, operator_signature: signature });
+  },
+  decideIdentity: async (milestoneId: string, decision: "release" | "hold") => {
+    const typed = await get<any>(`/operator/identity-holds/${milestoneId}/typed-data?decision=${decision}`);
+    const { signature } = await signTyped(typed);
+    return post<any>(`/operator/identity-holds/${milestoneId}/decision`, { decision, operator_signature: signature });
+  },
+  listAudit: async (): Promise<AuditEntry[]> => {
+    const raw = await get<any>("/operator/audit");
+    const rows: any[] = Array.isArray(raw) ? raw : raw?.entries ?? raw?.rows ?? [];
+    return rows.slice().reverse().map((r, k) => ({
+      id: `${r.at}-${k}`, at: String(r.at ?? "").slice(11, 16), actor: "Policy Service",
+      action: `${String(r.decision ?? "").replace(/^./, (c: string) => c.toUpperCase())} the plan for milestone ${String(r.milestone_id ?? "").slice(0, 8)} (policy v${r.policy_version ?? "?"})`,
+      reasons: r.reasons ?? [],
+    }));
+  },
+  getLimits: async (): Promise<Limits> => {
+    const [{ policy, version }, prov] = await Promise.all([get<any>("/operator/policy"), provider()]);
+    return {
+      perPayment: dollars(policy.per_tx_cap), softLimit: dollars(policy.per_tx_soft_limit), daily: dollars(policy.daily_cap),
+      taxReservePercent: policy.min_tax_reserve_bps / 100, confidenceThreshold: policy.confidence_threshold, version,
+      approvedPayees: (policy.payee_allowlist ?? []).map((id: string) => prov.payees.find((p) => p.payee_id === id)?.name ?? id),
+    };
+  },
+
+  listDisputes: async (): Promise<Dispute[]> => (await get<any[]>("/arbiter/disputes")).map((d) => ({
+    milestoneId: d.milestone_id, title: d.title, amount: dollars(d.amount), timeout: d.timeout,
+    attestations: (d.attestations ?? []).map((a: any) => ({ signer: a.signer, kind: a.kind, releaseToProvider: a.release_to_provider === 1 || a.release_to_provider === true, at: a.at })),
+  })),
+  /** The arbiter's vote, signed with the arbiter's own wallet. Two matching votes settle the escrow on-chain. */
+  arbiterVote: async (milestoneId: string, release: boolean) => {
+    const typed = await get<any>(`/arbiter/disputes/${milestoneId}/typed-data?kind=arbiter&release_to_provider=${release}`);
+    const { signer, signature } = await signTyped(typed);
+    return post<any>(`/arbiter/disputes/${milestoneId}/attestations`, { signer, signature, release_to_provider: release });
+  },
+
+  /** Creates and signs a contract: the provider signs with their own wallet, the client with its WDK wallet. */
+  createContract: async (input: { clientName: string; clientEmail: string; country: Country; milestones: { title: string; amountUsd: number; criteria: string }[] }) => {
+    const [prov, wallets] = await Promise.all([provider(), get<any>("/wallets")]);
+    const client = wallets.wallets.find((w: any) => w.role === "client")?.address;
+    if (!client) throw new ApiError("NO_CLIENT_WALLET", "The demo client wallet is not configured.");
+    const due = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10);
+    const c = await post<any>("/contracts", {
+      provider_id: PROVIDER_ID, provider_address: prov.provider_address, client_address: client,
+      client_name: input.clientName, client_email: input.clientEmail, currency: "USD", country: input.country,
+      milestones: input.milestones.map((m) => ({ title: m.title, amount_usd_cents: Math.round(m.amountUsd * 100), acceptance_criteria: m.criteria || m.title, due_date: due })),
+    });
+    const typed = await get<any>(`/contracts/${c.id}/typed-data?party=provider`);
+    const { signer, signature } = await signTyped(typed);
+    await post(`/contracts/${c.id}/sign`, { party: "provider", signer, signature });
+    await post(`/wallets/client/contracts/${c.id}/sign`);
+    let firstInvoice: string | null = null;
+    for (const m of (await get<any>(`/contracts/${c.id}/milestones`)).milestones) {
+      const body = await post<any>(`/contracts/${c.id}/milestones/${m.id}/activate`);
+      await post("/milestones", body);
+      firstInvoice ??= (await get<any>(`/contracts/${c.id}/milestones`)).milestones.find((x: any) => x.id === m.id)?.invoice_id ?? null;
+    }
+    return { contractId: c.id as string, invoiceId: firstInvoice };
+  },
+
+  /** Wallet review and send (the client's WDK wallet). Nothing is signed by review. */
+  wallets: () => get<any>("/wallets"),
+  reviewTransfer: async (t: { to: string; amount: string; chainId: number; reference: string }): Promise<WalletReview> => {
+    const r = await post<any>("/wallets/client/transfers/review", { to: t.to, amount: t.amount, chain_id: t.chainId, payment_reference: t.reference });
+    return {
+      from: r.from, recipient: { address: r.recipient?.address, savedName: r.recipient?.saved_name ?? null },
+      network: { name: r.network?.name, chainId: r.network?.chain_id }, amount: dollars(r.amount?.base_units),
+      feeDisplay: r.fee?.display ?? null, canSign: r.can_sign === true, blocked: (r.blocked ?? []).map((b: any) => b.code),
+      paymentReference: r.payment_reference, custody: r.custody,
+    };
+  },
+  sendTransfer: (t: { to: string; amount: string; chainId: number; reference: string }) =>
+    post<any>("/wallets/client/transfers", { to: t.to, amount: t.amount, chain_id: t.chainId, payment_reference: t.reference }),
+  transferStatus: (reference: string) => get<any>(`/wallets/transfers/${encodeURIComponent(reference)}`),
+
+  /** The provider's own paid-out balance (its WDK payee wallet) in test USDT. */
+  providerBalance: async () => dollars((await get<any>("/wallets/payee_amara/balance")).usdt?.base_units),
+  provider: () => provider(),
+  countryProfiles: async () => (await get<{ profiles: any[] }>("/country-profiles")).profiles,
+};
+
+/**
+ * The landing page's "try to overspend" demo: the same rule order as the Policy Service (INTERFACES v0.8), on
+ * illustrative numbers in the browser. It decides nothing real; real plans are decided by the Policy Service.
+ */
+export function checkPolicy(amount: number, limit: number, opts: { injected?: boolean; payeeApproved?: boolean; milestoneAmount?: number } = {}) {
+  const rejected: string[] = [];
+  const escalated: string[] = [];
+  if (amount === 0) rejected.push("ZERO_AMOUNT_PAYOUT");
+  if (amount > 0) {
+    if (opts.payeeApproved === false) rejected.push("PAYEE_NOT_ALLOWED");
+    if (amount > limit) rejected.push("OVER_PER_TX_CAP");
+    if (opts.milestoneAmount !== undefined && amount > opts.milestoneAmount) rejected.push("OVER_MILESTONE_AMOUNT");
+  }
+  if (opts.injected) escalated.push("INJECTION_FLAGGED");
+  if (rejected.length > 0) return { decision: "REJECTED" as const, reasons: rejected };
+  if (escalated.length > 0) return { decision: "ESCALATED" as const, reasons: escalated };
+  return { decision: "APPROVED" as const, reasons: [] as string[] };
+}
+
+/** Every Policy Service reason code, for the Trust page and tests. */
+export const POLICY_CODES = { rejected: POLICY_REJECT_CODES, escalated: POLICY_ESCALATE_CODES };
