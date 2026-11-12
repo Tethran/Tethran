@@ -24,7 +24,7 @@
 // DEMO_MODE only. TEST NETWORKS ONLY. Simulated parts (fiat, identity, mobile money) are labelled by the services.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { Wallet, id as keccakUtf8 } from "ethers";
 import { parse } from "dotenv";
@@ -57,8 +57,13 @@ function start(name: string, entry: string, allowed: Record<string, string>, qui
   }
   const tsx = join(ROOT, "services/backend/node_modules/tsx/dist/cli.mjs");
   const child = spawn(process.execPath, [tsx, entry], { env: { ...base, ...allowed }, stdio: ["ignore", "pipe", "pipe"] });
+  // Every line goes to .demo-data/logs/<name>.log (URLs removed); in quiet mode only errors reach the console.
+  mkdirSync(join(DATA, "logs"), { recursive: true });
+  const logFile = join(DATA, "logs", `${name}.log`);
   const out = (d: Buffer) => d.toString().split(/\r?\n/).filter(Boolean).forEach((l) => {
-    if (!quiet || /error|fail/i.test(l)) console.log(`  [${name}] ${l.replace(/\bhttps?:\/\/\S+/g, "[url removed]")}`);
+    const line = l.replace(/\bhttps?:\/\/\S+/g, "[url removed]");
+    try { appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`); } catch { /* logging never stops the seed */ }
+    if (!quiet || /error|fail/i.test(line)) console.log(`  [${name}] ${line}`);
   });
   child.stdout!.on("data", out);
   child.stderr!.on("data", out);
@@ -98,6 +103,33 @@ async function attempt(base: string, method: string, path: string, body?: unknow
 }
 
 /** Local chain only: deploy the contracts if the configured addresses have no code (a fresh node). */
+/** Local chain only: if no node answers on 127.0.0.1:8545, start `hardhat node` (it stops with this process). */
+let localNode: ChildProcess | undefined;
+async function ensureLocalNode() {
+  const up = () => fetch("http://127.0.0.1:8545", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", method: "eth_chainId", params: [], id: 1 }), signal: AbortSignal.timeout(1500),
+  }).then((r) => r.ok, () => false);
+  if (await up()) return;
+  say("local chain", "no node on 127.0.0.1:8545: starting one (logs in .demo-data/logs/hardhat.log)");
+  mkdirSync(join(DATA, "logs"), { recursive: true });
+  localNode = spawn("npx hardhat node", { cwd: join(ROOT, "contracts"), shell: true, stdio: ["ignore", "pipe", "pipe"] });
+  const log = (d: Buffer) => { try { appendFileSync(join(DATA, "logs", "hardhat.log"), d); } catch { /* ignore */ } };
+  localNode.stdout!.on("data", log);
+  localNode.stderr!.on("data", log);
+  process.on("exit", () => {
+    if (!localNode?.pid) return;
+    // shell: true puts a shell between us and the node; on Windows kill the whole tree.
+    if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(localNode.pid), "/T", "/F"], { stdio: "ignore" });
+    else localNode.kill();
+  });
+  for (let i = 0; i < 60; i++) {
+    if (await up()) return;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error("the local chain did not start");
+}
+
 async function ensureLocalDeployment(chainKey: string) {
   const c = loadChain(chainKey);
   const p = newProvider(c);
@@ -132,8 +164,11 @@ function serviceEnv(chainKey: string, internalToken: string) {
 }
 
 async function main() {
-  if (env("DEMO_MODE") !== "1" && env("DEMO_MODE") !== "true") throw new Error("DEMO_MODE=1 is required: the seed wipes .demo-data/");
+  // Explicit opt-in: DEMO_MODE=1, or the --demo-mode flag that only the `npm run demo` script passes.
+  const demoMode = env("DEMO_MODE") === "1" || env("DEMO_MODE") === "true" || process.argv.includes("--demo-mode");
+  if (!demoMode) throw new Error("DEMO_MODE=1 is required: the seed wipes .demo-data/");
   const chainKey = env("CHAIN") || "localhost";
+  if (chainKey === "localhost") await ensureLocalNode();
   if (chainKey === "localhost" && !SERVE_ONLY) await ensureLocalDeployment(chainKey);
   const chain = loadChain(chainKey);
   const chainsFile = JSON.parse(readFileSync(join(ROOT, "config/chains.json"), "utf8"));
@@ -297,10 +332,10 @@ async function main() {
     r.ok ? `${r.body.decision}${r.body.reasons?.length ? " (" + r.body.reasons.join(", ") + ")" : ""}, agent ${r.body.agent_mode}, trace ${r.body.trace_id ?? "-"}` : `refused ${r.status} ${r.code}`;
 
   for (const [i, s] of SCEN.entries()) {
-    const body = await call(BACKEND, "POST", `/contracts/${cid}/milestones/${terms[i].id}/activate`);
-    const m = await call(BACKEND, "POST", "/milestones", { ...body, scenario: s.scenario });
-    const id: string = m.id;
+    let id = terms[i].id;
     try {
+      const body = await call(BACKEND, "POST", `/contracts/${cid}/milestones/${terms[i].id}/activate`);
+      id = (await call(BACKEND, "POST", "/milestones", { ...body, scenario: s.scenario })).id;
       switch (s.scenario) {
         case "wrong_network": {
           const dep = await call(BACKEND, "GET", `/milestones/${id}/deposit`);
@@ -347,7 +382,7 @@ async function main() {
         }
       }
     } catch (e) {
-      record(s.scenario, id, "SEED STEP FAILED", safeErrorMessage(e));
+      record(s.scenario, id, "SEED STEP FAILED", `${safeErrorMessage(e)} (see .demo-data/logs/backend.log)`);
       process.exitCode = 1;
     }
   }
