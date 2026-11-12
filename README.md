@@ -27,6 +27,17 @@ Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer tra
 | Policy Service rule engine, reason codes, audit log | Built, tested |
 | Policy Service API and co-signing, treasury service, app, agent | Not built yet |
 
+## Known trust assumptions
+
+- **The platform releases.** The treasury funds each escrow and is the only account that can release an
+  approved milestone to the provider. If it never releases, it can take the funds back three days after the
+  hold ends. The provider relies on the platform to release; the escrow does not force it.
+- **Stablecoin funding is a demo simplification.** A client paying in stablecoin sends it to a treasury deposit
+  address and the treasury funds the escrow.
+- **Identity checks are simulated** and enforced by the backend before release, not on-chain.
+- **Escrow minimum timeout** is 1 day by default; the Sepolia demo deployment uses 10 minutes so a timeout
+  refund can be shown live.
+
 ## Layout
 
 ```

@@ -20,7 +20,7 @@ describe("MilestoneEscrow.decide (two of three EIP-712 attestations)", () => {
     const [admin, treasury, client, provider, arbiter, vault, stranger] = await ethers.getSigners();
     const usdt = await ethers.deployContract("TestUSDT");
     const escrow = await ethers.deployContract("MilestoneEscrow", [
-      await usdt.getAddress(), admin.address, treasury.address, treasury.address,
+      await usdt.getAddress(), admin.address, treasury.address, treasury.address, 24 * 3600,
     ]);
     await usdt.mint(treasury.address, 100_000_000n);
     await usdt.connect(treasury).approve(await escrow.getAddress(), ethers.MaxUint256);

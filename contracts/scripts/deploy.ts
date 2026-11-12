@@ -37,16 +37,19 @@ async function main() {
   const nonce = await ethers.provider.getTransactionCount(treasury.address, "latest");
   const usdt = await (await ethers.getContractFactory("TestUSDT", treasury)).deploy({ nonce });
   await usdt.deploymentTransaction()!.wait(confirmations);
-  // Demo deployment: the treasury is admin, RELEASER and FUNDER. Constructor: (usdt, admin, releaser, funder).
+  // Demo deployment: the treasury is admin, RELEASER and FUNDER.
+  // Constructor: (usdt, admin, releaser, funder, minTimeout). minTimeout is 1 day unless chains.json sets
+  // "minTimeoutSeconds" for this chain (the Sepolia demo uses 10 minutes so a timeout refund can be shown live).
+  const minTimeout: number = chains.chains[key].minTimeoutSeconds ?? 24 * 3600;
   const escrow = await (await ethers.getContractFactory("MilestoneEscrow", treasury)).deploy(
-    await usdt.getAddress(), treasury.address, treasury.address, treasury.address, { nonce: nonce + 1 });
+    await usdt.getAddress(), treasury.address, treasury.address, treasury.address, minTimeout, { nonce: nonce + 1 });
   await escrow.deploymentTransaction()!.wait(confirmations);
 
   chains.chains[key].usdt = await usdt.getAddress();
   chains.chains[key].escrow = await escrow.getAddress();
   fs.writeFileSync(CHAINS_PATH, JSON.stringify(chains, null, 2) + "\n");
   console.log(`TestUSDT (test token): ${chains.chains[key].usdt}`);
-  console.log(`MilestoneEscrow:       ${chains.chains[key].escrow}`);
+  console.log(`MilestoneEscrow:       ${chains.chains[key].escrow}  (minTimeout ${minTimeout}s)`);
   console.log(`Written to config/chains.json under "${key}"`);
 }
 

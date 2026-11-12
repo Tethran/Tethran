@@ -17,9 +17,10 @@
       "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
       "testnet": true,
       "confirmations": 2,
-      "usdt": "0x6DF2B5Ff896df820EDC0C563b0DA2ABD93228aeB",
-      "escrow": "0xb6225C0478d26EF07C7F2F95E82603dd385a61Ed",
-      "receiptNft": ""
+      "usdt": "0xE2D587DD9ad01C91DFf0baABc120192C516b9879",
+      "escrow": "0x172AE76568ba8F83dc7584D2a161713200d9b278",
+      "receiptNft": "",
+      "minTimeoutSeconds": 600
     },
     "baseSepolia": {
       "name": "Base Sepolia",

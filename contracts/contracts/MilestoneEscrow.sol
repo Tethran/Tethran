@@ -46,14 +46,15 @@ contract MilestoneEscrow is AccessControl, EIP712 {
         keccak256("Attestation(bytes32 milestoneId,uint8 kind,bool releaseToProvider)");
     /// @dev A dispute leaves at least this long before the refund-by-timeout applies.
     uint64 public constant DISPUTE_WINDOW = 7 days;
-    /// @dev A new milestone's timeout must be at least this far in the future.
-    uint64 public constant MIN_TIMEOUT = 1 days;
     /// @dev Upper bound for the chargeback hold.
     uint32 public constant MAX_HOLD = 30 days;
     /// @dev After the hold, the releaser has this long to release before the funder may take the funds back.
     uint64 public constant RELEASE_GRACE = 3 days;
 
     IERC20 public immutable usdt;
+    /// @dev A new milestone's timeout must be at least this many seconds in the future. Set at deployment:
+    ///      1 day by default; shorter on a demo deployment so a timeout refund can be shown live.
+    uint64 public immutable minTimeout;
 
     mapping(bytes32 => Milestone) private _milestones;
 
@@ -67,6 +68,7 @@ contract MilestoneEscrow is AccessControl, EIP712 {
     error ZeroAddress();
     error InvalidAddress();
     error ZeroAmount();
+    error ZeroMinTimeout();
     error PartiesNotDistinct();
     error TimeoutTooSoon(uint256 earliest);
     error HoldTooLong();
@@ -82,11 +84,15 @@ contract MilestoneEscrow is AccessControl, EIP712 {
     error InvalidAttestation(address signer);
     error RefundNotAllowed();
 
-    constructor(IERC20 usdt_, address admin, address releaser, address funder) EIP712("TethranEscrow", "1") {
+    constructor(IERC20 usdt_, address admin, address releaser, address funder, uint64 minTimeout_)
+        EIP712("TethranEscrow", "1")
+    {
         if (address(usdt_) == address(0) || admin == address(0) || releaser == address(0) || funder == address(0)) {
             revert ZeroAddress();
         }
+        if (minTimeout_ == 0) revert ZeroMinTimeout();
         usdt = usdt_;
+        minTimeout = minTimeout_;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(RELEASER_ROLE, releaser);
         _grantRole(FUNDER_ROLE, funder);
@@ -115,7 +121,7 @@ contract MilestoneEscrow is AccessControl, EIP712 {
         }
         if (client == provider || client == arbiter || provider == arbiter) revert PartiesNotDistinct();
         if (amount == 0) revert ZeroAmount();
-        if (timeout < block.timestamp + MIN_TIMEOUT) revert TimeoutTooSoon(block.timestamp + MIN_TIMEOUT);
+        if (timeout < block.timestamp + minTimeout) revert TimeoutTooSoon(block.timestamp + minTimeout);
         if (holdSeconds > MAX_HOLD) revert HoldTooLong();
 
         _milestones[milestoneId] = Milestone({

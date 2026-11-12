@@ -17,7 +17,7 @@ describe("MilestoneEscrow", () => {
     const usdt = await ethers.deployContract("TestUSDT");
     // treasury is FUNDER; a separate account is RELEASER so the tests can tell the two roles apart
     const escrow = await ethers.deployContract("MilestoneEscrow", [
-      await usdt.getAddress(), admin.address, releaser.address, treasury.address,
+      await usdt.getAddress(), admin.address, releaser.address, treasury.address, MIN_TIMEOUT,
     ]);
     await usdt.mint(treasury.address, 100_000_000n);
     await usdt.connect(treasury).approve(await escrow.getAddress(), ethers.MaxUint256);
@@ -46,8 +46,10 @@ describe("MilestoneEscrow", () => {
       const Z = ethers.ZeroAddress;
       for (const args of [[Z, a.address, a.address, a.address], [t, Z, a.address, a.address],
         [t, a.address, Z, a.address], [t, a.address, a.address, Z]] as const) {
-        await expect(factory.deploy(...args)).to.be.revertedWithCustomError(factory, "ZeroAddress");
+        await expect(factory.deploy(...args, MIN_TIMEOUT)).to.be.revertedWithCustomError(factory, "ZeroAddress");
       }
+      await expect(factory.deploy(t, a.address, a.address, a.address, 0))
+        .to.be.revertedWithCustomError(factory, "ZeroMinTimeout");
     });
 
     it("grants admin, RELEASER and FUNDER to the given accounts only", async () => {
@@ -126,6 +128,24 @@ describe("MilestoneEscrow", () => {
       await time.setNextBlockTimestamp(at + 1);
       await fund({ timeout: at + 1 + MIN_TIMEOUT });
       expect(await escrow.state(id)).to.equal(State.Funded);
+    });
+
+    it("minTimeout is set at deployment: a demo deployment can use 10 minutes", async () => {
+      const { admin, treasury, client, provider, arbiter, vault, usdt } = await setup();
+      const demo = await ethers.deployContract("MilestoneEscrow", [
+        await usdt.getAddress(), admin.address, admin.address, treasury.address, 600,
+      ]);
+      expect(await demo.minTimeout()).to.equal(600n);
+      await usdt.connect(treasury).approve(await demo.getAddress(), ethers.MaxUint256);
+      const at = (await time.latest()) + 10;
+      const make = (timeout: number) => demo.connect(treasury).createAndFund(
+        ethers.id("demo"), client.address, provider.address, arbiter.address, vault.address, AMOUNT, timeout, false, 0);
+      await time.setNextBlockTimestamp(at);
+      await expect(make(at + 599)).to.be.revertedWithCustomError(demo, "TimeoutTooSoon");
+      await time.setNextBlockTimestamp(at + 1);
+      await make(at + 601);
+      await time.setNextBlockTimestamp(at + 601);
+      await demo.refund(ethers.id("demo")); // refundable ten minutes later
     });
 
     it("the hold is capped at MAX_HOLD (exact boundary)", async () => {
