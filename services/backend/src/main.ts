@@ -10,7 +10,8 @@
 //   LLM_* and OPIK_* as in services/llm
 import { resolve } from "node:path";
 import { Wallet } from "ethers";
-import { EvmChainClient, SqliteIdempotencyStore, loadChain, loadEnvOnly, newProvider } from "../../chain/src/index";
+import { EvmChainClient, SqliteIdempotencyStore, createWdkWallets, loadChain, loadEnvOnly, newProvider } from "../../chain/src/index";
+import { createWalletLayer } from "./wallets";
 import { configFromEnv, createLlmProvider, createTracerFromEnv } from "../../llm/src/index";
 import { createAgentSigner } from "./agentSigner";
 import { openDb } from "./db";
@@ -29,7 +30,7 @@ loadEnvOnly(resolve(__dirname, "../../../.env"), [
   "CHAIN", "RPC_URL_*", "TREASURY_PRIVATE_KEY", "AGENT_SIGNER_PRIVATE_KEY", "ARBITER_ADDRESS", "POLICY_URL", "INTERNAL_TOKEN",
   "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
   "BACKEND_DATA_DIR", "BACKEND_PORT", "HOST", "CARD_HOLD_SECONDS", "MILESTONE_TIMEOUT_SECONDS",
-  "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS",
+  "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED",
 ]);
 
 function need(name: string): string {
@@ -80,10 +81,19 @@ const orchestrator = createOrchestrator({
 const simulatedCheckout = stripeEnabled ? undefined : createSimulatedCheckout({ db, webhookSecret, treasury: () => treasury, publicBaseUrl, now });
 const checkout = stripeEnabled ? createStripeCheckout({ secretKey: process.env.STRIPE_SECRET_KEY! }) : simulatedCheckout!.provider;
 
+// WDK user wallets (client, payees, subcontractor) for the wallet-layer API; demo custody of a test seed.
+const wallets = process.env.DEMO_WALLET_SEED
+  ? createWalletLayer({
+      db, now,
+      wallets: createWdkWallets({ chain: chainCfg, seed: process.env.DEMO_WALLET_SEED, maxTransfer: 10_000_000_000n }),
+      chain: { chainId: chainCfg.chainId, name: chainCfg.name, usdt: chainCfg.usdt, ready: () => chain.ready(), txStatus: (h) => chain.txStatus(h) },
+    })
+  : undefined;
+
 const port = Number(process.env.BACKEND_PORT ?? process.env.PORT ?? 8788);
 const host = process.env.HOST ?? "127.0.0.1";
 listen(createHttpServer({
-  db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl,
+  db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets,
 }), port, host).then(
   (p) => console.log(`backend listening on ${host}:${p} (chain ${chainCfg.name} ${chainCfg.chainId}; checkout ${checkout.name}; agent ${process.env.AGENT_MODE ?? "live+replay"})`),
   (e) => {

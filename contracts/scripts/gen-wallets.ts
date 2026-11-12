@@ -43,6 +43,12 @@ function main() {
     report.push(`${role.padEnd(14)} ${wallet.address}${value === undefined ? "  (new)" : ""}`);
   }
 
+  // BIP-39 test seed for the WDK user wallets (client, payees, subcontractor). Never printed.
+  if (existingValue(env, "DEMO_WALLET_SEED") === undefined) {
+    added += `DEMO_WALLET_SEED=${Wallet.createRandom().mnemonic!.phrase}\n`;
+    report.push("DEMO_WALLET_SEED   (new BIP-39 test seed for the WDK user wallets)");
+  }
+
   if (added) {
     // Append only. Start on a fresh line if the file does not end with one.
     const lead = !exists ? "CHAIN=sepolia\n" : env.length > 0 && !env.endsWith("\n") ? "\n" : "";

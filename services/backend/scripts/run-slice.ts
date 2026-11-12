@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Wallet, getAddress, id as keccakUtf8 } from "ethers";
 import { parse } from "dotenv";
-import { EvmChainClient, InMemoryIdempotencyStore, VAULT_TYPES, loadChain, newProvider, safeErrorMessage } from "../../chain/src/index";
+import { EvmChainClient, InMemoryIdempotencyStore, VAULT_TYPES, createWdkWallets, loadChain, newProvider, safeErrorMessage } from "../../chain/src/index";
 import { openDb } from "../src/db";
 import { policyDocumentTypes, policyDocumentValue, policyDomain } from "../../policy/src/typed";
 
@@ -76,13 +76,18 @@ async function main() {
   const provider = newProvider(chain);
   const store = new InMemoryIdempotencyStore();
   const treasury = wallet("TREASURY").connect(provider);
-  const client = wallet("CLIENT").connect(provider);
   const operator = wallet("OPERATOR");
   const relay = new EvmChainClient(chain, treasury, store, { provider }); // only relays operator-signed actions here
-  const clientChain = new EvmChainClient(chain, client, store, { provider });
+  // The client and the first payee are WDK wallets (accounts 0 and 1 of the demo seed). The client signs its own
+  // escrow approval through WDK; its deposit goes through the backend's wallet-layer API (review, then send).
+  const seed = env("DEMO_WALLET_SEED");
+  if (!seed) throw new Error("DEMO_WALLET_SEED is not set (run: cd contracts && npm run wallets)");
+  const wdk = createWdkWallets({ chain, seed, maxTransfer: 10_000_000_000n });
+  const client = { address: await wdk.address("client") };
+  const clientChain = new EvmChainClient(chain, wdk.sender("client"), store, { provider });
 
   // Payee wallets: deterministic test addresses standing in for a USDT wallet and a SIMULATED M-Pesa rail wallet.
-  const amara = new Wallet(keccakUtf8("tethran demo payee amara")).address;
+  const amara = await wdk.address("payee_amara"); // WDK wallet
   const kofiRail = new Wallet(keccakUtf8("tethran demo rail wallet mpesa")).address;
 
   const dir = mkdtempSync(join(tmpdir(), "tethran-slice-"));
@@ -134,6 +139,7 @@ async function main() {
       ...rpcEnv, ...llmEnv, LLM_TIMEOUT_MS: "90000", CHAIN: chain.key, TREASURY_PRIVATE_KEY: env("TREASURY_PRIVATE_KEY"),
       AGENT_SIGNER_PRIVATE_KEY: env("AGENT_SIGNER_PRIVATE_KEY"), ARBITER_ADDRESS: wallet("ARBITER").address,
       POLICY_URL: POLICY, INTERNAL_TOKEN: internalToken, BACKEND_DATA_DIR: dir, BACKEND_PORT: String(backendPort),
+      DEMO_WALLET_SEED: seed, AGENT_MODE: env("AGENT_MODE") || "live+replay",
     }));
     await waitHealthy(`${POLICY}/v1/policy`, "Policy Service");
     await waitHealthy(`${BACKEND}/health`, "backend");
@@ -156,16 +162,30 @@ async function main() {
     const dep = await call(BACKEND, "GET", `/milestones/${id}/deposit`);
     const mint = await relay.mintTestUsdt(client.address, dep.amount, `slice:faucet:${id}`); // test faucet for the client wallet
     await relay.waitConfirmed(mint.txHash);
-    const pay = await clientChain.transferUsdt(getAddress(dep.deposit_address), dep.amount, `slice:deposit:${id}`);
-    await clientChain.waitConfirmed(pay.txHash);
-    say("client deposit", `${pay.txHash} (100 tUSDT to the treasury, demo simplification)`);
-    const funded = await call(BACKEND, "POST", `/milestones/${id}/deposit/confirm`, { tx_hash: pay.txHash });
+    const transfer = { to: dep.deposit_address, amount: dep.amount, chain_id: chain.chainId, payment_reference: `deposit:${id}` };
+    // The app thinks it is on another network: the review refuses before anything is signed.
+    const wrong = await call(BACKEND, "POST", "/wallets/client/transfers/review", { ...transfer, chain_id: 84532 });
+    say("wrong network", `review blocked before signing: ${wrong.blocked.map((b: any) => b.code).join(", ")}`);
+    const review = await call(BACKEND, "POST", "/wallets/client/transfers/review", transfer);
+    say("review screen", `to ${review.recipient.address} on ${review.network.name}: ${review.amount.display}, fee ${review.fee.display} (separate)`);
+    const sent = await call(BACKEND, "POST", "/wallets/client/transfers", transfer);
+    say("client deposit", `${sent.tx_hash} signed by the WDK client wallet (demo simplification: pay the treasury)`);
+    const dup = await fetch(`${BACKEND}/wallets/client/transfers`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(transfer) });
+    say("duplicate send", `refused: ${dup.status} ${(await dup.json()).code}`);
+    let st = await call(BACKEND, "GET", `/wallets/transfers/${encodeURIComponent(transfer.payment_reference)}`);
+    for (let i = 0; st.status === "pending" && i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      st = await call(BACKEND, "GET", `/wallets/transfers/${encodeURIComponent(transfer.payment_reference)}`); // same hash, never resent
+    }
+    if (st.status !== "confirmed") throw new Error(`deposit is ${st.status}`);
+    await relay.waitConfirmed(sent.tx_hash);
+    const funded = await call(BACKEND, "POST", `/milestones/${id}/deposit/confirm`, { tx_hash: sent.tx_hash });
     say("escrow funded", `${funded.escrow_tx} (verified on-chain after funding)`);
 
     // 6. client approves on-chain from its own wallet; provider adds evidence; backend releases
     const appr = await clientChain.approve(id, `slice:approve:${id}`);
     await clientChain.waitConfirmed(appr.txHash);
-    say("client approved", appr.txHash);
+    say("client approved", `${appr.txHash} (signed by the WDK client wallet)`);
     await call(BACKEND, "POST", `/milestones/${id}/evidence`, { text: "All brand files delivered on 12 Nov 2026. The client confirmed receipt by email. Split: 60 to Amara Studio, 30 to Kofi Print Works by M-Pesa." });
     const rel = await call(BACKEND, "POST", `/milestones/${id}/release`);
     say("released", `${rel.release_tx} (identity check simulated: match)`);

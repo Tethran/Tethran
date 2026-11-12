@@ -11,6 +11,8 @@
     "prove:slice": "tsx scripts/prove-slice.ts"
   },
   "dependencies": {
+    "@tetherto/wdk": "^1.0.0-beta.22",
+    "@tetherto/wdk-wallet-evm": "^1.0.0-beta.26",
     "dotenv": "^18.0.10",
     "ethers": "^6.17.0"
   },

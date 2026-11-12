@@ -4,3 +4,4 @@ export * from "./errors";
 export * from "./env";
 export * from "./idempotency";
 export * from "./evmChainClient";
+export * from "./wdk";

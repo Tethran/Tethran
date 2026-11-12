@@ -13,6 +13,7 @@ import { PAYMENT_METHODS, startCheckout, type CheckoutProvider, type SimulatedCh
 import { contractRoutes } from "./contractRoutes";
 import { parseAgentMode } from "./replay";
 import { relayVaultActions } from "./vaultRelay";
+import type { WalletLayer } from "./wallets";
 
 const MAX_BODY = 256 * 1024;
 
@@ -29,6 +30,8 @@ export interface HttpDeps {
   /** Present when the simulated checkout is active (no Stripe keys). */
   simulatedCheckout?: SimulatedCheckout;
   publicBaseUrl: string;
+  /** WDK user wallets; absent when DEMO_WALLET_SEED is not set. */
+  wallets?: WalletLayer;
 }
 
 type Handler = (ctx: { params: Record<string, string>; body: any; raw: string; req: IncomingMessage; url: URL }) => Promise<unknown>;
@@ -69,6 +72,11 @@ export function createHttpServer(deps: HttpDeps): Server {
     const token = String(ctx.req.headers["x-internal-token"] ?? "");
     if (!deps.internalToken || !sameSecret(token, deps.internalToken)) throw new ApiError(401, "internal route");
     return h(ctx);
+  };
+
+  const needWallets = () => {
+    if (!deps.wallets) throw new ApiError(404, "WDK wallets are not configured (set DEMO_WALLET_SEED)");
+    return deps.wallets;
   };
 
   const timeline = (id: string) => {
@@ -136,6 +144,14 @@ export function createHttpServer(deps: HttpDeps): Server {
       return deps.simulatedCheckout.dispute(params[1]);
     }],
     ...contractRoutes({ db, now: deps.now, publicBaseUrl: deps.publicBaseUrl }),
+    // Wallet layer (WDK user wallets) for the review screen.
+    ["GET", /^\/wallets$/, async () => needWallets().list()],
+    ["GET", /^\/wallets\/transfers\/([^/]+)$/, async ({ params }) => needWallets().status(params[1])],
+    ["GET", /^\/wallets\/([^/]+)\/balance$/, async ({ params }) => needWallets().balance(params[1])],
+    ["GET", /^\/wallets\/([^/]+)\/recipients$/, async ({ params }) => needWallets().recipients(params[1])],
+    ["POST", /^\/wallets\/([^/]+)\/recipients$/, async ({ params, body }) => needWallets().saveRecipient(params[1], body ?? {})],
+    ["POST", /^\/wallets\/([^/]+)\/transfers\/review$/, async ({ params, body }) => needWallets().review(params[1], body ?? {})],
+    ["POST", /^\/wallets\/([^/]+)\/transfers$/, async ({ params, body }) => needWallets().send(params[1], body ?? {})],
     ["POST", /^\/webhooks\/stripe$/, async ({ raw, req }) => treasury.handleStripeWebhook(raw, req.headers["stripe-signature"] as string | undefined)],
     // Public receipt verification: read from the chain, not from the database.
     ["GET", /^\/receipts\/([^/]+)$/, async ({ params }) => {
