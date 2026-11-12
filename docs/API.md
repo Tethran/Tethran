@@ -660,3 +660,168 @@ Unpaid invoices get one reminder of each kind, once: `before_due` (3 days before
     "due_date": "2026-03-15", "days_overdue": 0, "amount_usd_cents": 10130, "pay_url": "http://localhost:3000/pay/0d3e…",
     "sent_at": "2026-03-12T09:00:00.000Z", "simulated": true, "message": "Invoice INV-2026-0001 is due on 2026-03-15." }] }
 ```
+
+## Payouts, phone registry and reconciliation (built; rails simulated)
+
+Code: `services/backend/src/payouts.ts`, `phoneRegistry.ts`, `reconciliation.ts`. Everything about mobile money (M-Pesa,
+MTN MoMo, Airtel), bank transfers, phone lookup, fees and FX rates is **simulated** (`simulated: true`); no external
+call is made. The on-chain leg (the vault pays the rail's deposit wallet) is done by the settlement orchestrator; these
+adapters handle the off-chain leg after it. Status flow of a leg: `pending` → `processing` → `delivered` | `failed`,
+driven by the clock (pending 5 s, then processing until the rail's expected time) and by `advance` for the demo.
+
+Forcing a failure for the demo: body `{ "fail": "timeout" | "rejected" }` on the status route, or pay exactly
+`13130000` (timeout) or `13140000` (rejected) base units.
+
+Simulated price list: M-Pesa 1.5% (KES 129.00 per USDT, 30 s), MTN MoMo 1.0% (GHS 15.50, 60 s), Airtel 1.2%
+(UGX 3700.00, 60 s), bank 0.5% with a 1 USDT minimum (NGN 1500.00, 10 min), USDT no fee, immediate. The fee is
+deducted from the amount; the local amount is computed on the net amount.
+
+### `POST /payouts/quote`
+
+```json
+{ "rail": "mpesa", "amount": "100000000", "country": "KE" }
+```
+
+`country` is optional (rail default). Rails: `usdt`, `mpesa`, `mtn_momo`, `airtel`, `bank`.
+
+```json
+{
+  "simulated": true, "rail": "mpesa", "country": "KE", "amount": "100000000", "fee": "1500000", "net_amount": "98500000",
+  "fx": { "simulated": true, "label": "Simulated FX rate, not a market rate: 1 USDT = 129.00 KES", "base": "USDT", "quote": "KES", "rate": "129.000000" },
+  "local_amount": "12706.50", "currency": "KES", "expected_seconds": 30, "expected": "about 30 seconds (simulated)"
+}
+```
+
+### `GET /payouts?milestone_id=…` and `GET /payouts/{id}`
+
+`{id}` is the on-chain payout id (the `payouts` row). `offchain` is `null` until the leg is initiated.
+
+```json
+{
+  "id": 2, "milestone_id": "c9fe85ad-…", "payee_id": "payee_kofi", "rail": "mpesa", "amount": "30000000",
+  "to_address": "0x…b3", "chain_id": 11155111, "tx": "0x…", "onchain_status": "confirmed", "onchain_simulated": true, "at": "…",
+  "offchain": {
+    "simulated": true, "adapter": "MobileMoneySim", "provider_ref": "SIM-MPESA-3F9A1C2B7D10", "status": "processing", "reason": null,
+    "fee": "450000", "net_amount": "29550000", "local_amount": "3811.95", "currency": "KES", "country": "KE", "fx_rate": "129.000000",
+    "expected_seconds": 30, "initiated_at": "…", "updated_at": "…", "delivered_at": null
+  }
+}
+```
+
+The list is `{ "simulated": true, "payouts": [ … ] }`. `404` unknown payout.
+
+### `POST /payouts/{id}/status`
+
+Returns the current status after advancing, and starts the off-chain leg if it has not started. Body may be empty.
+
+```json
+{ "advance": true, "fail": "rejected" }
+```
+
+`advance: true` moves the leg one step (pending → processing → terminal). `fail` marks the leg to fail when it ends.
+Response is the same object as `GET /payouts/{id}`; a failed leg has `"status": "failed", "reason": "rejected by the recipient's provider (simulated)"`.
+`409 NOT_CONFIRMED` when the on-chain payout has not confirmed; `400` bad `fail` value.
+
+### Phone registry (FR-8.3, simulated)
+
+Only an HMAC-SHA256 hash of the E.164 number is stored (salt from `PHONE_HASH_SALT`; a labelled demo default is used
+if unset). Plain numbers are never stored or returned. No ownership check by SMS (simulated).
+
+#### `POST /phone-registry`
+
+```json
+{ "phone": "+234 801 234 4567", "rail": "mpesa", "wallet_address": "0x…b2", "account_ref": "optional", "consent": true }
+```
+
+`consent` must be exactly `true` (`400 CONSENT_REQUIRED`). Same number, same wallet: idempotent. Active number to a
+different wallet: `409 ALREADY_REGISTERED`.
+
+```json
+{ "simulated": true, "phone_hash": "9c1e…(64 hex)", "phone_masked": "+234•••••4567", "rail": "mpesa", "consented": true, "consent_at": "…" }
+```
+
+#### `DELETE /phone-registry/{phoneHash}` — withdraw consent
+
+The wallet and account reference are erased; the hash and timestamps stay for audit.
+`{ "simulated": true, "phone_hash": "…", "consented": false, "consent_withdrawn_at": "…" }`. `404` unknown hash.
+
+#### `POST /phone-registry/resolve`
+
+Body `{ "phone": "+2348012344567" }`. Never returns the wallet address.
+
+```json
+{ "simulated": true, "phone_masked": "+234•••••4567", "country": "NG", "registered": true, "consented": true, "rail": "mpesa", "phone_hash": "…" }
+```
+
+Unknown or withdrawn: `"registered": false, "consented": false, "rail": null`.
+
+#### `POST /send-to-phone`
+
+Body `{ "phone": "+254711000111", "amount": "100000000" }`. Resolves only; **does not move money**. The caller turns the
+payee into a payout. `404 NOT_REGISTERED` if unknown or consent withdrawn.
+
+```json
+{
+  "simulated": true, "note": "Resolved only. No money was sent; …", "phone_masked": "+254•••••0111",
+  "payee": { "payee_id": "phone_9c1e4a7b2d10", "name": "Phone +254•••••0111", "address": "0x…b2", "rail": "mpesa", "simulated": true, "verified_name": null, "phone_hash": "…" },
+  "amount": "100000000", "quote": { "…": "same as POST /payouts/quote" }
+}
+```
+
+### Reconciliation (M10)
+
+Built from the existing tables. Country comes from `reconciliation_meta` (set with `setMilestoneCountry`), else from the
+first mobile-money or bank leg, else `UNSPECIFIED`.
+
+#### `GET /reconciliation/milestones/{id}`
+
+```json
+{
+  "milestone_id": "c9fe85ad-…", "state": "paid_out", "country": "KE", "complete": true, "gaps": [],
+  "invoice": { "number": "INV-001", "invoice_ref": "INV-001", "title": "…", "amount": "100000000", "amount_usd_cents": 10000, "issued_at": "…", "provider_id": "prov-demo" },
+  "payment": { "funding_source": "card", "card_funded": true, "simulated_fiat_conversion": true, "fundings": [ { "id": 1, "source": "card", "reference": "…", "amount": "100000000", "escrow_tx": "0x…", "status": "funded", "at": "…" } ], "stripe_events": [] },
+  "escrow_tx": "0x…", "release_tx": "0x…",
+  "settlement_plan": { "id": 1, "decision": "paid_out", "proposal_hash": "…", "trace_id": "…", "reasons": [], "at": "…" },
+  "payouts": [ { "id": 1, "rail": "usdt", "amount": "60000000", "tx": "0x…", "status": "confirmed", "simulated": false } ],
+  "offchain_legs": [ { "simulated": true, "payout_id": 2, "adapter": "MobileMoneySim", "rail": "mpesa", "provider_ref": "SIM-MPESA-…", "status": "delivered", "reason": null, "fee": "450000", "local_amount": "3811.95", "currency": "KES", "country": "KE" } ],
+  "receipt": { "token_id": 1, "mint_tx": "0x…", "holder": "0x…", "chain_id": 11155111, "at": "…" },
+  "identity": { "match": true, "simulated": true },
+  "totals": { "gross": "100000000", "tax_reserve": "10000000", "paid_onchain": "90000000", "fees": "450000", "net_paid": "89550000", "fees_simulated": true }
+}
+```
+
+`complete` is true when there are no gaps and the receipt exists (or the milestone is refunded). Each gap is
+`{ code, severity: "problem" | "info", message, record: { table, id } }`. Codes: `FUNDING_FAILED`, `FUNDING_MISMATCH`,
+`ESCROW_TX_MISSING`, `PAID_NOT_RELEASED` (info), `RELEASED_NOT_SETTLED`, `PAYOUT_NOT_CONFIRMED`, `OFFCHAIN_LEG_MISSING`
+(info), `OFFCHAIN_IN_FLIGHT` (info), `OFFCHAIN_FAILED`, `SETTLED_NO_RECEIPT`, `IDENTITY_MISMATCH`. `404` unknown milestone.
+
+#### `GET /reconciliation?from=&to=&country=`
+
+`from` and `to` are ISO dates (a date-only `to` includes that whole day), matched on the invoice date. `country` is a code such as `KE`.
+
+```json
+{ "count": 1, "complete": 1, "items": [ { "milestone_id": "…", "invoice_number": "INV-001", "state": "paid_out", "country": "KE", "gross": "100000000", "complete": true, "gaps": [] } ] }
+```
+
+#### `GET /reconciliation/queue`
+
+Failed, disputed and suspicious items, each with a reason and the record it points to. Kinds: `funding_failed`,
+`funding_mismatch`, `dispute_or_chargeback`, `disputed_milestone`, `plan_rejected`, `plan_escalated`, `payout_failed`,
+`offchain_failed` (simulated), `identity_mismatch` (simulated).
+
+```json
+{ "count": 1, "items": [ { "kind": "offchain_failed", "reason": "off-chain leg failed after the on-chain payout confirmed: provider timeout (simulated)", "milestone_id": "…", "record": { "table": "offchain_payouts", "id": 2 }, "at": "…", "simulated": true } ] }
+```
+
+#### `GET /reconciliation/export.csv?from=&to=&country=`
+
+`Content-Type: text/csv`, CRLF lines, RFC 4180 quoting; text fields starting with `=`, `+`, `-` or `@` get a leading
+`'` (spreadsheet formula guard). Amounts are decimal USDT (6 places). The handler returns
+`{ "__raw": true, "contentType": "text/csv", "body": "…", "filename": "tethran-reconciliation.csv" }` and the HTTP layer sends the body as is.
+
+```
+invoice_number,invoice_date,country,funded_at,settled_at,gross,fee,tax_reserve,net_paid,currency,chain_id,escrow_tx,release_tx,payout_txs,receipt_id,receipt_mint_tx,trace_id,complete
+INV-001,2026-11-12,KE,2026-11-12T10:00:00.000Z,2026-11-12T10:00:00.000Z,100.000000,0.450000,10.000000,89.550000,USDT,11155111,0x…,0x…,0x…;0x…,1,0x…,trace-…,true
+```
+
+`fee` is the simulated off-chain rail fee; `net_paid` is the on-chain payouts minus that fee; `tax_reserve` comes from the approved plan.
