@@ -1,4 +1,6 @@
-import { Interface, JsonRpcProvider, MaxUint256, concat, id as keccakUtf8, isError, keccak256 } from "ethers";
+import {
+  AbiCoder, Interface, JsonRpcProvider, MaxUint256, concat, decodeBytes32String, id as keccakUtf8, isError, keccak256,
+} from "ethers";
 import { assertTestNetwork } from "./config";
 import type { IdempotencyRecord, IdempotencyStore } from "./idempotency";
 import type {
@@ -8,10 +10,14 @@ import type {
   EscrowState,
   MilestoneView,
   MintReceiptParams,
+  RotateSignersParams,
+  SetPayeesParams,
   SetPolicyParams,
   TxRef,
   TxStatus,
   VaultExecuteParams,
+  VaultState,
+  VaultWithdrawParams,
 } from "./types";
 
 /**
@@ -39,6 +45,23 @@ const ESCROW_ABI = [
   "function refund(bytes32 milestoneId)",
   "function refundApproved(bytes32 milestoneId)",
   "function milestone(bytes32 milestoneId) view returns (tuple(address funder, address client, address provider, address arbiter, address vault, uint256 amount, uint64 timeout, uint64 approvedAt, uint32 holdSeconds, bool cardFunded, uint8 state))",
+];
+const VAULT_ABI = [
+  "function execute(address to, uint256 amount, bytes32 proposalHash, bytes32 actionId, uint256 deadline, bytes agentSig, bytes policySig)",
+  "function setPolicy(uint256 version, uint256 perTxCap, uint256 dailyCap, uint256 minReserve, bytes operatorSig)",
+  "function setPayees(uint256 version, address[] payees, bool allowed, bytes operatorSig)",
+  "function rotateSigners(uint256 version, address agentSigner, address policySigner, bytes operatorSig)",
+  "function withdrawToProvider(uint256 version, uint256 amount, bytes operatorSig)",
+  "function check(address to, uint256 amount) view returns (bool ok, bytes32 reason)",
+  "function spentToday() view returns (uint256)",
+  "function policyVersion() view returns (uint256)",
+  "function perTxCap() view returns (uint256)",
+  "function dailyCap() view returns (uint256)",
+  "function minReserve() view returns (uint256)",
+  "function agentSigner() view returns (address)",
+  "function policySigner() view returns (address)",
+  "function operator() view returns (address)",
+  "function providerPayout() view returns (address)",
 ];
 const ERC20_ABI = [
   "function balanceOf(address) view returns (uint256)",
@@ -86,6 +109,35 @@ export class MilestoneMismatchError extends Error {
     super(`on-chain milestone does not match the request: ${fields.join(", ")}`);
   }
 }
+
+/**
+ * Id of one action of a proposal: keccak256(abi.encode(bytes32 proposalHash, uint256 actionIndex)).
+ * The vault lets each id be paid once.
+ */
+export function vaultActionId(proposalHash: string, actionIndex: number): string {
+  return keccak256(AbiCoder.defaultAbiCoder().encode(["bytes32", "uint256"], [proposalHash, actionIndex]));
+}
+
+/** EIP-712 types of the vault, as in docs/INTERFACES.md section 3. */
+export const VAULT_TYPES = {
+  Transfer: [
+    { name: "to", type: "address" }, { name: "amount", type: "uint256" },
+    { name: "proposalHash", type: "bytes32" }, { name: "actionId", type: "bytes32" },
+    { name: "deadline", type: "uint256" },
+  ],
+  SetPolicy: [
+    { name: "version", type: "uint256" }, { name: "perTxCap", type: "uint256" },
+    { name: "dailyCap", type: "uint256" }, { name: "minReserve", type: "uint256" },
+  ],
+  SetPayees: [
+    { name: "version", type: "uint256" }, { name: "payees", type: "address[]" }, { name: "allowed", type: "bool" },
+  ],
+  RotateSigners: [
+    { name: "version", type: "uint256" }, { name: "agentSigner", type: "address" },
+    { name: "policySigner", type: "address" },
+  ],
+  Withdraw: [{ name: "version", type: "uint256" }, { name: "amount", type: "uint256" }],
+} as const;
 
 /** On-chain milestone id: keccak256 of the UTF-8 milestone UUID. */
 export function milestoneIdToBytes32(milestoneId: string): string {
@@ -139,6 +191,7 @@ export class EvmChainClient implements ChainClient {
   private readonly estimateRetryMs: number;
   private readonly escrow = new Interface(ESCROW_ABI);
   private readonly erc20 = new Interface(ERC20_ABI);
+  private readonly vaultAbi = new Interface(VAULT_ABI);
   private chainChecked?: Promise<void>;
   private queue: Promise<unknown> = Promise.resolve();
   private senderAddress?: Promise<string>;
@@ -250,15 +303,84 @@ export class EvmChainClient implements ChainClient {
     return this.escrowCall("refundApproved", milestoneId, idempotencyKey);
   }
 
-  // ---- vault, guard, receipt: contracts not built yet ----
+  // ---- vault (the spending guard is part of it) ----
+  // Every vault action is authorised by signatures made elsewhere; this client only submits them.
 
-  async vaultExecute(_p: VaultExecuteParams, _idempotencyKey: string): Promise<TxRef> {
-    throw new NotBuiltYetError("vaultExecute", "the vault contract");
+  vaultExecute(p: VaultExecuteParams, idempotencyKey: string): Promise<TxRef> {
+    return this.send(
+      p.vault,
+      this.vaultAbi.encodeFunctionData("execute", [
+        p.to, BigInt(p.amount), p.proposalHash, p.actionId, p.deadline, p.agentSig, p.policySig,
+      ]),
+      idempotencyKey,
+    );
   }
 
-  async setPolicy(_p: SetPolicyParams, _idempotencyKey: string): Promise<TxRef> {
-    throw new NotBuiltYetError("setPolicy", "the SpendingGuard contract");
+  setPolicy(p: SetPolicyParams, idempotencyKey: string): Promise<TxRef> {
+    return this.send(
+      p.vault,
+      this.vaultAbi.encodeFunctionData("setPolicy", [
+        p.version, BigInt(p.perTxCap), BigInt(p.dailyCap), BigInt(p.minReserve), p.operatorSig,
+      ]),
+      idempotencyKey,
+    );
   }
+
+  setPayees(p: SetPayeesParams, idempotencyKey: string): Promise<TxRef> {
+    return this.send(
+      p.vault,
+      this.vaultAbi.encodeFunctionData("setPayees", [p.version, p.payees, p.allowed, p.operatorSig]),
+      idempotencyKey,
+    );
+  }
+
+  rotateVaultSigners(p: RotateSignersParams, idempotencyKey: string): Promise<TxRef> {
+    return this.send(
+      p.vault,
+      this.vaultAbi.encodeFunctionData("rotateSigners", [p.version, p.agentSigner, p.policySigner, p.operatorSig]),
+      idempotencyKey,
+    );
+  }
+
+  vaultWithdraw(p: VaultWithdrawParams, idempotencyKey: string): Promise<TxRef> {
+    return this.send(
+      p.vault,
+      this.vaultAbi.encodeFunctionData("withdrawToProvider", [p.version, BigInt(p.amount), p.operatorSig]),
+      idempotencyKey,
+    );
+  }
+
+  /** EIP-712 domain of one vault. Sign VAULT_TYPES against it. */
+  vaultDomain(vault: string) {
+    return { name: "TethranVault", version: "1", chainId: this.chainId, verifyingContract: vault };
+  }
+
+  async vaultState(vault: string): Promise<VaultState> {
+    await this.ready();
+    const num = async (fn: string) => ((await this.read(vault, this.vaultAbi, fn, []))[0] as bigint).toString();
+    const addr = async (fn: string) => (await this.read(vault, this.vaultAbi, fn, []))[0] as string;
+    return {
+      policyVersion: Number(await num("policyVersion")),
+      perTxCap: await num("perTxCap"),
+      dailyCap: await num("dailyCap"),
+      minReserve: await num("minReserve"),
+      spentToday: await num("spentToday"),
+      balance: await this.balance(vault),
+      agentSigner: await addr("agentSigner"),
+      policySigner: await addr("policySigner"),
+      operator: await addr("operator"),
+      providerPayout: await addr("providerPayout"),
+    };
+  }
+
+  /** Would the vault's limits let this transfer through right now? reason is "" when ok. */
+  async vaultCheck(vault: string, to: string, amount: string): Promise<{ ok: boolean; reason: string }> {
+    await this.ready();
+    const [ok, reason] = await this.read(vault, this.vaultAbi, "check", [to, BigInt(amount)]);
+    return { ok: ok as boolean, reason: ok ? "" : decodeBytes32String(reason as string) };
+  }
+
+  // ---- receipt: contract not built yet ----
 
   async mintReceipt(_p: MintReceiptParams, _idempotencyKey: string): Promise<TxRef> {
     throw new NotBuiltYetError("mintReceipt", "the ReceiptNFT contract");

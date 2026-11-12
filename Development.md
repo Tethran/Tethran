@@ -411,3 +411,31 @@ Interface gaps it found (not changed; for the lead):
 
 ### 7. Housekeeping
 - Helper agent commits were cherry-picked so history stays linear with plain messages; the worktrees are removed.
+
+---
+
+## 2026-11-12 — Session 008: vault review fixes, interfaces v0.6, vault wiring and Sepolia deploy, Alchemy, Gemini
+
+- Commit message reworded: "ignore local worktree directories" (history rewritten before any push).
+- Vault (lead review): comment, INTERFACES and README now say the operator key is effectively the owner and a
+  compromised operator can drain the vault; the fixed provider address only constrains withdrawToProvider.
+  Transfer typed data and execute() take a deadline (Policy Service signs now + 15 min). setPayees rejects the
+  zero address, the vault and the token. Documented: UTC-day cap boundary, immutable operator, pause by zero caps.
+  45 vault tests, 114 contract tests.
+- Policy Service: co-signatures carry the deadline; DUPLICATE_PROPOSAL only for a hash that has co-signatures or
+  is pending approval; a proposal whose earlier decision produced no signatures may be resubmitted. 108 tests.
+- INTERFACES v0.6: deadline; operator-is-owner; POST /v1/policy takes the vault's own operator signatures
+  (section 2b, off-chain-only fields still open); release_to_provider on attestation verify; duplicate rule.
+  The Policy Service code still uses its own policy typed data: not yet changed to v0.6 section 2b.
+- ChainClient: vaultExecute, setPolicy, setPayees, rotateVaultSigners, vaultWithdraw, vaultState, vaultCheck,
+  vaultActionId, VAULT_TYPES. 29 tests.
+- Sepolia: demo ProviderVault 0xeE59D8994620A9125641b36848A636E04e24feA8. prove:slice passed: 100 tUSDT released
+  into the vault, 40 paid with two co-signatures, 61 refused (OVER_PER_TX_CAP). Co-signatures made by the script
+  with test keys, not by the running Policy Service.
+- Alchemy: only the alchemy-api skill kept (agentic-gateway and the other bundled skills removed); .agents/ and
+  skills-lock.json git-ignored; RPC_URL_11155111 in .env points at the Alchemy Sepolia endpoint; chain-id check
+  kept; no endpoint or key in any output.
+- Gemini: model list fetched with the key. gemini-2.5-flash is retired for new users (404); gemini-3.8-flash
+  returned 503 high demand; gemini-3.5-flash returned schema-valid JSON and passed all nine eval scenarios
+  (1 attempt each). gemma-4-31b-it failed all nine (SCHEMA_INVALID, 626 s). Chosen: gemini-3.5-flash.
+- Not done: ReceiptNFT, treasury service, full slice through the services, Policy Service section 2b, Opik.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeError } from "ethers";
+import { keccak256, makeError } from "ethers";
 import {
   CannotResolveError,
   EvmChainClient,
@@ -12,6 +12,8 @@ import {
   InMemoryIdempotencyStore,
   MilestoneMismatchError,
   NotBuiltYetError,
+  VAULT_TYPES,
+  vaultActionId,
   SqliteIdempotencyStore,
   assertMilestoneMatches,
   loadChain,
@@ -395,10 +397,42 @@ test("refundApproved is sent to the escrow with its own selector", async () => {
 test("calls whose contracts are not built yet fail loudly", async () => {
   const { client } = setup();
   await assert.rejects(
-    client.vaultExecute({ vault: "", to: "", amount: "1", agentSig: "", policySig: "" }, "k"), NotBuiltYetError);
-  await assert.rejects(
-    client.setPolicy({ guard: "", version: 1, perTxCap: "1", dailyCap: "1", minReserve: "0", operatorSig: "" }, "k"),
+    client.mintReceipt({ milestoneId: "m", holder: ALICE, invoiceHash: "0x", settlementHash: "0x", amount: "1", releaseTx: "0x" }, "k"),
     NotBuiltYetError);
+});
+
+test("vault calls go to the vault address with the right function and arguments", async () => {
+  const { sender, client } = setup();
+  const VAULT = "0x00000000000000000000000000000000000000f1";
+  const h = "0x" + "ab".repeat(32);
+  const actionId = vaultActionId(h, 2);
+  // keccak256(abi.encode(bytes32, uint256)): the hash followed by the index as a 32-byte number
+  assert.equal(actionId, keccak256(h + (2).toString(16).padStart(64, "0")));
+
+  await client.vaultExecute({
+    vault: VAULT, to: BOB, amount: "5000000", proposalHash: h, actionId, deadline: 1_800_000_900,
+    agentSig: "0x11", policySig: "0x22",
+  }, "k1");
+  await client.setPolicy({ vault: VAULT, version: 1, perTxCap: "1", dailyCap: "2", minReserve: "3", operatorSig: "0x33" }, "k2");
+  await client.setPayees({ vault: VAULT, version: 2, payees: [BOB, ALICE], allowed: true, operatorSig: "0x44" }, "k3");
+  await client.rotateVaultSigners({ vault: VAULT, version: 3, agentSigner: ALICE, policySigner: BOB, operatorSig: "0x55" }, "k4");
+  await client.vaultWithdraw({ vault: VAULT, version: 4, amount: "7", operatorSig: "0x66" }, "k5");
+
+  assert.equal(sender.sent.length, 5);
+  assert.ok(sender.sent.every((t) => t.to === VAULT));
+  assert.equal(new Set(sender.sent.map((t) => t.data.slice(0, 10))).size, 5); // five different functions
+  assert.ok(sender.sent[0].data.includes(actionId.slice(2)));
+  assert.ok(sender.sent[0].data.includes((1_800_000_900).toString(16)));
+  // the same transfer again with the same key sends nothing; with a changed deadline it is a different call
+  await client.vaultExecute({
+    vault: VAULT, to: BOB, amount: "5000000", proposalHash: h, actionId, deadline: 1_800_000_900,
+    agentSig: "0x11", policySig: "0x22",
+  }, "k1");
+  assert.equal(sender.sent.length, 5);
+
+  assert.deepEqual(client.vaultDomain(VAULT), { name: "TethranVault", version: "1", chainId: 31337, verifyingContract: VAULT });
+  assert.deepEqual(VAULT_TYPES.Transfer.map((f) => f.name), ["to", "amount", "proposalHash", "actionId", "deadline"]);
+  assert.deepEqual(VAULT_TYPES.SetPayees.map((f) => f.type), ["uint256", "address[]", "bool"]);
 });
 
 test("assertMilestoneMatches: the backend's check after funding", () => {

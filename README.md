@@ -35,6 +35,16 @@ Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer tra
 - **The platform releases.** The treasury funds each escrow and is the only account that can release an
   approved milestone to the provider. If it never releases, it can take the funds back three days after the
   hold ends. The provider relies on the platform to release; the escrow does not force it.
+- **The vault operator is effectively the owner of the vault.** Each provider's vault has an operator key (the
+  provider or agency admin). That key can replace both co-signers, allow any payee and raise the caps, and then
+  pay any address. A compromised operator key can drain the vault. The two-signature rule and the on-chain
+  limits protect against a compromised agent or Policy Service and against mistakes; they do not protect
+  against the operator. Policy changes take effect at once. The fixed provider payout address only limits the
+  escape-hatch withdrawal.
+- **The operator address cannot be changed.** If that key is lost, the vault's limits, payees and signers are
+  frozen and the escape withdrawal is gone; if a co-signer key is then lost too, the funds are stranded.
+- **The daily cap resets at 00:00 UTC**, so up to twice the cap can leave within minutes around midnight.
+  To pause payouts, the operator signs a policy with zero caps.
 - **Stablecoin funding is a demo simplification.** A client paying in stablecoin sends it to a treasury deposit
   address and the treasury funds the escrow.
 - **Identity checks are simulated** and enforced by the backend before release, not on-chain.

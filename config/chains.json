@@ -9,7 +9,8 @@
       "confirmations": 1,
       "usdt": "0xf71881cb70FAeDa9106576f6DaE6B74676164f2b",
       "escrow": "0x55CCC2eC0eC0E031c155865230A41b4bA40EA513",
-      "receiptNft": ""
+      "receiptNft": "",
+      "demoVault": "0x61ce54f184BB7f93998F2a51aa6577Ef818C1691"
     },
     "sepolia": {
       "name": "Sepolia",
@@ -20,7 +21,8 @@
       "usdt": "0xE2D587DD9ad01C91DFf0baABc120192C516b9879",
       "escrow": "0x172AE76568ba8F83dc7584D2a161713200d9b278",
       "receiptNft": "",
-      "minTimeoutSeconds": 600
+      "minTimeoutSeconds": 600,
+      "demoVault": "0xeE59D8994620A9125641b36848A636E04e24feA8"
     },
     "baseSepolia": {
       "name": "Base Sepolia",

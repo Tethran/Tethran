@@ -1,4 +1,4 @@
-# Interfaces (v0.5)
+# Interfaces (v0.6)
 
 The contract between the two workstreams. Change only by agreement, and log the change in Development.md.
 Amounts are strings in base units (USDT: 6 decimals). IDs are UUIDs unless stated.
@@ -9,7 +9,10 @@ v0.4 (12 Nov 2026) applies the contract review: FUNDER role, `refundApproved`, t
 `BELOW_VAULT_RESERVE` reason code, the tax-reserve base, and the stricter idempotency rules in `ChainClient`.
 v0.5 (12 Nov 2026) merges the spending guard into the vault (`IProviderVault`, one contract per provider),
 makes the escrow's minimum timeout a constructor parameter, defines the co-signatures returned by the Policy
-Service, and adds the `LlmProvider` interface (section 7). Where the architecture document
+Service, and adds the `LlmProvider` interface (section 7).
+v0.6 (12 Nov 2026) adds a deadline to vault transfers, states plainly that the vault operator is effectively
+the owner, makes `POST /v1/policy` take the vault's own operator signatures, narrows the duplicate rule, and
+adds `release_to_provider` to attestation verification. Where the architecture document
 (`docs/03-system-design-architecture.md`, sections 3.2, 3.3 and 5.2) differs, this file wins.
 
 ## 0. State model
@@ -90,10 +93,10 @@ Off-chain milestone states (database) add `draft`, `in_review` and `paid_out`.
 |---|---|
 | `POST /v1/proposals` | Body: `{ proposal, trace_id }`. Returns `{ decision: "approved" \| "escalated" \| "rejected", reasons: string[], cosignatures?, proposal_hash }`. Only `approved` carries co-signatures (see 2a). `reasons` holds the reason codes below. |
 | `GET /v1/policy` | Active policy and version. |
-| `POST /v1/policy` | Body: `{ policy, version, operator_signature }`. Rejected unless the operator's signature verifies and version increments. Writes the on-chain limits and payees to the provider's vault. |
+| `POST /v1/policy` | Body: `{ policy, vault_actions }` (see 2b). The operator signs the vault's own typed-data actions, once per on-chain action; the Policy Service verifies them and only relays them to the vault. It has no typed data of its own. |
 | `GET /v1/approvals?status=pending` | Human approval queue. |
 | `POST /v1/approvals/{id}/decision` | Body: `{ decision: "approve" \| "reject", operator_signature }`. |
-| `POST /v1/attestations/verify` | Body: `{ milestone_id, type, signer, signature }`. Returns `{ valid: boolean }`. |
+| `POST /v1/attestations/verify` | Body: `{ milestone_id, type, signer, signature, release_to_provider }`. `type` is `client`, `provider` or `arbiter`; `release_to_provider` is the outcome that was signed. Returns `{ valid: boolean }`. |
 | `GET /v1/audit?milestone_id=` | Append-only decision log. |
 
 Policy document:
@@ -132,9 +135,40 @@ cosignatures: {
   action_id: string;      // bytes32: keccak256(abi.encode(bytes32 proposalHash, uint256 action_index))
   to: string;             // payee address resolved from payee_id through the payees table
   amount: string;         // base units
+  deadline: number;       // unix seconds: now + 15 minutes at signing; the vault refuses the transfer after it
   signature: string;      // Policy Service signature of the vault's Transfer typed data (section 3)
 }[]
 ```
+
+**Duplicates.** `DUPLICATE_PROPOSAL` applies to a proposal hash that already has co-signatures, or that is
+waiting in the approval queue. A proposal whose earlier decision produced no signatures (it was rejected, or it
+was approved but signing failed) may be submitted again and is evaluated afresh. If co-signatures expire
+unused, the same proposal cannot be re-signed; the agent must make a new proposal.
+
+### 2b. Policy changes
+
+```ts
+// POST /v1/policy
+{
+  policy: PolicyDocument,           // the full new policy document (above)
+  vault_actions: (                  // in version order; each one is exactly what the vault will receive
+    | { type: "setPolicy"; version: number; perTxCap: string; dailyCap: string; minReserve: string; operator_signature: string }
+    | { type: "setPayees"; version: number; payees: string[]; allowed: boolean; operator_signature: string }
+  )[]
+}
+```
+
+- Each `operator_signature` is the operator's EIP-712 signature of the vault's `SetPolicy` or `SetPayees` typed
+  data (section 3) for the provider's vault. The Policy Service checks that it recovers to the vault's operator
+  and that the versions continue from the vault's `policyVersion`, then relays each action unchanged.
+- The request is rejected unless the on-chain values in `policy` (`per_tx_cap`, `daily_cap`, `vault_min_reserve`,
+  and `payee_allowlist` resolved to addresses) equal what the signed actions set.
+- **Open:** the off-chain-only fields (`per_tx_soft_limit`, `min_tax_reserve_bps`, `confidence_threshold`,
+  `chargeback_hold_seconds`) are not covered by any vault signature. Until that is decided, a change to them is
+  accepted only together with a signed `setPolicy` action in the same request, and that is weaker than a
+  signature over the fields themselves.
+- Approval decisions (`POST /v1/approvals/{id}/decision`) keep an operator signature of their own, since they
+  have no on-chain action.
 
 `proposalHash` on-chain is `proposal_hash` (sha256, 32 bytes) with a `0x` prefix. The Policy Service signs only
 after its own decision is `approved` and written to the audit log. The agent signer module signs the same
@@ -240,13 +274,15 @@ interface IProviderVault {
 
   // Two signatures over the same Transfer typed data: agent signer module and Policy Service.
   // Anyone may submit. actionId is consumed once. Reverts with GuardBlocked(reason) if a limit is hit.
-  function execute(address to, uint256 amount, bytes32 proposalHash, bytes32 actionId,
+  // Refused after `deadline` (unix seconds), which is part of the signed data.
+  function execute(address to, uint256 amount, bytes32 proposalHash, bytes32 actionId, uint256 deadline,
                    bytes calldata agentSig, bytes calldata policySig) external;
   // Operator-signed. Every operator action carries version == policyVersion + 1 (one shared counter).
   function setPolicy(uint256 version, uint256 perTxCap, uint256 dailyCap, uint256 minReserve, bytes calldata operatorSig) external;
   function setPayees(uint256 version, address[] calldata payees, bool allowed, bytes calldata operatorSig) external;
   function rotateSigners(uint256 version, address agentSigner, address policySigner, bytes calldata operatorSig) external;
   // Escape hatch: pays only the provider's payout address fixed at deployment. Not subject to the limits.
+  // The fixed address constrains this function only; it does not limit the operator (see Keys).
   function withdrawToProvider(uint256 version, uint256 amount, bytes calldata operatorSig) external;
 
   // reason is bytes32(0) when ok, else one of the codes below as a short string
@@ -261,13 +297,21 @@ Rules:
   `block.timestamp / 86400`) plus `amount` `<= dailyCap`; `balance - amount >= minReserve`. Reasons:
   `PAYEE_NOT_ALLOWED`, `OVER_PER_TX_CAP`, `OVER_DAILY_CAP`, `BELOW_VAULT_RESERVE` (the same names as the Policy
   Service codes). A new vault has version 0 and all limits 0, so nothing can be paid until the operator sets a policy.
-- **Keys:** the agent signer and the Policy Service signer can only co-sign transfers. The operator can only
-  sign policy, payee, rotation and withdrawal updates. The three addresses are always different. No single key
-  moves funds to an arbitrary address; the operator alone can move funds only to the provider's fixed payout address.
-- **Operator:** the provider or agency admin (their own wallet), fixed at deployment. Policy changes take effect
-  at once.
+  The daily cap counts per UTC calendar day and resets at 00:00 UTC, so up to twice the cap can leave within
+  minutes around midnight. `setPayees` rejects the zero address, the vault and the token.
+- **Keys:** the agent signer and the Policy Service signer can only co-sign transfers; neither can move funds
+  alone or change policy. The three addresses are always different.
+- **The operator key is effectively the owner of the vault.** The operator can rotate both co-signers to keys
+  it controls, allow any payee and raise the caps, and then pay any address. **A compromised operator key can
+  drain the vault.** The two-signature rule and the limits protect against a compromised agent or Policy
+  Service and against mistakes, not against the operator. The fixed provider payout address constrains only
+  `withdrawToProvider`.
+- **Operator:** the provider or agency admin (their own wallet). Policy changes take effect at once. The
+  operator address is immutable: if that key is lost, policy, payees and signers can never change and the
+  escape withdrawal is gone; if a co-signer key is then lost too, the funds are stranded.
+- **Pause:** the operator signs `setPolicy` with zero caps.
 - **Typed data (EIP-712)**, domain: name `TethranVault`, version `1`, the chain ID and the vault address.
-  - `Transfer(address to,uint256 amount,bytes32 proposalHash,bytes32 actionId)`
+  - `Transfer(address to,uint256 amount,bytes32 proposalHash,bytes32 actionId,uint256 deadline)`
   - `SetPolicy(uint256 version,uint256 perTxCap,uint256 dailyCap,uint256 minReserve)`
   - `SetPayees(uint256 version,address[] payees,bool allowed)`
   - `RotateSigners(uint256 version,address agentSigner,address policySigner)`
@@ -313,9 +357,9 @@ interface ChainClient {
   release(milestoneId: string, idempotencyKey: string): Promise<TxRef>;
   refund(milestoneId: string, idempotencyKey: string): Promise<TxRef>;
   refundApproved(milestoneId: string, idempotencyKey: string): Promise<TxRef>;
-  // vault (ChainClient wiring for these is added after the vault contract is approved)
+  // vault
   vaultExecute(p: { vault: string; to: string; amount: string; proposalHash: string; actionId: string;
-                    agentSig: string; policySig: string }, idempotencyKey: string): Promise<TxRef>;
+                    deadline: number; agentSig: string; policySig: string }, idempotencyKey: string): Promise<TxRef>;
   setPolicy(p: { vault: string; version: number; perTxCap: string; dailyCap: string; minReserve: string;
                  operatorSig: string }, idempotencyKey: string): Promise<TxRef>;
   setPayees(p: { vault: string; version: number; payees: string[]; allowed: boolean; operatorSig: string },
