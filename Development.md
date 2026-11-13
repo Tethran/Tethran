@@ -1152,3 +1152,6 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   files are fetched once before recording and served from memory (blocked if that fails), so a stalled font cannot
   hold a page; the invoice email gets up to 2 minutes to show "sent" and never fails the film; a timestamped progress
   line per step and per wait (console and e2e-artifacts/film/progress.log).
+
+### Seed: a cold web app gets 4 minutes to start
+- After a reboot the dev server pre-bundles its dependencies and took longer than the 60 s the seed allowed ("web app did not start"). The web app now gets up to 4 minutes; the other services keep 60 s.

@@ -92,8 +92,8 @@ async function assertPortFree(url: string) {
   if (busy) throw new Error(`something is already listening at ${url}; stop it or set DEMO_POLICY_PORT / DEMO_BACKEND_PORT`);
 }
 
-async function waitHealthy(url: string, what: string) {
-  for (let i = 0; i < 120; i++) {
+async function waitHealthy(url: string, what: string, tries = 120) {
+  for (let i = 0; i < tries; i++) {
     try {
       const r = await fetch(url);
       if (r.ok) return;
@@ -212,7 +212,8 @@ async function startApp(children: ChildProcess[]) {
     return;
   }
   children.push(start("app", vite, { APP_PORT: port, VITE_TETHRAN_API_URL: BACKEND, VITE_TETHRAN_DEMO_SIGNER_URL: `http://127.0.0.1:${SIGNER_PORT}` }, true));
-  await waitHealthy(url, "web app");
+  // A cold dev server (first start after a reboot pre-bundles dependencies) can take minutes: up to 4.
+  await waitHealthy(url, "web app", 480);
   console.log(`Web app: ${url}`);
 }
 
