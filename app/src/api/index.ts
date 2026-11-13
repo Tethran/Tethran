@@ -6,7 +6,7 @@ import { demoSetLimits, demoSettle, demoSignerInfo, signAs, type Via } from "./w
 export { DEMO_LABEL, type Via } from "./wallet";
 import type {
   ApprovalItem, AuditEntry, Contract, Country, Decision, Dispute, IdentityHold, Invoice, Limits, Milestone, MilestoneStatus,
-  Proposal, Receipt, ReconRow, WalletReview,
+  Proposal, Receipt, ReconRow, WalletActivity, WalletReview,
 } from "./types";
 
 export { ApiError, API_BASE } from "./http";
@@ -72,6 +72,22 @@ function proposalFrom(raw: any, meta: { id: string; milestoneId: string; decisio
     approvalId: meta.approvalId ?? null,
     createdAt: meta.at,
   };
+}
+
+// ---------- demo wallet (Tethran wallet) ----------
+
+/** The demo's people, each with one Tethran wallet (a WDK wallet from the demo seed). */
+export const WALLET_USERS = [
+  { role: "client", name: "Demo Client Ltd", as: "client" },
+  { role: "payee_amara", name: "Amara Studio", as: "freelancer" },
+] as const;
+export type WalletUser = (typeof WALLET_USERS)[number]["role"];
+
+/** The demo wallet that is a milestone's client (it pays, approves and votes). Defaults to the demo client. */
+async function payerRole(milestoneId: string): Promise<string> {
+  const [m, w] = await Promise.all([get<any>(`/milestones/${milestoneId}`), get<any>("/wallets")]);
+  const hit = (w.wallets as any[]).find((x) => String(x.address).toLowerCase() === String(m.client_address).toLowerCase());
+  return hit?.role ?? "client";
 }
 
 const payoutTotal = (raw: any) => (Array.isArray(raw?.actions) ? raw.actions : []).filter(isPayout)
@@ -164,10 +180,11 @@ export const api = {
   getContract: async (id: string) => (await contracts()).find((c) => c.id === id) ?? null,
   getMilestone: milestoneDetail,
 
-  /** The client's own on-chain action, signed by the client's WDK wallet (demo custody). */
+  /** The client's own on-chain action, signed by the WDK wallet that is this milestone's client (demo custody). */
   setMilestoneStatus: async (id: string, status: MilestoneStatus) => {
     if (status !== "Approved" && status !== "Disputed") throw new ApiError("UNSUPPORTED", "Only approve or dispute can be done here.");
-    return post<{ tx_hash: string }>(`/wallets/client/escrow/${id}/${status === "Approved" ? "approve" : "dispute"}`);
+    const role = await payerRole(id);
+    return post<{ tx_hash: string }>(`/wallets/${role}/escrow/${id}/${status === "Approved" ? "approve" : "dispute"}`);
   },
   addEvidence: (id: string, text: string) => post(`/milestones/${id}/evidence`, { text }),
   /** Advisory evidence summary (a live model call; it never decides). Returned as plain text. */
@@ -185,17 +202,22 @@ ${label}: ${xs.join("; ")}` : "");
   },
   /**
    * Pays an invoice. Card, Apple Pay, Google Pay, PayPal and Cash App go through the SIMULATED checkout (signed
-   * events through the real webhook handler). Stablecoin pays from the client's WDK wallet after the review checks.
+   * events through the real webhook handler). "Tethran wallet" pays test USDT from the payer's demo wallet (the WDK
+   * wallet that is the milestone's client) after the review checks: the stablecoin-deposit path.
    */
   payInvoice: async (id: string, method = "card") => {
     const inv = await get<any>(`/invoices/${id}`);
     const milestoneId = inv.escrow_milestone_id;
     if ((CHECKOUT_METHOD[method] ?? "card") === "stablecoin") {
+      const role = await payerRole(milestoneId);
       const dep = await get<any>(`/milestones/${milestoneId}/deposit`);
       const transfer = { to: dep.deposit_address, amount: dep.amount, chain_id: dep.chain_id, payment_reference: `deposit:${milestoneId}` };
-      const review = await post<any>("/wallets/client/transfers/review", transfer);
-      if (!review.can_sign) throw new ApiError(review.blocked?.[0]?.code ?? "BLOCKED", "The payment can't be signed yet.");
-      const sent = await post<any>("/wallets/client/transfers", transfer);
+      const review = await post<any>(`/wallets/${role}/transfers/review`, transfer);
+      if (!review.can_sign) {
+        const b = review.blocked?.[0];
+        throw new ApiError(b?.code ?? "BLOCKED", b?.code === "INSUFFICIENT_BALANCE" ? "Not enough in your Tethran wallet. Add funds, or pay by card." : "The payment can't be signed yet.");
+      }
+      const sent = await post<any>(`/wallets/${role}/transfers`, transfer);
       await waitTransfer(transfer.payment_reference);
       await post(`/milestones/${milestoneId}/deposit/confirm`, { tx_hash: sent.tx_hash });
       return { paymentId: sent.tx_hash as string, simulated: false };
@@ -305,9 +327,14 @@ ${label}: ${xs.join("; ")}` : "");
   },
 
   /** Creates and signs a contract: the provider signs with their own wallet, the client with its WDK wallet. */
-  createContract: async (input: { clientName: string; clientEmail: string; country: Country; milestones: { title: string; amountUsd: number; criteria: string }[] }, via: Via = "wallet") => {
+  /**
+   * clientWallet: which demo wallet is the contract's client and pays it. "client" is Demo Client Ltd; "payee_amara"
+   * is the freelancer's own Tethran wallet (one person can be a freelancer and a client).
+   */
+  createContract: async (input: { clientName: string; clientEmail: string; country: Country; milestones: { title: string; amountUsd: number; criteria: string }[]; clientWallet?: WalletUser }, via: Via = "wallet") => {
+    const clientRole = input.clientWallet ?? "client";
     const [prov, wallets] = await Promise.all([provider(), get<any>("/wallets")]);
-    const client = wallets.wallets.find((w: any) => w.role === "client")?.address;
+    const client = wallets.wallets.find((w: any) => w.role === clientRole)?.address;
     if (!client) throw new ApiError("NO_CLIENT_WALLET", "The demo client wallet is not configured.");
     const due = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10);
     const c = await post<any>("/contracts", {
@@ -318,7 +345,7 @@ ${label}: ${xs.join("; ")}` : "");
     const typed = await get<any>(`/contracts/${c.id}/typed-data?party=provider`);
     const { signer, signature } = await signAs("provider", typed, via);
     await post(`/contracts/${c.id}/sign`, { party: "provider", signer, signature });
-    await post(`/wallets/client/contracts/${c.id}/sign`);
+    await post(`/wallets/${clientRole}/contracts/${c.id}/sign`);
     let firstInvoice: string | null = null;
     for (const m of (await get<any>(`/contracts/${c.id}/milestones`)).milestones) {
       const body = await post<any>(`/contracts/${c.id}/milestones/${m.id}/activate`);
@@ -328,9 +355,9 @@ ${label}: ${xs.join("; ")}` : "");
     return { contractId: c.id as string, invoiceId: firstInvoice };
   },
 
-  /** The client's own dispute vote (2-of-3), signed by the client's WDK wallet (demo custody). */
+  /** The client's own dispute vote (2-of-3), signed by the WDK wallet that is this milestone's client (demo custody). */
   clientVote: async (milestoneId: string, release: boolean) => {
-    const a = await post<any>(`/wallets/client/attestations/${milestoneId}`, { kind: "client", release_to_provider: release });
+    const a = await post<any>(`/wallets/${await payerRole(milestoneId)}/attestations/${milestoneId}`, { kind: "client", release_to_provider: release });
     return post<any>(`/arbiter/disputes/${milestoneId}/attestations`, { signer: a.signer, signature: a.signature, release_to_provider: release });
   },
 
@@ -377,6 +404,30 @@ ${label}: ${xs.join("; ")}` : "");
   transferStatus: (reference: string) => get<any>(`/wallets/transfers/${encodeURIComponent(reference)}`),
 
   /** The provider's own paid-out balance (its WDK payee wallet) in test USDT. */
+  /** Demo wallet of the person who pays this invoice (the milestone's client): name and balance. */
+  payerWallet: async (invoiceId: string): Promise<{ name: string; balance: number | null }> => {
+    const inv = await get<any>(`/invoices/${invoiceId}`);
+    const role = await payerRole(inv.escrow_milestone_id);
+    const name = WALLET_USERS.find((u) => u.role === role)?.name ?? role;
+    let balance: number | null = null;
+    try { balance = dollars((await get<any>(`/wallets/${role}/balance`)).usdt?.base_units); } catch { /* shown as unavailable */ }
+    return { name, balance };
+  },
+  /** Demo wallet: balance in test USDT (dollars, 1:1) or null when the wallet's RPC read fails. */
+  walletBalance: async (role: WalletUser): Promise<number | null> => {
+    try { return dollars((await get<any>(`/wallets/${role}/balance`)).usdt?.base_units); } catch { return null; }
+  },
+  /** Demo wallet: recent activity (top-ups, milestone payments, payouts received). */
+  walletActivity: async (role: WalletUser): Promise<WalletActivity[]> =>
+    ((await get<any>(`/wallets/${role}/activity`)).items as any[]).map((i) => ({
+      kind: i.kind, direction: i.direction, amount: dollars(i.amount), at: i.at, txHash: i.tx_hash ?? null, detail: i.detail, simulated: i.simulated === true,
+    })),
+  /**
+   * Demo wallet: add funds by SIMULATED card. The treasury mints test USDT (1 USD = 1 tUSDT). The key is made once per
+   * click, so a double submit is one top-up.
+   */
+  addFunds: (role: WalletUser, usd: number, key: string) =>
+    post<{ amount_usd_cents: number; tx_hash: string; repeated: boolean }>(`/wallets/${role}/fund`, { amount_usd_cents: Math.round(usd * 100), idempotency_key: key }),
   providerBalance: async () => dollars((await get<any>("/wallets/payee_amara/balance")).usdt?.base_units),
   provider: () => provider(),
   countryProfiles: async () => (await get<{ profiles: any[] }>("/country-profiles")).profiles,

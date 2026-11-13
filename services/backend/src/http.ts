@@ -198,15 +198,20 @@ export function createHttpServer(deps: HttpDeps): Server {
     ["GET", /^\/wallets\/([^/]+)\/balance$/, async ({ params }) => needWallets().balance(params[1])],
     ["GET", /^\/wallets\/([^/]+)\/recipients$/, async ({ params }) => needWallets().recipients(params[1])],
     ["POST", /^\/wallets\/([^/]+)\/recipients$/, async ({ params, body }) => needWallets().saveRecipient(params[1], body ?? {})],
+    // Demo wallet: add funds by SIMULATED card (DEMO_MODE only) and the wallet's recent activity.
+    ["POST", /^\/wallets\/([^/]+)\/fund$/, async ({ params, body }) => needWallets().fund(params[1], body ?? {})],
+    ["GET", /^\/wallets\/([^/]+)\/activity$/, async ({ params }) => needWallets().activity(params[1])],
     ["POST", /^\/wallets\/([^/]+)\/transfers\/review$/, async ({ params, body }) => needWallets().review(params[1], body ?? {})],
     ["POST", /^\/wallets\/([^/]+)\/transfers$/, async ({ params, body }) => needWallets().send(params[1], body ?? {})],
     ["POST", /^\/wallets\/([^/]+)\/escrow\/([^/]+)\/(approve|dispute)$/, async ({ params }) => needWallets().escrowAction(params[1], params[2], params[3])],
     ["POST", /^\/wallets\/([^/]+)\/attestations\/([^/]+)$/, async ({ params, body }) => needWallets().signAttestation(params[1], params[2], body ?? {})],
-    // The client signs a contract with its WDK wallet (demo custody). The provider signs with its own wallet.
-    ["POST", /^\/wallets\/client\/contracts\/([^/]+)\/sign$/, async ({ params }) => {
-      const typed = signingPayload(db, params[1], "client");
-      const s = await needWallets().signContractTypedData("client", typed as never);
-      return signContract(db, params[1], { party: "client", signer: s.signer, signature: s.signature }, deps.now());
+    // The client signs a contract with its WDK wallet (demo custody); any user wallet can be a contract's client (the
+    // freelancer paying for work from their own wallet). signContract checks the signer is the contract's client.
+    // The provider signs with its own wallet.
+    ["POST", /^\/wallets\/([^/]+)\/contracts\/([^/]+)\/sign$/, async ({ params }) => {
+      const typed = signingPayload(db, params[2], "client");
+      const s = await needWallets().signContractTypedData(params[1], typed as never);
+      return signContract(db, params[2], { party: "client", signer: s.signer, signature: s.signature }, deps.now());
     }],
     // What the app needs to create a contract for a provider: its payout address (the vault's fixed payee) and payees.
     ["GET", /^\/providers\/([^/]+)$/, async ({ params }) => {

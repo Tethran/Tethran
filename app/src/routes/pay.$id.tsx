@@ -15,7 +15,7 @@ export const Route = createFileRoute("/pay/$id")({
 
 const METHODS = [
   { id: "card", label: "Card", icon: CreditCard }, { id: "apple", label: "Apple Pay", icon: Smartphone }, { id: "google", label: "Google Pay", icon: Smartphone },
-  { id: "paypal", label: "PayPal", icon: Wallet }, { id: "cashapp", label: "Cash App Pay", icon: Wallet }, { id: "coin", label: "Stablecoin", icon: Coins },
+  { id: "paypal", label: "PayPal", icon: Wallet }, { id: "cashapp", label: "Cash App Pay", icon: Wallet }, { id: "coin", label: "Tethran wallet", icon: Coins },
 ];
 
 function PayPage() {
@@ -26,6 +26,9 @@ function PayPage() {
   const [error, setError] = useState<string | null>(null);
   const [simulated, setSimulated] = useState(true);
   useEffect(() => { api.getInvoice(id).then(setInv).catch((e) => { setInv(null); setError((e as Error).message); }); }, [id]);
+  // The payer's demo wallet balance, for the "Tethran wallet" choice (null when it cannot be read).
+  const [wallet, setWallet] = useState<{ name: string; balance: number | null } | null>(null);
+  useEffect(() => { api.payerWallet(id).then(setWallet).catch(() => setWallet(null)); }, [id, phase]);
   return (
     <main className="min-h-screen bg-background px-4 py-6">
       <div className="mx-auto max-w-md">
@@ -58,6 +61,14 @@ function PayPage() {
                 ))}
               </div>
             </fieldset>
+            {method === "coin" && (
+              <div data-testid="wallet-choice" className="mt-4 rounded-[var(--radius-input)] border border-dashed border-progress bg-progress/10 p-3 text-sm">
+                <p><span className="font-medium">Tethran wallet</span>{wallet && <> · {wallet.name}</>}: {wallet?.balance === null || wallet === null ? "balance unavailable" : <span data-testid="payer-balance">{usd(wallet.balance)} test USDT</span>} <SimTag label="Demo wallet" /></p>
+                {wallet && wallet.balance !== null && wallet.balance < inv.amount
+                  ? <p className="mt-1 text-danger">Not enough to pay {usd(inv.amount)}. <Link to="/app/wallet" className="underline">Add funds</Link>, or pay by card.</p>
+                  : <p className="mt-1 text-muted-foreground">Pays {usd(inv.amount)} in test USDT from your wallet into the escrow, after a review of network, recipient and fee.</p>}
+              </div>
+            )}
             <p className="mt-6 flex items-center gap-2 text-sm text-muted-foreground"><Lock className="size-4" aria-hidden />Money waits in escrow. Released only when you approve.</p>
             <PillButton variant="ink" size="lg" className="mt-6 w-full justify-between" disabled={phase === "paying"} onClick={async () => { setPhase("paying"); try { const r = await api.payInvoice(inv.id, method); setSimulated(r.simulated); setPhase("done"); } catch (e) { setPhase("idle"); toast.error((e as Error).message); } }}>
               {phase === "paying" ? "Confirming…" : `Confirm and pay ${usd(inv.amount + inv.fee)}`}

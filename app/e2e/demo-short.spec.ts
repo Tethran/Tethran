@@ -35,7 +35,7 @@ test("the short demo", async ({ page }) => {
   await snap("invoice");
 
   // 2. Client pays in test USDT from the WDK wallet; the escrow is funded on-chain.
-  await pay(page, invoiceId, "Stablecoin", async (confirm) => { await say("2 · The client pays in test USDT from their WDK wallet", 600); await wait(confirm); });
+  await pay(page, invoiceId, "Tethran wallet", async (confirm) => { await say("2 · The client pays in test USDT from their WDK wallet", 600); await wait(confirm); });
   await say("Funds are locked in the escrow contract on Sepolia");
   await snap("funds-locked");
 

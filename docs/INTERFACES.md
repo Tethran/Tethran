@@ -1,4 +1,4 @@
-# Interfaces (v0.10)
+# Interfaces (v0.11)
 
 The contract between the two workstreams. Change only by agreement, and log the change in Development.md.
 Amounts are strings in base units (USDT: 6 decimals). IDs are UUIDs unless stated.
@@ -20,7 +20,9 @@ or "reject". v0.9 (13 Nov 2026) adds `MILESTONE_NOT_RELEASED` and `ALREADY_SETTL
 cumulative over the Policy Service's own signed-proposal log, limits vault actions per request, and requires the
 platform token for release, refund and settle. v0.10 (13 Nov 2026) takes the milestone id from the authenticated
 request (`POST /v1/proposals` needs `x-internal-token` and a `milestone_id` in the body) and adds
-`MILESTONE_ID_MISMATCH`. Where the architecture document
+`MILESTONE_ID_MISMATCH`. v0.11 (13 Nov 2026) adds the demo wallet routes (`POST /wallets/{role}/fund`, DEMO_MODE
+only; `GET /wallets/{role}/activity`), lets any user wallet sign as a contract's client, and adds the wallet
+review code `INSUFFICIENT_BALANCE`. No Policy Service or contract change. Where the architecture document
 (`docs/03-system-design-architecture.md`, sections 3.2, 3.3 and 5.2) differs, this file wins.
 
 ## 0. State model
@@ -442,6 +444,8 @@ Vault addresses are per provider, so they live in the `vaults` table, not in cha
 Everything outside `ChainClient` stays chain-agnostic.
 
 ## 4. Backend API surface (web app ↔ backend)
+
+Demo wallet (v0.11, DEMO_MODE): `POST /wallets/{role}/fund` (simulated card top-up, idempotency key), `GET /wallets/{role}/activity`, `POST /wallets/{role}/contracts/{id}/sign`; paying from the wallet is the stablecoin deposit (`POST /wallets/{role}/transfers`, review code `INSUFFICIENT_BALANCE`). See docs/API.md.
 
 `POST /contracts`, `POST /contracts/{id}/sign`, `POST /milestones/{id}/invoice`, `GET /pay/{invoiceId}` (no-account pay link), `POST /webhooks/stripe` (verified, idempotent), `POST /milestones/{id}/evidence`, `POST /milestones/{id}/settle` (triggers the agent), `GET /milestones/{id}/timeline`, `POST /payouts/{id}/status`.
 

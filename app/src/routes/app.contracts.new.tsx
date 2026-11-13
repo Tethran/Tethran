@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Check, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { api } from "@/api";
+import { api, type WalletUser } from "@/api";
 import type { Country } from "@/api/types";
 import { SignChoice } from "@/components/app/SignChoice";
 import { PageHead } from "@/components/app/AppShell";
@@ -26,6 +26,8 @@ function Builder() {
   const [email, setEmail] = useState("client@example.com");
   const [busy, setBusy] = useState(false);
   const [country, setCountry] = useState("NG");
+  // Which demo wallet is the client: Demo Client Ltd, or the freelancer's own Tethran wallet (hiring someone else).
+  const [payer, setPayer] = useState<WalletUser>("client");
   const [ms, setMs] = useState<M[]>([{ title: "Logo design", amount: "400", criteria: "Three concepts, one refined" }]);
   const [signed, setSigned] = useState(false);
   const total = ms.reduce((a, m) => a + (Number(m.amount) || 0), 0);
@@ -41,6 +43,13 @@ function Builder() {
           <div className="grid gap-4">
             <label className="grid gap-1.5 text-sm font-medium">Client name<input className={input} value={client} onChange={(e) => setClient(e.target.value)} /></label>
             <label className="grid gap-1.5 text-sm font-medium">Client email<input className={input} type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+            <label className="grid gap-1.5 text-sm font-medium">Client pays from
+              <select aria-label="Client pays from" className={input} value={payer} onChange={(e) => { const v = e.target.value as WalletUser; setPayer(v); if (v === "payee_amara") setClient("Amara Studio"); else if (client === "Amara Studio") setClient("Demo Client Ltd"); }}>
+                <option value="client">Demo Client Ltd's Tethran wallet</option>
+                <option value="payee_amara">My own Tethran wallet (I am the client here)</option>
+              </select>
+              <span className="text-xs font-normal text-muted-foreground">Demo wallets on a test network. The client's wallet signs the contract, pays, and approves the work.</span>
+            </label>
             <label className="grid gap-1.5 text-sm font-medium">Your country profile
               <select className={input} value={country} onChange={(e) => setCountry(e.target.value)}><option value="NG">Nigeria</option><option value="KE">Kenya</option><option value="ZA">South Africa</option><option value="GH">Ghana</option></select>
             </label>
@@ -87,7 +96,7 @@ function Builder() {
           : <SignChoice label={busy ? "Signing…" : "Sign and send"} busy={!valid || busy} onSign={async (via) => {
             setBusy(true);
             try {
-              const r = await api.createContract({ clientName: client, clientEmail: email, country: country as Country, milestones: ms.map((m) => ({ title: m.title, amountUsd: Number(m.amount), criteria: m.criteria })) }, via);
+              const r = await api.createContract({ clientName: client, clientEmail: email, country: country as Country, milestones: ms.map((m) => ({ title: m.title, amountUsd: Number(m.amount), criteria: m.criteria })), clientWallet: payer }, via);
               toast.success("Contract signed by both parties", { description: via === "demo" ? "Provider: demo, signed with a test key. The invoice is ready to share." : "The invoice is ready to share.", icon: <Check className="size-4" /> });
               if (r.invoiceId) nav({ to: "/app/invoice/$id", params: { id: r.invoiceId } }); else nav({ to: "/app/dashboard" });
             } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }

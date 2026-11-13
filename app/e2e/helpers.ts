@@ -83,10 +83,29 @@ export async function createContract(page: Page, beforeSign?: () => Promise<void
 }
 
 /** Client: pays the invoice with the chosen method; resolves when the escrow is funded on-chain. */
-export async function pay(page: Page, invoiceId: string, method: "Card" | "Stablecoin", wait: (fn: () => Promise<void>) => Promise<void> = (fn) => fn()) {
+/** Demo wallet: add funds by simulated card on the Wallet screen; resolves when the balance shows the new amount. */
+export async function addFunds(page: Page, who: "client" | "payee_amara", usdAmount: number, wait: (fn: () => Promise<void>) => Promise<void> = (fn) => fn()) {
+  await page.goto("/app/wallet", { waitUntil: "domcontentloaded" });
+  await settled(page);
+  await expect(async () => {
+    await page.getByTestId(`wallet-user-${who}`).click({ timeout: 5_000 });
+    await expect(page.getByTestId(`wallet-user-${who}`)).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
+  }).toPass({ timeout: 60_000 });
+  await expect(page.getByTestId("wallet-balance")).not.toHaveText("…", { timeout: 2 * 60_000 });
+  const before = await page.getByTestId("wallet-balance").textContent();
+  await page.getByLabel("Amount to add").fill(String(usdAmount));
+  await page.getByTestId("add-funds").click();
+  await wait(() => expect(page.getByTestId("wallet-balance")).not.toHaveText(before ?? "", { timeout: 5 * 60_000 }));
+  await expect(page.getByTestId("wallet-activity")).toContainText("Added by card (simulated)");
+}
+
+export async function pay(page: Page, invoiceId: string, method: "Card" | "Tethran wallet", wait: (fn: () => Promise<void>) => Promise<void> = (fn) => fn()) {
   await page.goto(`/pay/${invoiceId}`);
   await settled(page);
-  if (method !== "Card") await page.locator("label", { hasText: method }).click();
+  if (method !== "Card") {
+    await page.locator("label", { hasText: method }).click();
+    await expect(page.getByTestId("payer-balance")).toBeVisible({ timeout: 2 * 60_000 });
+  }
   await page.getByRole("button", { name: /Confirm and pay/ }).click();
   await wait(() => expect(page.getByText("Funds locked.")).toBeVisible({ timeout: 10 * 60_000 }));
 }

@@ -140,6 +140,8 @@ const wallets = wdkWallets
       chain: { chainId: chainCfg.chainId, name: chainCfg.name, usdt: chainCfg.usdt, ready: () => chain.ready(), txStatus: (h) => chain.txStatus(h) },
       escrowFor: (role) => new EvmChainClient(chainCfg, wdkWallets!.sender(role), new SqliteIdempotencyStore(`${dir}/chain-idempotency.sqlite`), { provider }),
       attestationTypedData: (id, kind, release) => chain.attestationTypedData(id, kind, release),
+      // DEMO_MODE only: wallet top-ups by simulated card, minted by the treasury (1 USD = 1 test USDT).
+      ...(demoMode ? { faucet: { mint: (to: string, amount: string, key: string) => chain.mintTestUsdt(to, amount, key), waitConfirmed: (h: string) => chain.waitConfirmed(h) } } : {}),
     })
   : undefined;
 const operator = createOperator({ db, chain, treasury, policy: policyClient, now });

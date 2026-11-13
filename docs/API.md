@@ -424,14 +424,37 @@ seed. Every response says so in `custody`. Treasury, Policy Service, agent signe
 The fee is shown separately from the amount. `blocked` lists every reason it cannot be signed:
 `WRONG_NETWORK` (the app's `chain_id` is not the wallet's chain, or the RPC is not that chain),
 `DUPLICATE_PENDING` (same payment reference still pending), `ALREADY_SENT`, `BAD_ADDRESS`, `BAD_AMOUNT`,
-`NO_REFERENCE`, `WALLET_POLICY` (the WDK policy refuses it), `FEE_UNAVAILABLE`.
+`NO_REFERENCE`, `WALLET_POLICY` (the WDK policy refuses it), `FEE_UNAVAILABLE`, `INSUFFICIENT_BALANCE` (the wallet
+holds less test USDT than the amount; no fee is estimated).
 
 #### `POST /wallets/{role}/transfers` — sign and send (same body)
 
 Runs the same checks and refuses before signing: `409 WRONG_NETWORK`, `409 DUPLICATE_PENDING`, `409 ALREADY_SENT`,
-`409 WALLET_POLICY`, `400` bad input. Then WDK signs and sends:
+`409 WALLET_POLICY`, `409 INSUFFICIENT_BALANCE`, `400` bad input. Then WDK signs and sends:
 `{ "payment_reference": "…", "tx_hash": "0x178e…", "status": "pending", "fee": { … }, "custody": "…" }`.
 If the outcome is unknown (`502 SEND_UNKNOWN`), the reference stays blocked; it is never sent twice.
+
+#### Demo wallet (Tethran wallet): add funds and activity
+
+Every user of the demo has one Tethran wallet: the client (`client`, Demo Client Ltd) and the freelancer
+(`payee_amara`, Amara Studio, which also receives vault payouts). **Demo wallet, simulated:** test USDT on a test
+network, keys held by the one demo seed; not real money. Paying a milestone from the wallet is the stablecoin-deposit
+path above (review, then send to the deposit address, then `POST /milestones/{id}/deposit/confirm`), from the
+wallet that is the milestone's client. Any user wallet can be a contract's client (`POST /wallets/{role}/contracts/{id}/sign`),
+so the freelancer can pay for work from the same balance their payouts arrive in.
+
+- `POST /wallets/{role}/fund` — add funds by SIMULATED card. **DEMO_MODE only** (`403 DEMO_ONLY` otherwise). Body
+  `{ "amount_usd_cents": 50000, "idempotency_key": "topup-…" }`. The treasury mints test USDT to the wallet, 1 USD =
+  1 tUSDT (the same mint card funding uses). Answers `{ "amount": { "base_units": "500000000", … }, "tx_hash": "0x…",
+  "status": "confirmed", "repeated": false, "simulated": true, "method": "card (simulated)", "label": "Demo wallet. …" }`.
+  The same key again returns the first top-up with `"repeated": true` and mints nothing; two submits at once mint
+  once (`409 TOPUP_IN_PROGRESS` for the second). Errors: `400 NOT_A_USER_WALLET` (only `client` and `payee_amara`),
+  `400 BAD_AMOUNT` (whole cents, at least 100), `400 AMOUNT_TOO_LARGE` (over $10,000), `400 NO_IDEMPOTENCY_KEY`,
+  `409 IDEMPOTENCY_MISMATCH` (the key was used for another amount or wallet), `502 TOPUP_FAILED` (nothing recorded;
+  retry with the same key).
+- `GET /wallets/{role}/activity` — newest first, up to 30: `{ "items": [{ "kind": "top_up" | "send" | "payout",
+  "direction": "in" | "out", "amount": "…", "display": "500 tUSDT", "at": "…", "tx_hash": "0x…", "detail": "Added by
+  card (simulated)" | "Milestone payment into escrow" | "Milestone payout from the vault", "simulated"?: true }], "label": "…" }`.
 
 #### `GET /wallets/transfers/{payment_reference}` — reconnect: recheck the same transaction
 

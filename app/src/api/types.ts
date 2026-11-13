@@ -162,3 +162,15 @@ export interface WalletReview {
   paymentReference: string;
   custody: string;
 }
+
+/** One line of a demo wallet's recent activity. */
+export interface WalletActivity {
+  kind: "top_up" | "send" | "payout" | string;
+  direction: "in" | "out";
+  amount: number;
+  at: string;
+  txHash: string | null;
+  detail: string;
+  /** A simulated card top-up (test USDT minted by the treasury). */
+  simulated: boolean;
+}

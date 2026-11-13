@@ -50,11 +50,16 @@ the milestone page in demo mode; it runs in the same presenter process with the 
 
 1. **Freelancer: a contract.** Home → **Create contract**: one milestone, Continue three times, tick the box, **Sign and
    send** (demo key). The invoice opens.
-2. **Client: pays.** Open the invoice's pay link. **Stablecoin** pays test USDT from the client's WDK wallet after
-   a review (network, recipient, amount, fee); the treasury funds the escrow on-chain. **Card** (and Apple Pay,
+2. **Client: adds funds and pays.** Wallet → Demo Client Ltd → **Add $500 by card**: a simulated card top-up; the
+   treasury mints the same amount of test USDT to the client's Tethran demo wallet (1 USD = 1 test USDT). Then open
+   the invoice's pay link and choose **Tethran wallet**: the page shows the wallet's balance (or says it is not enough
+   and links to Add funds); it pays test USDT from the wallet after a review (network, recipient, amount, fee) and
+   the treasury funds the escrow on-chain. **Card** (and Apple Pay,
    Google Pay, PayPal, Cash App) is a simulated checkout: signed Stripe-format events through the real webhook
    handler. Card payments wait out a chargeback hold (10 minutes in the demo) before release.
 3. **Client: approves** on the milestone page (**Approve work**), signed by the client's WDK wallet on-chain.
+   (One person can be both: on a new contract, **Client pays from → My own Tethran wallet** makes the freelancer's
+   wallet, where payouts arrive, the client that pays and approves.)
 4. **Platform: Release and settle.** The escrow releases to the provider's vault; the Settlement Agent proposes
    a split; the Policy Service decides with reason codes and co-signs; the agent signer adds the second signature;
    the vault pays inside its on-chain limits; a soulbound receipt NFT is minted. The milestone page shows the

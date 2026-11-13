@@ -1,11 +1,12 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Gavel, LayoutGrid, Settings, ShieldCheck, Table2, Users } from "lucide-react";
+import { Gavel, LayoutGrid, Settings, ShieldCheck, Table2, Users, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 import { Logo, SimTag } from "@/components/tethran/ui";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { to: "/app/dashboard", label: "Home", icon: LayoutGrid },
+  { to: "/app/wallet", label: "Wallet", icon: Wallet },
   { to: "/app/operator", label: "Operator", icon: ShieldCheck },
   { to: "/app/arbiter", label: "Arbiter", icon: Gavel },
   { to: "/app/reconciliation", label: "Ledger", icon: Table2 },

@@ -19,6 +19,7 @@ import { Route as AppOperatorRouteImport } from './routes/app.operator'
 import { Route as AppReconciliationRouteImport } from './routes/app.reconciliation'
 import { Route as AppSendRouteImport } from './routes/app.send'
 import { Route as AppSettingsRouteImport } from './routes/app.settings'
+import { Route as AppWalletRouteImport } from './routes/app.wallet'
 import { Route as PayIdRouteImport } from './routes/pay.$id'
 import { Route as ReceiptIdRouteImport } from './routes/receipt.$id'
 import { Route as AppContractsNewRouteImport } from './routes/app.contracts.new'
@@ -75,6 +76,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
+const AppWalletRoute = AppWalletRouteImport.update({
+  id: '/wallet',
+  path: '/wallet',
+  getParentRoute: () => AppRoute,
+} as any)
 const PayIdRoute = PayIdRouteImport.update({
   id: '/pay/$id',
   path: '/pay/$id',
@@ -111,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/app/reconciliation': typeof AppReconciliationRoute
   '/app/send': typeof AppSendRoute
   '/app/settings': typeof AppSettingsRoute
+  '/app/wallet': typeof AppWalletRoute
   '/pay/$id': typeof PayIdRoute
   '/receipt/$id': typeof ReceiptIdRoute
   '/app/': typeof AppIndexRoute
@@ -127,6 +134,7 @@ export interface FileRoutesByTo {
   '/app/reconciliation': typeof AppReconciliationRoute
   '/app/send': typeof AppSendRoute
   '/app/settings': typeof AppSettingsRoute
+  '/app/wallet': typeof AppWalletRoute
   '/pay/$id': typeof PayIdRoute
   '/receipt/$id': typeof ReceiptIdRoute
   '/app': typeof AppIndexRoute
@@ -145,6 +153,7 @@ export interface FileRoutesById {
   '/app/reconciliation': typeof AppReconciliationRoute
   '/app/send': typeof AppSendRoute
   '/app/settings': typeof AppSettingsRoute
+  '/app/wallet': typeof AppWalletRoute
   '/pay/$id': typeof PayIdRoute
   '/receipt/$id': typeof ReceiptIdRoute
   '/app/': typeof AppIndexRoute
@@ -164,6 +173,7 @@ export interface FileRouteTypes {
     | '/app/reconciliation'
     | '/app/send'
     | '/app/settings'
+    | '/app/wallet'
     | '/pay/$id'
     | '/receipt/$id'
     | '/app/'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/app/reconciliation'
     | '/app/send'
     | '/app/settings'
+    | '/app/wallet'
     | '/pay/$id'
     | '/receipt/$id'
     | '/app'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/app/reconciliation'
     | '/app/send'
     | '/app/settings'
+    | '/app/wallet'
     | '/pay/$id'
     | '/receipt/$id'
     | '/app/'
@@ -285,6 +297,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/wallet': {
+      id: '/app/wallet'
+      path: '/wallet'
+      fullPath: '/app/wallet'
+      preLoaderRoute: typeof AppWalletRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/pay/$id': {
       id: '/pay/$id'
       path: '/pay/$id'
@@ -330,6 +349,7 @@ interface AppRouteChildren {
   AppReconciliationRoute: typeof AppReconciliationRoute
   AppSendRoute: typeof AppSendRoute
   AppSettingsRoute: typeof AppSettingsRoute
+  AppWalletRoute: typeof AppWalletRoute
   AppIndexRoute: typeof AppIndexRoute
   AppContractsNewRoute: typeof AppContractsNewRoute
   AppInvoiceIdRoute: typeof AppInvoiceIdRoute
@@ -343,6 +363,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppReconciliationRoute: AppReconciliationRoute,
   AppSendRoute: AppSendRoute,
   AppSettingsRoute: AppSettingsRoute,
+  AppWalletRoute: AppWalletRoute,
   AppIndexRoute: AppIndexRoute,
   AppContractsNewRoute: AppContractsNewRoute,
   AppInvoiceIdRoute: AppInvoiceIdRoute,

@@ -1,4 +1,4 @@
-// Reason codes in plain language. docs/INTERFACES.md v0.10 is the source of truth for the Policy Service codes;
+// Reason codes in plain language. docs/INTERFACES.md v0.11 is the source of truth for the Policy Service codes;
 // this file only explains them. Codes from the wallet layer, identity check and reconciliation follow docs/API.md.
 
 export interface ReasonInfo { title: string; plain: string; kind: "rejected" | "escalated" | "blocked" | "info" }
@@ -35,6 +35,7 @@ const REASONS: Record<string, ReasonInfo> = {
   NO_PAYOUTS: { kind: "escalated", title: "Pays nobody", plain: "The plan moves no money. Request a new plan or reject it; it cannot be approved." },
   // ---- Wallet review and sending (docs/API.md) ----
   WRONG_NETWORK: { kind: "blocked", title: "Wrong network", plain: "Your wallet is on a different network from this payment. Switch before signing." },
+  INSUFFICIENT_BALANCE: { kind: "blocked", title: "Not enough in the wallet", plain: "Your Tethran demo wallet holds less test USDT than this payment. Add funds, or pay by card." },
   DUPLICATE_PENDING: { kind: "blocked", title: "Already sending", plain: "The same payment is still on its way. It will not be sent twice." },
   ALREADY_SENT: { kind: "blocked", title: "Already sent", plain: "This payment was already sent. It will not be sent again." },
   BAD_ADDRESS: { kind: "blocked", title: "Bad address", plain: "The recipient address is not valid." },

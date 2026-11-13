@@ -25,6 +25,11 @@ export function migrateWallets(db: DatabaseSync) {
     CREATE TABLE IF NOT EXISTS saved_recipients (
       role TEXT NOT NULL, name TEXT NOT NULL, address TEXT NOT NULL, PRIMARY KEY (role, address)
     );
+    -- Demo wallet top-ups (SIMULATED card): one row per idempotency key, so a repeated submit mints once.
+    CREATE TABLE IF NOT EXISTS wallet_topups (
+      idempotency_key TEXT PRIMARY KEY, role TEXT NOT NULL, address TEXT NOT NULL, amount TEXT NOT NULL,
+      amount_usd_cents INTEGER NOT NULL, tx_hash TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL
+    );
   `);
 }
 
@@ -36,7 +41,18 @@ export interface WalletLayerDeps {
   /** Escrow calls signed by a role's WDK wallet (approve, dispute). */
   escrowFor?: (role: WalletRole) => { approve(id: string, key: string): Promise<{ txHash: string }>; dispute(id: string, key: string): Promise<{ txHash: string }>; waitConfirmed(h: string): Promise<void> };
   attestationTypedData?: (milestoneId: string, kind: 0 | 1 | 2, release: boolean) => { domain: any; types: any; message: any };
+  /**
+   * Demo wallet top-ups (DEMO_MODE only): the treasury mints test USDT 1 USD = 1 tUSDT, the same mint card funding
+   * uses. Absent outside demo mode, so the route refuses.
+   */
+  faucet?: { mint(to: string, amount: string, key: string): Promise<{ txHash: string }>; waitConfirmed(h: string): Promise<void> };
 }
+
+/** The demo's people: each has one Tethran wallet (demo wallet). The client and the freelancer (Amara Studio). */
+export const WALLET_USERS = { client: "Demo Client Ltd (client)", payee_amara: "Amara Studio (freelancer)" } as const;
+/** Largest single top-up, in cents ($10,000). */
+export const MAX_TOPUP_CENTS = 1_000_000;
+export const DEMO_WALLET_LABEL = "Demo wallet. Simulated: test USDT on a test network, keys held by the demo seed; not real money.";
 
 const usdtString = (base: bigint) => {
   const whole = base / 1_000_000n;
@@ -71,6 +87,13 @@ export function createWalletLayer(deps: WalletLayerDeps) {
       if (p && (p.status === "pending" || p.status === "unknown")) blocks.push({ code: "DUPLICATE_PENDING", detail: `a send with this payment reference is still pending (${p.tx_hash ?? "no hash yet"})` });
       if (p && p.status === "confirmed") blocks.push({ code: "ALREADY_SENT", detail: `this payment reference was already paid (${p.tx_hash})` });
     }
+    // Not enough test USDT: refused before signing (an estimate would only fail with an unclear error).
+    if (typeof req.amount === "string" && /^[0-9]+$/.test(req.amount) && BigInt(req.amount) > 0n) {
+      const have = await wallets.account(r).then((a) => a.getTokenBalance(chain.usdt)).catch(() => null);
+      if (have !== null && have < BigInt(req.amount)) {
+        blocks.push({ code: "INSUFFICIENT_BALANCE", detail: `the wallet holds ${usdtString(have)} tUSDT; this needs ${usdtString(BigInt(req.amount))}. Add funds first.` });
+      }
+    }
     return blocks;
   }
 
@@ -93,6 +116,73 @@ export function createWalletLayer(deps: WalletLayerDeps) {
       };
     },
 
+    /**
+     * Add funds to a demo wallet by SIMULATED card: the treasury mints test USDT (1 USD = 1 tUSDT) to the wallet.
+     * DEMO_MODE only. The idempotency key makes a repeated submit return the first top-up instead of minting again.
+     */
+    async fund(r: unknown, body: { amount_usd_cents?: unknown; idempotency_key?: unknown }) {
+      const w = role(r);
+      if (!deps.faucet) throw new ApiError(403, "adding funds is a demo-only simulation (DEMO_MODE)", "DEMO_ONLY");
+      if (!(w in WALLET_USERS)) throw new ApiError(400, `"${w}" is not a user wallet`, "NOT_A_USER_WALLET");
+      const cents = body.amount_usd_cents;
+      if (typeof cents !== "number" || !Number.isSafeInteger(cents) || cents < 100) throw new ApiError(400, "amount_usd_cents must be a whole number of cents, at least 100", "BAD_AMOUNT");
+      if (cents > MAX_TOPUP_CENTS) throw new ApiError(400, `at most ${MAX_TOPUP_CENTS / 100} USD per top-up`, "AMOUNT_TOO_LARGE");
+      const key = body.idempotency_key;
+      if (typeof key !== "string" || !/^[A-Za-z0-9:_-]{8,80}$/.test(key)) throw new ApiError(400, "idempotency_key is required (8 to 80 letters, digits, : _ -)", "NO_IDEMPOTENCY_KEY");
+      const view = (row: any, repeated: boolean) => ({
+        role: row.role, address: row.address, amount: { base_units: row.amount, display: `${usdtString(BigInt(row.amount))} tUSDT (test token)` },
+        amount_usd_cents: row.amount_usd_cents, tx_hash: row.tx_hash, status: row.status, repeated, simulated: true,
+        method: "card (simulated)", label: DEMO_WALLET_LABEL,
+      });
+      const existing = db.prepare("SELECT * FROM wallet_topups WHERE idempotency_key = ?").get(key) as any;
+      if (existing) {
+        if (existing.role !== w || existing.amount_usd_cents !== cents) throw new ApiError(409, "this idempotency key was used for a different top-up", "IDEMPOTENCY_MISMATCH");
+        if (existing.status === "pending") throw new ApiError(409, "this top-up is still in progress", "TOPUP_IN_PROGRESS");
+        return view(existing, true);
+      }
+      const address = await wallets.address(w);
+      const amount = (BigInt(cents) * 10_000n).toString(); // 1 cent = 0.01 tUSDT = 10,000 base units
+      // Claim the key before minting, so two submits at once cannot both mint.
+      const claimed = db.prepare("INSERT OR IGNORE INTO wallet_topups (idempotency_key, role, address, amount, amount_usd_cents, tx_hash, status, created_at) VALUES (?, ?, ?, ?, ?, NULL, 'pending', ?)")
+        .run(key, w, address, amount, cents, deps.now().toISOString());
+      if (claimed.changes !== 1) throw new ApiError(409, "this top-up is still in progress", "TOPUP_IN_PROGRESS");
+      try {
+        const tx = await deps.faucet.mint(address, amount, `wallet-topup:${key}`);
+        await deps.faucet.waitConfirmed(tx.txHash);
+        db.prepare("UPDATE wallet_topups SET tx_hash = ?, status = 'confirmed' WHERE idempotency_key = ?").run(tx.txHash, key);
+      } catch {
+        // Nothing is recorded; a retry with the same key reaches the chain client's own idempotency key, which stops
+        // a second mint if the first one did land.
+        db.prepare("DELETE FROM wallet_topups WHERE idempotency_key = ?").run(key);
+        throw new ApiError(502, "the top-up did not complete; try again with the same key", "TOPUP_FAILED");
+      }
+      return view(db.prepare("SELECT * FROM wallet_topups WHERE idempotency_key = ?").get(key), false);
+    },
+
+    /** Recent activity of a demo wallet: top-ups, sends (milestone payments) and vault payouts received, newest first. */
+    async activity(r: unknown) {
+      const w = role(r);
+      const address = getAddress(await wallets.address(w));
+      const items: { kind: string; direction: "in" | "out"; amount: string; display: string; at: string; tx_hash: string | null; detail: string; simulated?: boolean }[] = [];
+      const fmt = (a: string) => `${usdtString(BigInt(a))} tUSDT`;
+      for (const t of db.prepare("SELECT * FROM wallet_topups WHERE role = ? AND status = 'confirmed'").all(w) as any[]) {
+        items.push({ kind: "top_up", direction: "in", amount: t.amount, display: fmt(t.amount), at: t.created_at, tx_hash: t.tx_hash, detail: "Added by card (simulated)", simulated: true });
+      }
+      for (const t of db.prepare("SELECT * FROM wallet_transfers WHERE role = ? AND status IN ('pending', 'confirmed')").all(w) as any[]) {
+        const ref = String(t.payment_reference);
+        items.push({ kind: "send", direction: "out", amount: t.amount, display: fmt(t.amount), at: t.created_at, tx_hash: t.tx_hash, detail: ref.startsWith("deposit:") ? "Milestone payment into escrow" : "Sent" });
+      }
+      try {
+        for (const p of db.prepare("SELECT amount, tx, status, at, to_address FROM payouts WHERE status = 'confirmed'").all() as any[]) {
+          if (typeof p.to_address === "string" && isAddress(p.to_address) && getAddress(p.to_address) === address) {
+            items.push({ kind: "payout", direction: "in", amount: p.amount, display: fmt(p.amount), at: p.at, tx_hash: p.tx ?? null, detail: "Milestone payout from the vault" });
+          }
+        }
+      } catch { /* no payouts table (wallet-only setups) */ }
+      items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      return { role: w, address, items: items.slice(0, 30), label: DEMO_WALLET_LABEL };
+    },
+
     saveRecipient(r: unknown, body: { name?: unknown; address?: unknown }) {
       const w = role(r);
       if (typeof body.name !== "string" || body.name.length === 0 || body.name.length > 80) throw new ApiError(400, "name is required (max 80 chars)");
@@ -110,7 +200,7 @@ export function createWalletLayer(deps: WalletLayerDeps) {
       const w = role(r);
       const blocks = await checks(w, body as never);
       let fee: bigint | null = null;
-      if (!blocks.some((b) => b.code === "BAD_ADDRESS" || b.code === "BAD_AMOUNT")) {
+      if (!blocks.some((b) => b.code === "BAD_ADDRESS" || b.code === "BAD_AMOUNT" || b.code === "INSUFFICIENT_BALANCE")) {
         try {
           // A fee estimate is read-only, so it is asked again if a lagging RPC node has not seen a new balance yet.
           const quote = () => wallets.account(w).then((acc) => acc.quoteTransfer({ token: chain.usdt, recipient: getAddress(body.to as string), amount: BigInt(body.amount as string) }));

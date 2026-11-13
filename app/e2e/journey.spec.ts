@@ -1,7 +1,8 @@
 // The whole demo, one take, against the live demo on Sepolia (test network). Signing uses the DEMO_MODE
 // "Sign with demo key" buttons (labelled in the UI); the client acts through its WDK wallet.
 //   Freelancer: creates and signs a contract -> invoice
-//   Client:     pays the invoice in test USDT from the WDK wallet -> escrow funded on-chain -> approves on-chain
+//   Client:     adds funds to the Tethran wallet (simulated card) -> pays the invoice from the wallet (test USDT) ->
+//               escrow funded on-chain -> approves on-chain
 //   Clean delivery: the platform releases the escrow to the vault and settles: the agent proposes, the Policy
 //               Service decides (with its reasons), the vault pays, the receipt is minted; the receipt page verifies it
 //   Card:       a second contract paid by card (simulated checkout) -> funded on-chain, chargeback hold shown
@@ -10,7 +11,7 @@
 //   Arbiter:    votes on the dispute; the client votes the same way -> the escrow decides on-chain
 //   Handled failure: send on the wrong network is blocked; the duplicate send is refused
 import { expect, test, type Page } from "@playwright/test";
-import { api, caption, createContract, pay, settled, shot } from "./helpers";
+import { addFunds, api, caption, createContract, pay, settled, shot } from "./helpers";
 
 const step = (name: string, fn: () => Promise<void>) => test.step(name, fn);
 
@@ -32,9 +33,12 @@ test("the whole journey", async ({ page }) => {
     await shot(page, "journey-03-invoice");
   });
 
-  await step("Client: pays in test USDT from the WDK wallet (the escrow is funded on-chain)", async () => {
-    await pay(page, invoiceId, "Stablecoin");
-    await caption(page, "Client: paid in test USDT from the WDK wallet; funds locked in escrow");
+  await step("Client: adds funds to the Tethran wallet (simulated card), then pays from the wallet (escrow funded on-chain)", async () => {
+    await addFunds(page, "client", 500);
+    await caption(page, "Client: $500 added to the Tethran demo wallet by simulated card (test USDT minted)");
+    await shot(page, "journey-04a-wallet-funded");
+    await pay(page, invoiceId, "Tethran wallet");
+    await caption(page, "Client: paid from the Tethran wallet; funds locked in escrow");
     await shot(page, "journey-04-funds-locked");
   });
 

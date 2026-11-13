@@ -47,6 +47,13 @@ state; `npm run seed -- --retry-failed` (with `DEMO_MODE=1`) reruns only failed 
 mode defaults to `replay` (saved proposals, labelled "Replay"); `AGENT_MODE=live+replay` calls the model and falls
 back to replay. The demo, step by step, is in [docs/DEMO.md](docs/DEMO.md).
 
+**Tethran wallet (demo wallet).** Each user, the client (Demo Client Ltd) and the freelancer (Amara Studio), has one
+Tethran wallet showing a test USDT balance (the Wallet screen). **Add funds** is a simulated card top-up: the treasury
+mints the same amount of test USDT (1 USD = 1 test USDT; DEMO_MODE only). At checkout the payer chooses **Tethran
+wallet** (pay from the balance) or card. Payouts arrive in the freelancer's wallet, and a contract can name the
+freelancer's own wallet as its client, so one person can be both. Labelled "Demo wallet" and "Simulated": one demo
+seed holds the keys; not real custody, not real money.
+
 **Demo-key buttons.** In the app, each operator, arbiter and provider action offers **Sign with demo key** (DEMO_MODE
 only: one click, signed with that role's test key by the demo signer in the presenter's process, labelled "Demo:
 signed with a test key") next to **Sign with your wallet** (the real path, the person's own wallet extension). The
@@ -88,6 +95,7 @@ client wallet (WDK) ──deposit──> treasury ──createAndFund──> Mil
 | x402 data purchases | EIP-3009 payment settled on-chain in TestUSDT | The data served (corridor rules from country profiles, demo FX rates) |
 | Tax rates in country profiles | | Unverified placeholders, labelled |
 | Wallet custody | WDK wallets sign every user transaction | One demo test seed holds all user wallets |
+| Tethran wallet top-ups | Test USDT minted on-chain to the wallet; paying from the wallet is the on-chain deposit path | The card (no card is charged); 1 USD = 1 test USDT |
 | Demo-key signing | The same signatures and checks as the wallet path | The keys are test keys in the presenter's process (DEMO_MODE only) |
 | Agent (seed default) | Live model calls with `AGENT_MODE=live` or `live+replay` | `replay`: saved proposals, labelled |
 
@@ -123,8 +131,8 @@ cd contracts && npm test                  # 122 contract tests
 cd services/chain && npm test             # 40: ChainClient, WDK signing policy, RPC and WDK failover
 cd services/policy && npm test            # 159: Policy Service rules, co-signing, HTTP API
 cd services/llm && npm test               # 61: providers, agent, guards (offline)
-cd services/backend && npm test           # 131: treasury, settlement, wallets, x402, reconciliation, ...
-cd app && npm test                        # 9: app API mapping and reason-code parity
+cd services/backend && npm test           # 139: treasury, settlement, wallets (incl. demo wallet), x402, reconciliation, ...
+cd app && npm test                        # 13: app API mapping, demo wallet, reason-code parity
 cd app && npm run e2e:demo-short          # Playwright against the live demo (also e2e:tour, e2e:journey)
 cd services/backend && CHAIN=sepolia npm run slice   # one milestone through the real services on Sepolia
 cd services/llm && npm run eval:agent     # the nine scenarios against the live model, traced in Opik
