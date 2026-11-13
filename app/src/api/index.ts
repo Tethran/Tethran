@@ -291,6 +291,14 @@ ${label}: ${xs.join("; ")}` : "");
       };
     }));
   },
+  /** The Emails view: every invoice email (status, provider message id, time). */
+  emails: async () => {
+    const e = await get<any>("/emails");
+    return {
+      configured: e.configured === true, provider: e.provider ?? null, dailyCap: e.daily_cap ?? 0, sentToday: e.sent_today ?? 0,
+      items: (e.items as any[]).map((m) => ({ id: m.id as number, to: String(m.to), subject: String(m.subject), status: String(m.status), providerMessageId: m.provider_message_id ?? null, error: m.error ?? null, createdAt: String(m.created_at) })),
+    };
+  },
   /** A role's notifications (newest first) and its unread count. */
   notifications: (role: string) => get<{ unread: number; items: { id: number; type: string; title: string; body: string; link: string; created_at: string; read_at: string | null }[] }>(`/notifications?recipient=${encodeURIComponent(role)}`),
   markNotificationRead: (id: number, role: string) => post(`/notifications/${id}/read`, { recipient: role }),

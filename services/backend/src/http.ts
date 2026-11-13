@@ -1,5 +1,6 @@
 // Backend HTTP API (node:http, JSON). Routes are documented in docs/API.md.
 // Errors are { error, code? } with a safe message: no stack traces, URLs or key material.
+import type { Mailer } from "./email";
 import type { FxService } from "./fx";
 import { createNotifications, type Notifications } from "./notifications";
 import { createEvidenceStore, MAX_EVIDENCE_BODY, type EvidenceStore } from "./evidence";
@@ -51,6 +52,12 @@ export interface HttpDeps {
   operator?: Operator;
   /** Indicative exchange rates (fx.ts) for the app's own screens and payout quotes only; never for a paid endpoint. */
   fx?: FxService;
+  /** Invoice email (Resend REST, or the outbox when not configured). */
+  mailer?: Mailer;
+  /** Invoice creations allowed per IP per minute (default 30). */
+  invoiceRateLimitPerMin?: number;
+  /** Trust X-Forwarded-For for the client IP (only behind our own proxy). */
+  trustProxy?: boolean;
   /** Notifications per role. Created from db when not given (links under publicBaseUrl, i.e. APP_BASE_URL). */
   notifications?: Notifications;
   /** Delivery evidence store (notes, links, files on the data disk). Created from db when not given. */
@@ -94,6 +101,34 @@ export function createHttpServer(deps: HttpDeps): Server {
   // Created on first use (some servers in tests have no database).
   let ev: EvidenceStore | undefined;
   const evidenceStore = () => (ev ??= deps.evidence ?? createEvidenceStore(db));
+  // Per-IP rate limit on invoice creation: a fixed one-minute window per address.
+  const hits = new Map<string, { at: number; n: number }>();
+  const limitInvoices = (req: IncomingMessage) => {
+    const fwd = deps.trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim() : "";
+    const ip = fwd || req.socket.remoteAddress || "unknown";
+    const now = Date.now();
+    const h = hits.get(ip);
+    if (!h || now - h.at > 60_000) { hits.set(ip, { at: now, n: 1 }); return; }
+    if (++h.n > (deps.invoiceRateLimitPerMin ?? 30)) throw new ApiError(429, "too many invoices from this address; try again in a minute", "RATE_LIMITED");
+  };
+  // The invoice email: the pay link to the contract's client email. Fire and forget: its outcome is in the Emails view.
+  const emailInvoice = (invoiceId: string) => {
+    if (!deps.mailer) return;
+    try {
+      const inv = db.prepare("SELECT i.id, i.number, i.provider_name, i.client_name, i.total_cents, i.contract_id, i.milestone_id FROM invoices i WHERE i.id = ?").get(invoiceId) as any;
+      const c = inv && (db.prepare("SELECT terms_json FROM contracts WHERE id = ?").get(inv.contract_id) as { terms_json: string } | undefined);
+      const terms = c ? JSON.parse(c.terms_json) : null;
+      const to = terms?.client_email;
+      if (!inv || typeof to !== "string" || !to) return;
+      const title = (db.prepare("SELECT title FROM contract_milestones WHERE id = ?").get(inv.milestone_id) as { title: string } | undefined)?.title ?? "Milestone";
+      void deps.mailer.sendInvoice({
+        invoiceId: inv.id, number: inv.number, to, senderName: inv.provider_name, clientName: inv.client_name, amountCents: inv.total_cents,
+        description: title, payUrl: `${deps.publicBaseUrl.replace(/\/+$/, "")}/pay/${inv.id}`,
+      }).catch((e) => console.error("invoice email failed: " + safeErrorMessage(e)));
+    } catch (e) {
+      console.error("invoice email failed: " + safeErrorMessage(e));
+    }
+  };
   let nt: Notifications | undefined;
   const notes = () => (nt ??= deps.notifications ?? createNotifications(db, { now: deps.now, appBaseUrl: deps.publicBaseUrl }));
 
@@ -229,7 +264,9 @@ export function createHttpServer(deps: HttpDeps): Server {
       if (!deps.simulatedCheckout) throw new ApiError(404, "only the simulated checkout can simulate a dispute");
       return deps.simulatedCheckout.dispute(params[1]);
     }],
-    ...contractRoutes({ db, now: deps.now, publicBaseUrl: deps.publicBaseUrl }),
+    ...contractRoutes({ db, now: deps.now, publicBaseUrl: deps.publicBaseUrl, onInvoiceCreated: emailInvoice, limitInvoices }),
+    // The Emails view: every invoice email attempt (status, provider message id, time; never the key).
+    ["GET", /^\/emails$/, async () => deps.mailer ? deps.mailer.list() : { configured: false, provider: null, daily_cap: 0, sent_today: 0, items: [] }],
     ...(payoutRoutes({ db, now: deps.now }) as [string, RegExp, Handler][]),
     ...(phoneRegistryRoutes({ db, now: deps.now, salt: deps.phoneHashSalt }) as [string, RegExp, Handler][]),
     ...(reconciliationRoutes({ db, now: deps.now }) as [string, RegExp, Handler][]),

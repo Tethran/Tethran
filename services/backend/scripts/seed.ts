@@ -171,7 +171,7 @@ async function ensureLocalDeployment(chainKey: string) {
 
 function serviceEnv(chainKey: string, internalToken: string) {
   const rpcEnv = Object.fromEntries(Object.entries({ ...fileEnv, ...process.env }).filter(([k]) => k.startsWith("RPC_URL_"))) as Record<string, string>;
-  const llmEnv = Object.fromEntries(Object.entries(fileEnv).filter(([k]) => /^(LLM_|GROQ_|GEMINI_|NVIDIA_|OPIK_)/.test(k)));
+  const llmEnv = Object.fromEntries(Object.entries(fileEnv).filter(([k]) => /^(LLM_|GROQ_|GEMINI_|NVIDIA_|OPIK_|EMAIL_|APP_BASE_URL$|INVOICE_RATE_LIMIT_PER_MIN$)/.test(k)));
   return {
     policy: {
       ...rpcEnv, CHAIN: chainKey, POLICY_SIGNER_PRIVATE_KEY: env("POLICY_SIGNER_PRIVATE_KEY"), OPERATOR_ADDRESS: wallet("OPERATOR").address,

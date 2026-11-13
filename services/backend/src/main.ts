@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import { createEvidenceStore } from "./evidence";
 import { createNotifications } from "./notifications";
 import { createFxService } from "./fx";
+import { createMailer, emailConfigFromEnv } from "./email";
 import { usePayoutFx } from "./payouts";
 import { runReminders } from "./invoices";
 import { safeErrorMessage as safeMsg } from "./errors";
@@ -44,6 +45,7 @@ loadEnvOnly(resolve(__dirname, "../../../.env"), [
   "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "DEMO_MODE", "PLATFORM_TOKEN", "MAX_MILESTONE_USD_CENTS", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
   "BACKEND_DATA_DIR", "BACKEND_PORT", "HOST", "CARD_HOLD_SECONDS", "MILESTONE_TIMEOUT_SECONDS",
   "AGENT_MODE", "PUBLIC_BASE_URL", "APP_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED", "PHONE_HASH_SALT", "X402_CAP_PER_RUN", "CORS_ORIGINS",
+  "EMAIL_*", "INVOICE_RATE_LIMIT_PER_MIN", "TRUST_PROXY",
 ]);
 
 function need(name: string): string {
@@ -171,7 +173,15 @@ const reminderJob = () => { try { runReminders({ db, now, publicBaseUrl }, now()
 reminderJob();
 setInterval(reminderJob, 60 * 60 * 1000).unref();
 
+// Invoice email: Resend when EMAIL_PROVIDER, EMAIL_API_KEY and EMAIL_FROM are set, else the Emails outbox only.
+// The key is read here and handed to the mailer only; it is never logged.
+const mailer = createMailer({ db, config: emailConfigFromEnv(), now, notifications });
+console.log(`invoice email: ${mailer.configured() ? "Resend" : "not configured (Emails outbox only)"}`);
+
 listen(createHttpServer({
+  mailer,
+  invoiceRateLimitPerMin: Number(process.env.INVOICE_RATE_LIMIT_PER_MIN) > 0 ? Number(process.env.INVOICE_RATE_LIMIT_PER_MIN) : 30,
+  trustProxy: process.env.TRUST_PROXY === "1",
   fx,
   notifications,
   evidence,

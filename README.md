@@ -25,6 +25,11 @@ unclear criterion to a person (`CRITERIA_UNMET`, `CRITERIA_UNCLEAR`). The seed a
 (**Replay**) by default; `AGENT_MODE=live npm run demo` (or `demo:serve`) calls the model (Groq first, Gemini fallback)
 and the app labels each answer **Live model** or **Replay**.
 
+**Invoice email.** A new invoice is emailed to the client's address (Resend REST API) with the pay link
+(`<APP_BASE_URL>/pay/<invoiceId>`); `EMAIL_PROVIDER`, `EMAIL_API_KEY` and `EMAIL_FROM` configure it, and without them the
+message stays in the **Emails** view ("Outbox only"). Daily send cap, per-IP limit on invoice creation, one email per
+invoice; the footer reads "Sent from Tethran, a hackathon prototype. Test tokens only."
+
 **Notifications.** A bell in the app shows the current role's unread notifications (refreshed every 2 seconds): invoice
 sent, milestone funded, work submitted (with the AI's delivery check and a request to approve), approved or disputed,
 settlement proposed, escalated, rejected or paid, fee collected (operator), receipt minted, dispute decided, wallet

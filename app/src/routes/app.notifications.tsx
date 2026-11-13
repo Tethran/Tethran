@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, CheckCheck } from "lucide-react";
+import { Bell, CheckCheck, Mail } from "lucide-react";
 import { api } from "@/api";
 import { PageHead } from "@/components/app/AppShell";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "@/components/app/demo-state";
@@ -28,6 +28,7 @@ function NotificationsPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <PageHead eyebrow="Notifications" light="What's" title="new." >
+        <Link to="/app/emails" className="inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm hover:border-ink" data-testid="emails-link"><Mail className="size-4" aria-hidden />Emails</Link>
         {q.data && q.data.unread > 0 && (
           <button data-testid="mark-all-read" onClick={async () => { await api.markAllNotificationsRead(role); q.refetch(); }} className="inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm hover:border-ink">
             <CheckCheck className="size-4" aria-hidden />Mark all read

@@ -1,5 +1,6 @@
 // HTTP routes for contracts, country profiles and invoicing, in the shape of `routes` in http.ts:
-// [method, RegExp, handler]. The main session registers them. No chain, no Stripe, no email.
+// [method, RegExp, handler]. The main session registers them. No chain, no Stripe. Invoice creation calls back
+// onInvoiceCreated (the invoice email) and is rate limited per IP (limitInvoices).
 import type { IncomingMessage } from "node:http";
 import { createContract, getContract, getContractRow, listContractMilestones, listContracts, signContract, signingPayload, updateContract } from "./contracts";
 import { getCountryProfile, listCountryProfiles } from "./countryProfiles";
@@ -11,7 +12,12 @@ import {
 
 export type ContractRouteHandler = (ctx: { params: Record<string, string>; body: any; raw: string; req: IncomingMessage; url: URL }) => Promise<unknown>;
 export type ContractRoute = [string, RegExp, ContractRouteHandler];
-export type ContractDeps = InvoiceEnv;
+export type ContractDeps = InvoiceEnv & {
+  /** Called with the id of every newly created invoice (the invoice email). Never blocks or fails the request. */
+  onInvoiceCreated?: (invoiceId: string) => void;
+  /** Per-IP rate limit on invoice creation; throws 429. */
+  limitInvoices?: (req: IncomingMessage) => void;
+};
 
 export function contractRoutes(deps: ContractDeps): ContractRoute[] {
   const { db } = deps;
@@ -36,9 +42,14 @@ export function contractRoutes(deps: ContractDeps): ContractRoute[] {
       getContractRow(db, params[1]);
       return { milestones: listContractMilestones(db, params[1]) };
     }],
-    ["POST", /^\/contracts\/([^/]+)\/milestones\/([^/]+)\/activate$/, async ({ params }) => {
+    ["POST", /^\/contracts\/([^/]+)\/milestones\/([^/]+)\/activate$/, async ({ params, req }) => {
       milestoneOf(params[1], params[2]);
-      return activateMilestone(deps, params[1], params[2]);
+      deps.limitInvoices?.(req);
+      const before = db.prepare("SELECT id FROM invoices WHERE milestone_id = ? AND occurrence = 0").get(params[2]) as { id: string } | undefined;
+      const body = activateMilestone(deps, params[1], params[2]);
+      const inv = db.prepare("SELECT id FROM invoices WHERE milestone_id = ? AND occurrence = 0").get(params[2]) as { id: string } | undefined;
+      if (!before && inv) deps.onInvoiceCreated?.(inv.id);
+      return body;
     }],
 
     ["GET", /^\/country-profiles$/, async () => ({ profiles: listCountryProfiles() })],
@@ -48,7 +59,12 @@ export function contractRoutes(deps: ContractDeps): ContractRoute[] {
       return p;
     }],
 
-    ["POST", /^\/milestones\/([^/]+)\/invoice$/, async ({ params, body }) => createInvoice(deps, params[1], body ?? {})],
+    ["POST", /^\/milestones\/([^/]+)\/invoice$/, async ({ params, body, req }) => {
+      deps.limitInvoices?.(req);
+      const inv = createInvoice(deps, params[1], body ?? {});
+      if (inv.created) deps.onInvoiceCreated?.(inv.id);
+      return inv;
+    }],
     ["GET", /^\/pay\/([^/]+)$/, async ({ params }) => payPayload(deps, params[1])],
     ["POST", /^\/invoices\/recurring\/run$/, async ({ body }) => runRecurring(deps, parseNow(body, deps.now()))],
     ["POST", /^\/invoices\/reminders\/run$/, async ({ body }) => runReminders(deps, parseNow(body, deps.now()))],

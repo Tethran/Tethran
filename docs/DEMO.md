@@ -80,6 +80,8 @@ the milestone page in demo mode; it runs in the same presenter process with the 
 8. **Humans decide.** Operator → Needs your decision: the escalated plans with their reasons in plain language.
    A plan that pays nobody offers only **Request a new plan** or **Reject**. Identity holds: **Release** (demo
    key). Arbiter: vote on the dispute; the client votes from the milestone page; two of three decide on-chain.
+   **Invoice email:** with EMAIL_* set, the client's address receives the pay link; Notifications → **Emails** lists
+   every send (status, provider message id). The contract form's default client@example.com is never emailed.
 9. **Notifications.** The bell (top right) shows the current role's unread count; switch role to see each side's
    notifications (client: invoice, work submitted with the delivery check; freelancer: funded, approved, paid; operator:
    fee collected, escalations).

@@ -1018,6 +1018,23 @@ Failed, disputed and suspicious items, each with a reason and the record it poin
 { "count": 1, "items": [ { "kind": "offchain_failed", "reason": "off-chain leg failed after the on-chain payout confirmed: provider timeout (simulated)", "milestone_id": "…", "record": { "table": "offchain_payouts", "id": 2 }, "at": "…", "simulated": true } ] }
 ```
 
+#### Invoice email (v0.12)
+
+When an invoice is created (`POST /contracts/{id}/milestones/{mid}/activate` or `POST /milestones/{id}/invoice`) for a
+contract with a `client_email`, the pay link is emailed through the Resend REST API (fetch, no dependency). Env:
+`EMAIL_PROVIDER=resend`, `EMAIL_API_KEY`, `EMAIL_FROM` (empty: outbox only, nothing sent); optional `EMAIL_DAILY_CAP`
+(default 100) and `EMAIL_RECIPIENT_ALLOWLIST` (comma-separated addresses or `@domain`; empty = any address). The
+message has the sender, amount, description, the pay link (`<APP_BASE_URL>/pay/<invoiceId>`, the app's public pay page)
+and the footer "Sent from Tethran, a hackathon prototype. Test tokens only." One invoice sends one email (unique
+key); reserved test domains (example.com, *.test, *.invalid, …) are never sent to. Invoice creation is rate limited
+per IP (`INVOICE_RATE_LIMIT_PER_MIN`, default 30; `429 RATE_LIMITED`; `TRUST_PROXY=1` behind our own proxy).
+
+- `GET /emails` → `{ configured, provider, daily_cap, sent_today, items: [{ id, invoice_id, to, subject, status
+  (sent | failed | not_configured | skipped | blocked | capped | invalid_address), provider_message_id, error,
+  created_at, sent_at, body_text }] }`. The key is never stored or returned. Each attempt is also a freelancer
+  notification. `npx tsx scripts/send-test-email.ts` sends one test email to `TEST_EMAIL` and prints only the status
+  and the provider message id.
+
 #### Exchange rates (v0.12)
 
 The app's local-currency amounts (simulated mobile-money and bank legs) use indicative rates from ExchangeRate-API's

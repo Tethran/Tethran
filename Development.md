@@ -1050,3 +1050,21 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   /x402/fx-quote keeps its own fixed table, now labelled "Sample rates" (comment in x402.ts and fx.ts, line in API.md).
 - Tests (API mocked): success with attribution, the 6-hour cache, failure to the sample table, timeout with a stale
   cache, the per-milestone lock, and a payout quote at the locked rate with the payout still simulated.
+
+### Feature 4: invoice email (branch email)
+- services/backend/src/email.ts: when an invoice is created for a contract with a client email, the pay link is sent
+  through the Resend REST API with fetch (no dependency). Env only: EMAIL_PROVIDER, EMAIL_API_KEY, EMAIL_FROM (read
+  from the repo-root .env by the backend's allowlist; documented empty in .env.example); optional EMAIL_DAILY_CAP
+  (default 100) and EMAIL_RECIPIENT_ALLOWLIST (empty = any address). Without them: the Emails outbox only, and the app
+  says so ("Outbox only").
+- Content: sender, amount, description, the pay link (<APP_BASE_URL>/pay/<invoiceId>, the app's public pay page) and
+  the footer "Sent from Tethran, a hackathon prototype. Test tokens only."; HTML escaped.
+- Safety: one invoice sends one email (unique key claimed before sending); the daily cap; reserved test domains
+  (example.com, *.test, *.invalid, ...) are never sent to, so the contract form's default address bounces nothing;
+  per-IP rate limit on invoice creation (INVOICE_RATE_LIMIT_PER_MIN, default 30; TRUST_PROXY=1 for a proxy). The key
+  is never logged, stored or returned; provider errors are stored with any key-like text removed. Every attempt is in
+  the Emails view (GET /emails, app /app/emails linked from Notifications) and is a freelancer notification.
+- The test email: scripts/send-test-email.ts sent one invoice email to TEST_EMAIL; the first try hit the 10 s request
+  timeout (the request was raised to 20 s), the second was sent (status and message id in the lead's report).
+- Tests (provider mocked): sent once with the pay link and footer, outbox without config, reserved domains, allowlist
+  and cap, provider error without the key, HTML escaping, and the route wiring (one email per invoice, 429 per IP).
