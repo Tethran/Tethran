@@ -1155,3 +1155,20 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
 
 ### Seed: a cold web app gets 4 minutes to start
 - After a reboot the dev server pre-bundles its dependencies and took longer than the 60 s the seed allowed ("web app did not start"). The web app now gets up to 4 minutes; the other services keep 60 s.
+
+### Manual recording: one start command, a clean screen and the runbook (not pushed)
+- `npm run record` (services/backend, scripts/record.ts): the same as `demo:serve` (Policy Service, backend with the
+  agent, demo signer, web app on the existing seeded state; health checks; URLs printed; keeps running) with the
+  recording defaults built in so it works in any shell: DEMO_MODE=1, CHAIN=sepolia, AGENT_MODE=live+replay,
+  CHAIN_CONFIRM_TIMEOUT_MS=25 minutes. Any of them can be overridden by setting it first.
+- Clean screen: removed the unused "Demo mode." note component (DemoNote; it was imported on the operator and arbiter
+  pages but no longer rendered) and the yellow dashed border on the milestone page's "Platform step" card (d5). Every
+  test-key button keeps its "Signed with a test key" tag; the other notes (test USDT on a test network, not real
+  money) stay. No devtools or debug overlays in the app; nothing on screen shows a key.
+- docs/RECORDING-RUNBOOK.md: per step d1 to d10 the person, URL, click path, what must be on screen and the chain
+  waits; the role switch (no passwords; separate browser profiles, because the role syncs across tabs); resetting the
+  vault cap after d8; what to do when a step errors.
+- Checked before recording: the primary RPC (Alchemy) answered 5 of 5 (median 233 ms, max 689 ms; the public
+  fallback median 469 ms with one failure); Sepolia gas about 22 wei, so the treasury's 0.038 ETH and Kofi's wallet's
+  0.004 ETH cover the flow many times; test USDT ample (no mint needed); a test invoice email to Resend's test inbox
+  was sent on the first attempt in 1.1 s.

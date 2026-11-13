@@ -3,7 +3,7 @@ import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError, DEMO_LABEL, type Via } from "@/api";
-import { SignChoice, DemoNote } from "@/components/app/SignChoice";
+import { SignChoice } from "@/components/app/SignChoice";
 import type { Dispute } from "@/api/types";
 import { PageHead } from "@/components/app/AppShell";
 import { Async, EmptyBlock, LIVE, useApi } from "@/components/app/demo-state";

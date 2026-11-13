@@ -182,7 +182,7 @@ function MilestonePage() {
                 <Card dark className="flex items-center gap-3"><Clock className="size-5 text-progress" aria-hidden /><div className="flex-1 text-sm">Card protection hold ends in</div><Countdown until={m.cardHoldEndsAt} /></Card>
               )}
               {demo && m.live && (st === "Approved" || st === "Released") && (
-                <Card className="border-dashed border-progress">
+                <Card>
                   <p className="flex items-center gap-2 text-sm font-medium"><FlaskConical className="size-4" aria-hidden />Platform step</p>
                   <p className="mt-1 text-sm text-muted-foreground">Releases the escrow to the provider's vault, then asks the AI for a settlement plan. The Policy Service decides; the vault pays only what it co-signed.</p>
                   <button data-testid="demo-settle" disabled={busy} onClick={() => run(() => api.demoSettle(m.id), "Settled. The vault paid and the receipt is minted.")} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 text-sm font-medium text-on-dark disabled:opacity-40">

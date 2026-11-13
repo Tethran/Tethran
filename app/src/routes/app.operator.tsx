@@ -6,7 +6,7 @@ import { api, ApiError, DEMO_LABEL, reasonInfo, type Via } from "@/api";
 import type { ApprovalItem } from "@/api/types";
 import { PageHead } from "@/components/app/AppShell";
 import { Async, EmptyBlock, LIVE, useApi } from "@/components/app/demo-state";
-import { DemoSigned, SignChoice, useDemoSigner, DemoNote } from "@/components/app/SignChoice";
+import { DemoSigned, SignChoice, useDemoSigner } from "@/components/app/SignChoice";
 import { Card, DecisionChip, ReasonList, SimTag, usd } from "@/components/tethran/ui";
 
 export const Route = createFileRoute("/app/operator")({

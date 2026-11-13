@@ -48,15 +48,3 @@ export function DemoSigned({ via }: { via: Via | null }) {
   if (via !== "demo") return null;
   return <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-progress px-2 py-0.5 font-mono text-[0.68rem] uppercase tracking-wider"><FlaskConical className="size-3" aria-hidden />{DEMO_LABEL}</span>;
 }
-
-/** One note per page when demo signing is on: which button is the test key and which is the real path. */
-export function DemoNote() {
-  const demo = useDemoSigner();
-  if (!demo) return null;
-  return (
-    <p className="mb-6 flex items-start gap-2 rounded-[var(--radius-input)] border border-dashed border-progress bg-progress/10 p-3 text-sm">
-      <FlaskConical className="mt-0.5 size-4 shrink-0" aria-hidden />
-      <span><span className="font-medium">Demo mode.</span> Buttons with the flask sign with a test key ({DEMO_LABEL.toLowerCase()}). "Sign with your wallet" is the real path.</span>
-    </p>
-  );
-}
