@@ -3,6 +3,8 @@ import { Gavel, Landmark, LayoutGrid, Settings, ShieldCheck, Table2, Users, Wall
 import type { ReactNode } from "react";
 import { Logo, SimTag } from "@/components/tethran/ui";
 import { cn } from "@/lib/utils";
+import { useRole } from "@/lib/role";
+import { Bell } from "@/components/app/Bell";
 
 const NAV = [
   { to: "/app/dashboard", label: "Home", icon: LayoutGrid },
@@ -16,6 +18,7 @@ const NAV = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const role = useRole();
   return (
     <div className="min-h-screen bg-background pb-28 lg:pb-10">
       <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur">
@@ -23,12 +26,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-3"><Link to="/" aria-label="Tethran home"><Logo /></Link><SimTag label="Test network" className="text-muted-foreground" /></div>
           <nav aria-label="App" className="hidden items-center gap-1 lg:flex">
             {NAV.map((n) => (
-              <Link key={n.to} to={n.to} className={cn("inline-flex min-h-11 items-center gap-2 rounded-full px-4 text-sm", path.startsWith(n.to) ? "bg-ink text-on-dark" : "text-muted-foreground hover:text-ink")}>
-                <n.icon className="size-4" aria-hidden />{n.label}
+              <Link key={n.to} to={n.to} title={n.label} aria-label={n.label} className={cn("inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm xl:px-4", path.startsWith(n.to) ? "bg-ink text-on-dark" : "text-muted-foreground hover:text-ink")}>
+                <n.icon className="size-4" aria-hidden /><span className="hidden xl:inline">{n.label}</span>
               </Link>
             ))}
           </nav>
-          <Link to="/app" className="inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm hover:border-ink"><Users className="size-4" aria-hidden /><span className="hidden sm:inline">Switch role</span></Link>
+          <div className="flex items-center gap-2">
+            <Bell />
+            <Link to="/app" className="inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm hover:border-ink" data-testid="switch-role"><Users className="size-4" aria-hidden /><span className="hidden sm:inline capitalize">{role}</span><span className="sr-only">: switch role</span></Link>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-[1200px] px-4 py-6 md:py-10">{children}</main>

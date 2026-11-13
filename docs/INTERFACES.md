@@ -172,6 +172,11 @@ and sha256, marked "not inspected" (it must never call a criterion met from thos
 the freelancer submits and is shown to the client at approval time. At settlement the Policy Service escalates
 `CRITERIA_UNMET` / `CRITERIA_UNCLEAR` (never rejects); a check where every criterion is met changes nothing.
 
+### 2e. Notifications (v0.12)
+
+Table `notifications` (recipient role, type, title, body, link, created_at, read_at, unique idempotency_key). Routes in
+docs/API.md. Every notification link is absolute under `APP_BASE_URL`.
+
 ### 2a. Co-signatures
 
 An approved proposal gets one co-signature per action that moves funds out of the vault (`payout` and

@@ -1,5 +1,6 @@
 // Backend HTTP API (node:http, JSON). Routes are documented in docs/API.md.
 // Errors are { error, code? } with a safe message: no stack traces, URLs or key material.
+import { createNotifications, type Notifications } from "./notifications";
 import { createEvidenceStore, MAX_EVIDENCE_BODY, type EvidenceStore } from "./evidence";
 import { PLATFORM_FEE_BPS } from "../../policy/src/fee";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -47,6 +48,8 @@ export interface HttpDeps {
   wallets?: WalletLayer;
   phoneHashSalt?: string;
   operator?: Operator;
+  /** Notifications per role. Created from db when not given (links under publicBaseUrl, i.e. APP_BASE_URL). */
+  notifications?: Notifications;
   /** Delivery evidence store (notes, links, files on the data disk). Created from db when not given. */
   evidence?: EvidenceStore;
   x402?: ReturnType<typeof createX402Server>;
@@ -88,6 +91,8 @@ export function createHttpServer(deps: HttpDeps): Server {
   // Created on first use (some servers in tests have no database).
   let ev: EvidenceStore | undefined;
   const evidenceStore = () => (ev ??= deps.evidence ?? createEvidenceStore(db));
+  let nt: Notifications | undefined;
+  const notes = () => (nt ??= deps.notifications ?? createNotifications(db, { now: deps.now, appBaseUrl: deps.publicBaseUrl }));
 
   const internal = (h: Handler): Handler => async (ctx) => {
     const token = String(ctx.req.headers["x-internal-token"] ?? "");
@@ -126,6 +131,10 @@ export function createHttpServer(deps: HttpDeps): Server {
 
   const routes: [string, RegExp, Handler][] = [
     ["GET", /^\/health$/, async () => ({ ok: true })],
+    // Notifications for one role (client, freelancer, operator, arbiter): newest first, with the unread count.
+    ["GET", /^\/notifications$/, async ({ url }) => notes().list(url.searchParams.get("recipient"), Number(url.searchParams.get("limit") ?? 50))],
+    ["POST", /^\/notifications\/read-all$/, async ({ body }) => notes().markAllRead(body?.recipient)],
+    ["POST", /^\/notifications\/([^/]+)\/read$/, async ({ params, body }) => notes().markRead(params[1], body?.recipient)],
     ["POST", /^\/milestones$/, async ({ body }) => treasury.createMilestone(body ?? {})],
     // List for the app's dashboard (local records; GET /milestones/{id} syncs one with the chain).
     ["GET", /^\/milestones$/, async ({ url }) => {

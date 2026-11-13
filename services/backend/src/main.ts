@@ -10,6 +10,9 @@
 //   LLM_* and OPIK_* as in services/llm
 import { join, resolve } from "node:path";
 import { createEvidenceStore } from "./evidence";
+import { createNotifications } from "./notifications";
+import { runReminders } from "./invoices";
+import { safeErrorMessage as safeMsg } from "./errors";
 import { Wallet } from "ethers";
 import { EvmChainClient, SqliteIdempotencyStore, createWdkWallets, loadChain, loadEnvOnly, newProvider } from "../../chain/src/index";
 import { createWalletLayer } from "./wallets";
@@ -38,7 +41,7 @@ loadEnvOnly(resolve(__dirname, "../../../.env"), [
   "CHAIN", "RPC_URL_*", "TREASURY_PRIVATE_KEY", "AGENT_SIGNER_PRIVATE_KEY", "ARBITER_ADDRESS", "POLICY_URL", "INTERNAL_TOKEN",
   "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "DEMO_MODE", "PLATFORM_TOKEN", "MAX_MILESTONE_USD_CENTS", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
   "BACKEND_DATA_DIR", "BACKEND_PORT", "HOST", "CARD_HOLD_SECONDS", "MILESTONE_TIMEOUT_SECONDS",
-  "AGENT_MODE", "PUBLIC_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED", "PHONE_HASH_SALT", "X402_CAP_PER_RUN", "CORS_ORIGINS",
+  "AGENT_MODE", "PUBLIC_BASE_URL", "APP_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED", "PHONE_HASH_SALT", "X402_CAP_PER_RUN", "CORS_ORIGINS",
 ]);
 
 function need(name: string): string {
@@ -74,7 +77,8 @@ try {
 }
 maxMilestoneCents(); // fails at startup if MAX_MILESTONE_USD_CENTS is set to something unusable
 const webhookSecret = stripeEnabled ? process.env.STRIPE_WEBHOOK_SECRET! : `whsec_simulated_${randomBytes(24).toString("hex")}`;
-const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
+// APP_BASE_URL: where the web app is served. Pay links, notification links and email links use it.
+const publicBaseUrl = (process.env.APP_BASE_URL || process.env.PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 
 const treasury: Treasury = createTreasury({
   db, chain, identity, now, tracer,
@@ -150,7 +154,16 @@ const wallets = wdkWallets
   : undefined;
 const operator = createOperator({ db, chain, treasury, policy: policyClient, now });
 
+// Notifications (per role) and the invoice reminder job: reminders are due 3 days before, on, and 7 days after the
+// due date of an unpaid invoice; each kind once per invoice. The job runs hourly and its reminders become client
+// notifications (no email for reminders).
+const notifications = createNotifications(db, { now, appBaseUrl: publicBaseUrl });
+const reminderJob = () => { try { runReminders({ db, now, publicBaseUrl }, now()); notifications.sync(); } catch (e) { console.error("reminder job failed: " + safeMsg(e)); } };
+reminderJob();
+setInterval(reminderJob, 60 * 60 * 1000).unref();
+
 listen(createHttpServer({
+  notifications,
   evidence,
   db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets, phoneHashSalt: process.env.PHONE_HASH_SALT, operator, x402,
   platformToken: process.env.PLATFORM_TOKEN ?? "",

@@ -16,6 +16,7 @@ import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppArbiterRouteImport } from './routes/app.arbiter'
 import { Route as AppDashboardRouteImport } from './routes/app.dashboard'
 import { Route as AppEarningsRouteImport } from './routes/app.earnings'
+import { Route as AppNotificationsRouteImport } from './routes/app.notifications'
 import { Route as AppOperatorRouteImport } from './routes/app.operator'
 import { Route as AppReconciliationRouteImport } from './routes/app.reconciliation'
 import { Route as AppSendRouteImport } from './routes/app.send'
@@ -60,6 +61,11 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
 const AppEarningsRoute = AppEarningsRouteImport.update({
   id: '/earnings',
   path: '/earnings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotificationsRoute = AppNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOperatorRoute = AppOperatorRouteImport.update({
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/app/arbiter': typeof AppArbiterRoute
   '/app/dashboard': typeof AppDashboardRoute
   '/app/earnings': typeof AppEarningsRoute
+  '/app/notifications': typeof AppNotificationsRoute
   '/app/operator': typeof AppOperatorRoute
   '/app/reconciliation': typeof AppReconciliationRoute
   '/app/send': typeof AppSendRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/app/arbiter': typeof AppArbiterRoute
   '/app/dashboard': typeof AppDashboardRoute
   '/app/earnings': typeof AppEarningsRoute
+  '/app/notifications': typeof AppNotificationsRoute
   '/app/operator': typeof AppOperatorRoute
   '/app/reconciliation': typeof AppReconciliationRoute
   '/app/send': typeof AppSendRoute
@@ -158,6 +166,7 @@ export interface FileRoutesById {
   '/app/arbiter': typeof AppArbiterRoute
   '/app/dashboard': typeof AppDashboardRoute
   '/app/earnings': typeof AppEarningsRoute
+  '/app/notifications': typeof AppNotificationsRoute
   '/app/operator': typeof AppOperatorRoute
   '/app/reconciliation': typeof AppReconciliationRoute
   '/app/send': typeof AppSendRoute
@@ -179,6 +188,7 @@ export interface FileRouteTypes {
     | '/app/arbiter'
     | '/app/dashboard'
     | '/app/earnings'
+    | '/app/notifications'
     | '/app/operator'
     | '/app/reconciliation'
     | '/app/send'
@@ -197,6 +207,7 @@ export interface FileRouteTypes {
     | '/app/arbiter'
     | '/app/dashboard'
     | '/app/earnings'
+    | '/app/notifications'
     | '/app/operator'
     | '/app/reconciliation'
     | '/app/send'
@@ -216,6 +227,7 @@ export interface FileRouteTypes {
     | '/app/arbiter'
     | '/app/dashboard'
     | '/app/earnings'
+    | '/app/notifications'
     | '/app/operator'
     | '/app/reconciliation'
     | '/app/send'
@@ -286,6 +298,13 @@ declare module '@tanstack/react-router' {
       path: '/earnings'
       fullPath: '/app/earnings'
       preLoaderRoute: typeof AppEarningsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/notifications': {
+      id: '/app/notifications'
+      path: '/notifications'
+      fullPath: '/app/notifications'
+      preLoaderRoute: typeof AppNotificationsRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/operator': {
@@ -365,6 +384,7 @@ interface AppRouteChildren {
   AppArbiterRoute: typeof AppArbiterRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppEarningsRoute: typeof AppEarningsRoute
+  AppNotificationsRoute: typeof AppNotificationsRoute
   AppOperatorRoute: typeof AppOperatorRoute
   AppReconciliationRoute: typeof AppReconciliationRoute
   AppSendRoute: typeof AppSendRoute
@@ -380,6 +400,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppArbiterRoute: AppArbiterRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppEarningsRoute: AppEarningsRoute,
+  AppNotificationsRoute: AppNotificationsRoute,
   AppOperatorRoute: AppOperatorRoute,
   AppReconciliationRoute: AppReconciliationRoute,
   AppSendRoute: AppSendRoute,

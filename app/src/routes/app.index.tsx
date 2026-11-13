@@ -17,6 +17,8 @@ const ROLES: { to: "/app/dashboard" | "/pay/$id" | "/app/operator" | "/app/arbit
   { to: "/app/arbiter", label: "Arbiter", line: "Decide disputes, two of three.", obj: "scales" },
 ];
 
+import { setRole, type Role } from "@/lib/role";
+
 function RolePicker() {
   // The client opens the first unpaid invoice's pay link (the seed creates them).
   const invoices = useApi(["invoices"], api.listInvoices);
@@ -28,7 +30,7 @@ function RolePicker() {
       <p className="mt-4 text-muted-foreground">Everything here runs on a test network with test tokens.</p>
       <div className="mt-10 grid gap-4 sm:grid-cols-2">
         {roles.map((r, k) => (
-          <Link key={r.label} to={r.to} params={r.params as never}
+          <Link key={r.label} to={r.to} params={r.params as never} onClick={() => setRole(r.label.toLowerCase() as Role)}
             className={"group relative flex min-h-56 flex-col justify-between overflow-hidden rounded-[var(--radius-sheet)] p-6 transition-transform duration-300 hover:-translate-y-1 " + (k === 0 ? "dark bg-ink text-on-dark" : "border bg-surface shadow-soft")}>
             <Object3D name={r.obj} className="absolute -top-2 -right-4 size-40 md:size-48" depth={0.8} delay={k * 0.6} decorative />
             <span className="grid size-10 place-items-center rounded-full border border-current/20 transition-transform group-hover:rotate-45"><ArrowUpRight className="size-5" aria-hidden /></span>

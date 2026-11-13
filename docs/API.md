@@ -1018,6 +1018,23 @@ Failed, disputed and suspicious items, each with a reason and the record it poin
 { "count": 1, "items": [ { "kind": "offchain_failed", "reason": "off-chain leg failed after the on-chain payout confirmed: provider timeout (simulated)", "milestone_id": "…", "record": { "table": "offchain_payouts", "id": 2 }, "at": "…", "simulated": true } ] }
 ```
 
+#### Notifications (v0.12)
+
+Stored per role (`client`, `freelancer`, `operator`, `arbiter`; the app's "Switch role"). Derived from the records the
+services write, with a unique idempotency key per event and recipient, so a retried action never notifies twice:
+invoice sent and reminders (client), milestone funded (freelancer), work submitted with the delivery check summary and
+a request to approve (client), client approved (freelancer), dispute opened and decided (client, freelancer,
+arbiter), settlement proposed / escalated (and the operator queue) / rejected / paid (client and freelancer), fee
+collected (operator), receipt minted (client and freelancer), wallet funded, refund. Links are absolute under
+`APP_BASE_URL` (default `http://localhost:3000`).
+
+- `GET /notifications?recipient=client&limit=50` → `{ "recipient", "unread": 2, "items": [{ "id", "type", "title", "body", "link", "created_at", "read_at" }] }`
+- `POST /notifications/{id}/read` with `{ "recipient": "client" }` (404 for another role's notification)
+- `POST /notifications/read-all` with `{ "recipient": "client" }`
+
+The invoice reminder job (3 days before the due date, on it, and 7 days after, for unpaid invoices, once per kind) now
+runs hourly in the backend and writes client notifications; `POST /invoices/reminders/run` still runs it on demand.
+
 #### `GET /earnings` — Tethran earnings (operator)
 
 `{ "label": "Tethran earnings account (a company treasury in production). …", "fee": { "bps": 500, "rule": "…" },

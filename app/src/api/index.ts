@@ -290,6 +290,10 @@ ${label}: ${xs.join("; ")}` : "");
       };
     }));
   },
+  /** A role's notifications (newest first) and its unread count. */
+  notifications: (role: string) => get<{ unread: number; items: { id: number; type: string; title: string; body: string; link: string; created_at: string; read_at: string | null }[] }>(`/notifications?recipient=${encodeURIComponent(role)}`),
+  markNotificationRead: (id: number, role: string) => post(`/notifications/${id}/read`, { recipient: role }),
+  markAllNotificationsRead: (role: string) => post("/notifications/read-all", { recipient: role }),
   /** Tethran earnings (operator): fee lines, total collected, the demo earnings account and its balance. */
   earnings: async (): Promise<Earnings> => {
     const e = await get<any>("/earnings");

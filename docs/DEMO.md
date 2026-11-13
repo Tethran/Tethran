@@ -80,7 +80,10 @@ the milestone page in demo mode; it runs in the same presenter process with the 
 8. **Humans decide.** Operator → Needs your decision: the escalated plans with their reasons in plain language.
    A plan that pays nobody offers only **Request a new plan** or **Reject**. Identity holds: **Release** (demo
    key). Arbiter: vote on the dispute; the client votes from the milestone page; two of three decide on-chain.
-9. **Ledger.** Every invoice joined to payment, escrow, payout and receipt; CSV tax export.
+9. **Notifications.** The bell (top right) shows the current role's unread count; switch role to see each side's
+   notifications (client: invoice, work submitted with the delivery check; freelancer: funded, approved, paid; operator:
+   fee collected, escalations).
+10. **Ledger.** Every invoice joined to payment, escrow, payout and receipt; CSV tax export.
 
 The recorded versions: `cd app && npm run e2e:demo-short` (the short video, `app/e2e-artifacts/recordings/
 tethran-demo-short.webm`, waits sped up) and `npm run e2e:journey` (the whole journey, about 15 minutes on Sepolia).

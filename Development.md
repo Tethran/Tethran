@@ -1020,3 +1020,17 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   CRITERIA_UNCLEAR); the seed now checks those outcomes. Live mode: AGENT_MODE=live npm run demo (or demo:serve).
 - Tests: Policy criteria rules (5); backend uploads, limits, downloads, agent text, criteria split, completion and
   replay expansion (7).
+
+### Feature 3: notifications (branch notifications)
+- Backend table notifications (recipient role, type, title, body, link, created_at, read_at, unique idempotency key).
+  Notifications are derived from the records the services already write (invoices and reminders, fundings, evidence
+  with the delivery check, escrow state, settlement plans, payouts, receipts, dispute attestations, wallet top-ups,
+  refunds), so no action path needs a hook and a retried action cannot notify twice. notify() for other modules.
+- Routes: GET /notifications?recipient=, POST /notifications/{id}/read (only its own role), POST /notifications/read-all.
+- APP_BASE_URL (falls back to PUBLIC_BASE_URL, then http://localhost:3000): pay links and notification links use it.
+- The invoice reminder job (3 days before, on, and 7 days after the due date of an unpaid invoice) now runs hourly in
+  the backend and its reminders become client notifications; it emails nothing.
+- App: a bell with the unread count (refresh every 2 seconds), a Notifications page with role tabs and mark-as-read,
+  links into the screen; the current role (Switch role) is kept in this browser and can be set with ?as=<role>. Nav
+  labels show from xl so the header fits.
+- Tests: creation per role, idempotency, the work-submitted body with the check summary, read state and visibility.
