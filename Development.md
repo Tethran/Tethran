@@ -964,3 +964,30 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
 ### Push
 - Lead asked to push main. Secrets scan on the final commit (no .env values, key or API-key patterns; no .env, .sqlite
   or .demo-data file tracked). Pushed main with --force-with-lease, no tags. The remote is public (lead's call).
+
+---
+
+## Session 018 — 2026-11-13 — Feature 1: Tethran's 5% platform fee (branch fees)
+
+- Fallback branch `stable-demo` created at 4f7767e (no tags).
+- Fee: 5% of each milestone's gross, paid by the freelancer, to the Tethran earnings account (a separate demo wallet,
+  WDK role `earnings`, labelled "Demo earnings account"; a company treasury in production). One function,
+  services/policy/src/fee.ts: round_half_up(gross * 500 / 10000) in base units (exact for whole cents); a code constant,
+  not a policy setting, because the Policy rule must match it.
+- Policy Service: rule FEE_MISMATCH (reject) for a plan that moves money without exactly one `payout` to
+  `tethran_earnings` for exactly the fee, or whose earnings payee does not resolve to EARNINGS_ADDRESS (configured in
+  the Policy Service). The fee line is a payout, so per-tx cap, daily cap and the milestone budget count it. Tests:
+  correct fee, missing/wrong/doubled/mobile-money fee, other address, caps and budget, co-signature to the earnings
+  address, no fee needed for a plan that pays nobody.
+- Backend: the agent gets the fee as trusted input (platform_fee) and splits gross - tax - fee; the orchestrator adds
+  the fee line when the agent left it out and never changes one it wrote (a wrong fee reaches the Policy Service and is
+  rejected); replay plans are rebuilt the same way (saved proportions kept). Fee payouts have no off-chain leg; the
+  ledger has totals.platform_fee, the CSV a platform_fee column; GET /earnings for the operator. The earnings payee is
+  hidden from the provider's payee list. Tests: fee line added, wrong fee passed through, replay split, refund pays no fee.
+- Invoices: the old 1% + $0.30 client fee is removed; the invoice fee is 5% paid by the freelancer, the client pays
+  exactly the subtotal (fee_payer may only be "provider").
+- Agent prompt (2026-11-13.1): copy the platform_fee line exactly; split only what is left.
+- Seed and slice: earnings payee, Policy allowlist, vault allowlist, EARNINGS_ADDRESS for the Policy Service.
+- App: pay page (pays exactly the amount; "Platform fee 5%, deducted from the freelancer's payout"), fee line in the
+  payout list, receipt and ledger, Earnings screen (operator), FEE_MISMATCH explained. INTERFACES v0.12 (2c), API.md,
+  README, DEMO.md.

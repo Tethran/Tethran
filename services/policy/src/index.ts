@@ -1,4 +1,5 @@
 export * from "./types";
+export { platformFee, PLATFORM_FEE_BPS, EARNINGS_PAYEE_ID } from "./fee";
 export { proposalSchema, validateProposal } from "./schema";
 export type { SchemaResult } from "./schema";
 export { evaluateProposal, validatePolicy, canonicalise, hashProposal, utcDay, INJECTION_FLAG_CODES } from "./engine";

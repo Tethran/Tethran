@@ -37,14 +37,15 @@ function Recon() {
         {(rows) => (
           <div className="grid gap-8 grid-cols-1 lg:grid-cols-[1.6fr_1fr] *:min-w-0">
             <div className="relative overflow-x-auto rounded-[var(--radius-card)] border bg-surface">
-              <table className="w-full min-w-[620px] text-sm">
-                <thead><tr className="border-b text-left text-muted-foreground"><th className="p-4 font-medium">Invoice</th>{COLS.map((c) => <th key={c} className="p-4 font-medium capitalize">{c}</th>)}<th className="p-4 font-medium">Country</th><th className="p-4 text-right font-medium">Amount</th></tr></thead>
+              <table className="w-full min-w-[720px] text-sm">
+                <thead><tr className="border-b text-left text-muted-foreground"><th className="p-4 font-medium">Invoice</th>{COLS.map((c) => <th key={c} className="p-4 font-medium capitalize">{c}</th>)}<th className="p-4 font-medium">Country</th><th className="p-4 text-right font-medium">Platform fee</th><th className="p-4 text-right font-medium">Amount</th></tr></thead>
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.id} className="border-b last:border-0">
                       <td className="whitespace-nowrap p-4 font-mono">{r.invoice}</td>
                       {COLS.map((c) => <td key={c} className="p-4">{r[c] ? <span className="inline-flex items-center gap-1 font-mono text-xs"><Check className="size-3.5 text-success" aria-hidden />{r[c]}</span> : <span className="inline-flex items-center gap-1 text-muted-foreground"><Minus className="size-3.5" aria-hidden /><span className="sr-only">missing</span></span>}</td>)}
                       <td className="p-4">{r.country ?? <span className="inline-flex items-center gap-1 rounded-full bg-progress/15 px-2 py-0.5 text-xs font-medium"><AlertTriangle className="size-3" aria-hidden />No profile</span>}</td>
+                      <td className="p-4 text-right font-mono">{r.platformFee > 0 ? usd(r.platformFee) : "—"}</td>
                       <td className="p-4 text-right font-mono">{usd(r.amount)}</td>
                     </tr>
                   ))}

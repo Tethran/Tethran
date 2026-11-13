@@ -32,6 +32,8 @@ export interface VaultPayout {
   simulated: boolean;
   tx: string | null;
   status: string;
+  /** This line is Tethran's 5% platform fee (to the earnings account). */
+  platformFee?: boolean;
 }
 
 export interface Contract {
@@ -103,6 +105,8 @@ export interface Receipt {
   txHash: string;
   network: string;
   holder?: string;
+  /** Tethran's 5% platform fee taken from this milestone's payout (dollars), when paid. */
+  platformFee?: number;
 }
 
 export interface ReconRow {
@@ -114,8 +118,19 @@ export interface ReconRow {
   receipt: string | null;
   country: Country | null;
   amount: number;
+  /** Tethran's 5% platform fee paid for this row (dollars). */
+  platformFee: number;
   complete: boolean;
   gaps: string[];
+}
+
+/** Tethran earnings (operator): the 5% platform fee lines and the demo earnings account. */
+export interface Earnings {
+  label: string;
+  address: string | null;
+  balance: number | null;
+  totalCollected: number;
+  lines: { milestoneId: string; title: string; gross: number; fee: number; tx: string | null; status: string; at: string }[];
 }
 
 export interface ApprovalItem {

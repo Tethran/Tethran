@@ -285,7 +285,7 @@ export async function processConfirmedPayouts(db: DatabaseSync, now: () => Date,
   const adapters = opts.adapters ?? createAdapters(now);
   const todo = db.prepare(
     `SELECT p.* FROM payouts p LEFT JOIN offchain_payouts o ON o.payout_id = p.id
-     WHERE p.status = 'confirmed' AND o.payout_id IS NULL ORDER BY p.id`,
+     WHERE p.status = 'confirmed' AND o.payout_id IS NULL AND p.payee_id != 'tethran_earnings' ORDER BY p.id`,
   ).all() as unknown as PayoutRow[];
   const initiated: number[] = [];
   for (const p of todo) {

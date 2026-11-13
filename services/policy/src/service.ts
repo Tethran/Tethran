@@ -93,6 +93,8 @@ export interface ServiceDeps {
   operatorAddress: string; // the operator's ADDRESS, never a key
   escrow: { chainId: number; address: string }; // for attestation verification
   now: () => Date;
+  /** The platform fee rule: PLATFORM_FEE_BPS, the earnings payee id and the configured earnings address (fee.ts). */
+  platformFee: { bps: number; payeeId: string; address: string };
 }
 
 export interface ProposalResponse {
@@ -137,6 +139,7 @@ export function createService(deps: ServiceDeps) {
         milestone,
         settled: decisions.settledFor(milestoneId),
         requestMilestoneId: milestoneId,
+        platformFee: deps.platformFee,
       };
       return { ctx, vault, chainId, payees };
     } catch (e) {
@@ -196,6 +199,7 @@ export function createService(deps: ServiceDeps) {
           milestone: { cardFunded: false, releaseEligible: true, released: false, identityMatch: true, grossAmount: "0" },
           settled: { approvedCount: 0, allocated: "0" },
           requestMilestoneId: requestMilestone,
+          platformFee: deps.platformFee,
         });
       }
 

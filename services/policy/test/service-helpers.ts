@@ -71,6 +71,8 @@ export function makeHarness(overrides: Partial<ServiceDeps> = {}) {
     operatorAddress: operator.address,
     escrow: { chainId: CHAIN_ID, address: ESCROW },
     now: () => clock,
+    // Tests not about the fee run with a 0% fee (fee.test.ts sets 5%).
+    platformFee: { bps: 0, payeeId: "tethran_earnings", address: "0x00000000000000000000000000000000000000e0" },
     ...overrides,
   });
 
@@ -81,6 +83,7 @@ export function makeHarness(overrides: Partial<ServiceDeps> = {}) {
     audit,
     chainWriter,
     fake,
+    chain,
     policyStore,
     decisions,
     approvals,

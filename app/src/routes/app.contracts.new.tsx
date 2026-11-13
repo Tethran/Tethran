@@ -76,7 +76,7 @@ function Builder() {
             <p className="text-sm text-muted-foreground">With {client} · {country}</p>
             <ul className="mt-4 divide-y">{ms.map((m, k) => <li key={k} className="flex justify-between py-3"><span>{m.title}<span className="block text-sm text-muted-foreground">{m.criteria}</span></span><span className="font-mono">{usd(Number(m.amount))}</span></li>)}</ul>
             <div className="mt-4 flex items-baseline justify-between border-t pt-4"><span className="font-medium">Total</span><span className="font-display text-4xl font-semibold tracking-[-0.04em]">{usd(total)}</span></div>
-            <p className="mt-1 text-right text-sm text-muted-foreground">Fee: about {usd(Math.round(total * 1 + ms.length * 30) / 100)} (1% + $0.30 per invoice) · the invoice shows the exact fee</p>
+            <p className="mt-1 text-right text-sm text-muted-foreground">Platform fee 5%: {usd(Math.round(total * 5) / 100)}, deducted from your payout · the client pays exactly the total</p>
           </div>
         )}
         {step === 3 && (

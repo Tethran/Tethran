@@ -107,7 +107,7 @@ export function Amount({ value, fee, unit = "USDT", size = "lg", className }: { 
         <span className={cn("font-display font-semibold tracking-[-0.04em] tabular-nums", sz)}>{usd(value)}</span>
         <span className="text-sm text-muted-foreground">{unit}</span>
       </div>
-      {fee !== undefined && <div className="mt-1 text-sm text-muted-foreground">Fee: {usd(fee)}</div>}
+      {fee !== undefined && <div className="mt-1 text-sm text-muted-foreground">Platform fee 5%: {usd(fee)}, deducted from the freelancer's payout</div>}
     </div>
   );
 }

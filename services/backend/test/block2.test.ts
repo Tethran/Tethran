@@ -115,8 +115,8 @@ test("replay mode: a saved proposal is used, labelled Replay, and still goes thr
   assert.equal(h.submitted.length, 1); // the Policy Service still decided
   assert.equal(h.submitted[0].milestoneId, M1); // the backend names the milestone it settles
   assert.equal(r.decision, "approved");
-  // the saved proposal is scaled to this milestone: 90% payout, 10% tax reserve of 100 USDT
-  assert.deepEqual(h.submitted[0].proposal.actions.map((a: any) => a.amount), ["90000000", "10000000"]);
+  // the saved proposal is scaled to this milestone: 10% tax reserve of 100 USDT, the 5% platform fee, the rest (85) paid
+  assert.deepEqual(h.submitted[0].proposal.actions.map((a: any) => a.amount), ["85000000", "10000000", "5000000"]);
 });
 
 test("live+replay: when every live attempt fails (rate limit), the saved proposal is used and the reason is shown", async () => {
@@ -157,12 +157,12 @@ test("escalated settlement: nothing is paid until the operator approves; then th
   const r: any = await h.orchestrator.executeApproval(M1, first.approval_id, { decision: "approve", operator_signature: "0xsig" });
   assert.equal(r.decision, "approved");
   assert.equal(r.settlement_trace_id, first.trace_id);
-  assert.equal(h.sent.filter((x) => x === "vaultExecute").length, 2);
+  assert.equal(h.sent.filter((x) => x === "vaultExecute").length, 3);
   assert.equal(h.receipts.size, 1);
   // executing again resumes, it does not pay twice
   const again: any = await h.orchestrator.executeApproval(M1, first.approval_id, { decision: "approve", operator_signature: "0xsig" });
   assert.equal(again.resumed, true);
-  assert.equal(h.sent.filter((x) => x === "vaultExecute").length, 2);
+  assert.equal(h.sent.filter((x) => x === "vaultExecute").length, 3);
 });
 
 test("escalated settlement rejected by the operator pays nothing", async () => {

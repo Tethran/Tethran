@@ -33,10 +33,13 @@ export function makeCtx(overrides: Partial<EvaluationContext> = {}): EvaluationC
     seenProposalHashes: overrides.seenProposalHashes ?? new Set<string>(),
     settled: overrides.settled ?? { approvedCount: 0, allocated: "0" },
     requestMilestoneId: overrides.requestMilestoneId ?? GOOD_MILESTONE,
+    // Tests not about the fee run with a 0% fee (no fee line expected), like the 0% tax rule above.
+    platformFee: overrides.platformFee ?? { bps: 0, payeeId: "tethran_earnings", address: EARNINGS_ADDR },
     milestone: aboutAmounts ? { ...overrides.milestone!, released: overrides.milestone!.released ?? true } : { cardFunded: false, releaseEligible: true, released: true, identityMatch: true, ...overrides.milestone, grossAmount: LARGE_GROSS },
   };
 }
 export const GOOD_MILESTONE = "11111111-1111-4111-8111-111111111111";
+export const EARNINGS_ADDR = "0x00000000000000000000000000000000000000e0";
 // 450 USDT payout + 50 USDT tax reserve: tax is exactly 10% of the 500 USDT total.
 export function goodProposal(): Record<string, unknown> {
   return {

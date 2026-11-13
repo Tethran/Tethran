@@ -51,7 +51,8 @@ test("the short demo", async ({ page }) => {
   await page.getByTestId("demo-settle").click();
   await wait(() => expect(page.getByTestId("view-receipt")).toBeVisible({ timeout: 15 * 60_000 }));
   await page.getByTestId("policy-approved").scrollIntoViewIfNeeded();
-  await say("The Policy Service checked every rule and co-signed; the vault paid", 3200);
+  await page.getByTestId("fee-line").scrollIntoViewIfNeeded();
+  await say("The Policy Service checked every rule, including Tethran's 5% fee; the vault paid", 3200);
   await snap("settled");
   await page.getByTestId("view-receipt").click();
   await wait(async () => { await page.waitForURL(/\/receipt\//); await settled(page); });

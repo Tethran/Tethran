@@ -47,7 +47,8 @@ function PayPage() {
             <div className="dark mt-8 rounded-[var(--radius-sheet)] bg-ink p-6 text-on-dark">
               <p className="text-sm text-muted-dark">{inv.provider} is asking for</p>
               <p className="mt-2 font-display text-6xl font-semibold tracking-[-0.05em]">{usd(inv.amount)}</p>
-              <p className="mt-1 text-sm text-muted-dark">Fee: {usd(inv.fee)} · Total {usd(inv.amount + inv.fee)}</p>
+              <p className="mt-1 text-sm text-muted-dark" data-testid="pay-total">You pay exactly {usd(inv.amount)}.</p>
+              <p className="mt-1 text-sm text-muted-dark" data-testid="platform-fee-note">Platform fee 5%, deducted from the freelancer's payout ({usd(inv.fee)}). Not added to your total.</p>
               <p className="mt-4 text-sm">{inv.title} · {inv.number}</p>
             </div>
             <fieldset className="mt-6">
@@ -71,7 +72,7 @@ function PayPage() {
             )}
             <p className="mt-6 flex items-center gap-2 text-sm text-muted-foreground"><Lock className="size-4" aria-hidden />Money waits in escrow. Released only when you approve.</p>
             <PillButton variant="ink" size="lg" className="mt-6 w-full justify-between" disabled={phase === "paying"} onClick={async () => { setPhase("paying"); try { const r = await api.payInvoice(inv.id, method); setSimulated(r.simulated); setPhase("done"); } catch (e) { setPhase("idle"); toast.error((e as Error).message); } }}>
-              {phase === "paying" ? "Confirming…" : `Confirm and pay ${usd(inv.amount + inv.fee)}`}
+              {phase === "paying" ? "Confirming…" : `Confirm and pay ${usd(inv.amount)}`}
             </PillButton>
           </>
         )}

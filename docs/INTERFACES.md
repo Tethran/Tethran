@@ -1,4 +1,4 @@
-# Interfaces (v0.11)
+# Interfaces (v0.12)
 
 The contract between the two workstreams. Change only by agreement, and log the change in Development.md.
 Amounts are strings in base units (USDT: 6 decimals). IDs are UUIDs unless stated.
@@ -22,7 +22,9 @@ platform token for release, refund and settle. v0.10 (13 Nov 2026) takes the mil
 request (`POST /v1/proposals` needs `x-internal-token` and a `milestone_id` in the body) and adds
 `MILESTONE_ID_MISMATCH`. v0.11 (13 Nov 2026) adds the demo wallet routes (`POST /wallets/{role}/fund`, DEMO_MODE
 only; `GET /wallets/{role}/activity`), lets any user wallet sign as a contract's client, and adds the wallet
-review code `INSUFFICIENT_BALANCE`. No Policy Service or contract change. Where the architecture document
+review code `INSUFFICIENT_BALANCE`. No Policy Service or contract change. v0.12 (13 Nov 2026) adds Tethran's platform
+fee (5% of each milestone's gross, paid by the freelancer to the Tethran earnings account) and the rule
+`FEE_MISMATCH`; see 2c. Where the architecture document
 (`docs/03-system-design-architecture.md`, sections 3.2, 3.3 and 5.2) differs, this file wins.
 
 ## 0. State model
@@ -134,6 +136,28 @@ Field notes:
 - `payee_allowlist`: payee IDs. The Policy Service resolves `payee_id` to an address through the `payees` table; the guard holds the matching address allowlist.
 - `chargeback_hold_seconds`: passed as `holdSeconds` to `createAndFund` for card-funded milestones.
 
+### 2c. Platform fee (v0.12)
+
+Tethran's business model: **5% of each milestone's gross amount, paid by the freelancer**, into the **Tethran earnings
+account** (in the demo a separate demo wallet derived from the demo seed, labelled "Demo earnings account"; in
+production a company treasury).
+
+- **Computed deterministically, never by the agent:** `fee = round_half_up(gross * 500 / 10000)` in USDT base units
+  (`services/policy/src/fee.ts`, `PLATFORM_FEE_BPS = 500`). For whole-cent milestones it is exact. A code constant, not
+  a policy setting.
+- **In the plan:** one `{ "type": "payout", "payee_id": "tethran_earnings", "amount": "<fee>", "asset": "USDT" }`. The
+  backend gives the agent the fee as trusted input (`platform_fee`) and adds the line if the agent left it out; it
+  never changes a fee line the agent wrote.
+- **Enforced by the Policy Service:** `FEE_MISMATCH` (reject) for a plan that moves money with the fee line missing,
+  wrong, doubled, sent by `mobile_money_payout`, or whose `tethran_earnings` payee does not resolve to the earnings
+  address configured in the Policy Service (`EARNINGS_ADDRESS`). `tethran_earnings` must be on the payee allowlist
+  and the vault allowlist. The fee line is a payout, so the per-transaction cap, the daily cap and the milestone
+  budget count it.
+- **Freelancer's net:** `gross - fee - tax reserve`. The tax reserve keeps its base: `min_tax_reserve_bps` of the gross.
+- **No fee** on a refund or a dispute decided for the client (neither settles through the vault).
+- **Invoice:** `fee_cents = round_half_up(subtotal_cents * 5%)`, `fee_payer` is always `provider`, the client pays
+  exactly the subtotal. The old 1% + $0.30 client fee is removed.
+
 ### 2a. Co-signatures
 
 An approved proposal gets one co-signature per action that moves funds out of the vault (`payout` and
@@ -191,7 +215,7 @@ Reason codes:
 
 | Decision | Codes |
 |---|---|
-| `rejected` | `SCHEMA_INVALID`, `MILESTONE_ID_MISMATCH`, `ALREADY_SETTLED`, `ZERO_AMOUNT_PAYOUT`, `DUPLICATE_PROPOSAL`, `MILESTONE_NOT_RELEASED`, `HOLD_ACTIVE`, `PAYEE_NOT_ALLOWED`, `OVER_PER_TX_CAP`, `OVER_DAILY_CAP`, `BELOW_VAULT_RESERVE`, `OVER_MILESTONE_AMOUNT`, `TAX_RESERVE_TOO_LOW` |
+| `rejected` | `SCHEMA_INVALID`, `MILESTONE_ID_MISMATCH`, `ALREADY_SETTLED`, `FEE_MISMATCH`, `ZERO_AMOUNT_PAYOUT`, `DUPLICATE_PROPOSAL`, `MILESTONE_NOT_RELEASED`, `HOLD_ACTIVE`, `PAYEE_NOT_ALLOWED`, `OVER_PER_TX_CAP`, `OVER_DAILY_CAP`, `BELOW_VAULT_RESERVE`, `OVER_MILESTONE_AMOUNT`, `TAX_RESERVE_TOO_LOW` |
 | `escalated` | `LOW_CONFIDENCE`, `NEEDS_HUMAN`, `IDENTITY_MISMATCH`, `OVER_SOFT_LIMIT`, `INJECTION_FLAGGED`, `NO_PAYOUTS` |
 
 Rule order (v0.10, 13 Nov 2026): schema valid (`SCHEMA_INVALID` always rejects) → milestone id (the proposal's
@@ -202,7 +226,8 @@ zero-amount payout (any
 moves money** (the total of its `payout` and `mobile_money_payout` amounts is above zero): duplicate proposal →
 milestone released (`MILESTONE_NOT_RELEASED` unless the escrow milestone is in state Released on-chain, any funding
 source; read by the Policy Service itself) → hold active → payee allowed → per-tx cap → daily cap → vault reserve → milestone amount (what earlier signed plans for this milestone allocated, plus this plan's payouts and
-tax reserve, may not exceed `grossAmount`) → minimum tax reserve (any failure so far is `rejected`) → soft limit → confidence threshold →
+tax reserve, may not exceed `grossAmount`) → platform fee (`FEE_MISMATCH` unless exactly one `payout` to `tethran_earnings`
+for exactly fee(grossAmount), resolving to the configured earnings address; see 2c) → minimum tax reserve (any failure so far is `rejected`) → soft limit → confidence threshold →
 `needs_human` → identity match → injection flag (any failure here is `escalated`). A plan that moves no money is never
 rejected for a hard rule; if nothing else escalates it, it is escalated `NO_PAYOUTS` (a plan that pays nobody is
 never approved automatically). `needs_human=true` is never approved.

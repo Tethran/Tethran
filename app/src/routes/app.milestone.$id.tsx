@@ -67,7 +67,7 @@ function MilestonePage() {
                   <ul className="mt-3 grid gap-2">
                     {m.payouts.map((p, k) => (
                       <li key={k} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                        <span>{usd(p.amount)} to {p.to}{p.simulated && <SimTag label="Simulated rail" className="ml-2" />}</span>
+                        <span data-testid={p.platformFee ? "fee-line" : undefined}>{p.platformFee ? <>Platform fee 5%: {usd(p.amount)} to {p.to}</> : <>{usd(p.amount)} to {p.to}</>}{p.simulated && <SimTag label="Simulated rail" className="ml-2" />}</span>
                         <span className="font-mono text-xs text-muted-foreground">{p.tx ? <>{p.tx.slice(0, 14)}…</> : p.status}</span>
                       </li>
                     ))}

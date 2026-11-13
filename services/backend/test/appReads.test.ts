@@ -69,3 +69,20 @@ test("GET /providers/{id}: payout address, vault and payees for the contract for
     assert.equal((await s.get("/providers/nobody")).error, "provider not found");
   } finally { await s.close(); }
 });
+
+test("GET /earnings: the 5% platform fee lines, the total collected and the earnings account", async () => {
+  const h = harness();
+  await fundedAndReleased(h);
+  await h.orchestrator.settle(M1);
+  const s = await serve(h);
+  try {
+    const e = await s.get("/earnings");
+    assert.equal(e.fee.bps, 500);
+    assert.equal(e.total_collected, "5000000"); // 5% of 100 USDT
+    assert.deepEqual(e.lines.map((l: any) => [l.milestone_id, l.gross, l.fee, l.status]), [[M1, "100000000", "5000000", "confirmed"]]);
+    assert.equal(e.account.address, "0x00000000000000000000000000000000000000e0");
+    assert.match(e.label, /Demo earnings account/);
+  } finally {
+    await s.close();
+  }
+});

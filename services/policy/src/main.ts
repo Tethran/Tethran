@@ -4,6 +4,7 @@ import { EvmChainClient, InMemoryIdempotencyStore, loadChain, loadEnvOnly, newPr
 import { createChainReader } from "./chainReader";
 import { openAuditLog } from "./audit";
 import { createHttpServer, listen } from "./http";
+import { EARNINGS_PAYEE_ID, PLATFORM_FEE_BPS } from "./fee";
 import { createService } from "./service";
 import { createBackendRelay } from "./backendRelay";
 import { openApprovalStore, openDecisionStore, openPolicyStore } from "./stores";
@@ -24,7 +25,7 @@ function need(name: string): string {
 
 // Only the Policy Service's own settings and key. It never receives the treasury, agent or operator key.
 loadEnvOnly(resolve(__dirname, "../../../.env"), [
-  "CHAIN", "RPC_URL_*", "POLICY_SIGNER_PRIVATE_KEY", "OPERATOR_ADDRESS", "BACKEND_URL", "INTERNAL_TOKEN",
+  "CHAIN", "RPC_URL_*", "POLICY_SIGNER_PRIVATE_KEY", "OPERATOR_ADDRESS", "BACKEND_URL", "INTERNAL_TOKEN", "EARNINGS_ADDRESS",
   "POLICY_DATA_DIR", "POLICY_PORT", "HOST",
 ]);
 
@@ -55,6 +56,8 @@ const operatorAddress = need("OPERATOR_ADDRESS");
 const escrowAddress = chainCfg.escrow;
 if (!isAddress(operatorAddress) || !isAddress(escrowAddress)) throw new Error("OPERATOR_ADDRESS and ESCROW_ADDRESS must be addresses");
 const dir = process.env.POLICY_DATA_DIR ?? ".";
+const earningsAddress = need("EARNINGS_ADDRESS");
+if (!isAddress(earningsAddress)) throw new Error("EARNINGS_ADDRESS must be an address");
 
 const service = createService({
   policyStore: openPolicyStore(`${dir}/policy.sqlite`, initialPolicy),
@@ -68,6 +71,9 @@ const service = createService({
   operatorAddress,
   escrow: { chainId: chainCfg.chainId, address: escrowAddress },
   now: () => new Date(),
+  // Tethran's 5% platform fee goes to the earnings account; its address comes from the deployment (the demo seed
+  // derives a demo earnings wallet). Every plan that pays out must pay exactly this fee to exactly this address.
+  platformFee: { bps: PLATFORM_FEE_BPS, payeeId: EARNINGS_PAYEE_ID, address: earningsAddress },
 });
 
 const port = Number(process.env.POLICY_PORT ?? process.env.PORT ?? 8787);

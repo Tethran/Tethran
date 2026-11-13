@@ -5,6 +5,7 @@
 // SIMULATED inputs: fiat-to-USDT conversion (1:1), identity verification, mobile-money and bank legs and their fees.
 // Amounts are strings in USDT base units; sums use BigInt, never floating point. The CSV prints decimals with 6
 // places, derived from the base units.
+import { EARNINGS_PAYEE_ID } from "../../policy/src/fee";
 import type { DatabaseSync } from "node:sqlite";
 import { openTreasuryIssues } from "./issues";
 import { getCountryProfile } from "./countryProfiles";
@@ -91,6 +92,8 @@ export function createReconciliation(deps: ReconciliationDeps) {
       if (p.status !== "confirmed") gap("PAYOUT_NOT_CONFIRMED", `on-chain payout ${p.id} is ${p.status}`, "payouts", p.id);
       else {
         const l = legs.find((x) => x.payout_id === p.id);
+        // The platform fee goes straight to the Tethran earnings wallet on-chain: it has no off-chain leg.
+        if (p.payee_id === EARNINGS_PAYEE_ID) continue;
         if (!l) gap("OFFCHAIN_LEG_MISSING", `on-chain payout ${p.id} is confirmed but has no off-chain leg`, "payouts", p.id, "info");
         else if (l.status === "failed") gap("OFFCHAIN_FAILED", `payout ${p.id} was confirmed on-chain but the off-chain leg failed: ${l.reason ?? "unknown"}`, "offchain_payouts", p.id);
         else if (l.status !== "delivered") gap("OFFCHAIN_IN_FLIGHT", `off-chain leg of payout ${p.id} is ${l.status}`, "offchain_payouts", p.id, "info");
@@ -110,6 +113,8 @@ export function createReconciliation(deps: ReconciliationDeps) {
     const confirmed = payouts.filter((p) => p.status === "confirmed");
     const fee = sum(legs.map((l) => l.fee));
     const paidGross = sum(confirmed.map((p) => p.amount));
+    // Tethran's platform fee (5% of the gross, paid by the freelancer to the earnings account).
+    const platformFee = sum(confirmed.filter((p) => p.payee_id === EARNINGS_PAYEE_ID).map((p) => p.amount));
     const country = countryOf(m, legs);
 
     return {
@@ -124,8 +129,8 @@ export function createReconciliation(deps: ReconciliationDeps) {
       receipt: receipt ? { token_id: receipt.token_id, mint_tx: receipt.mint_tx, holder: receipt.holder, chain_id: receipt.chain_id, at: receipt.at } : null,
       identity: identity ? { match: norm(identity.payer_verified_name) === norm(identity.customer_verified_name), simulated: true } : null,
       totals: {
-        gross: m.amount, tax_reserve: taxReserve.toString(), paid_onchain: paidGross.toString(), fees: fee.toString(),
-        net_paid: (paidGross - fee).toString(), fees_simulated: true,
+        gross: m.amount, tax_reserve: taxReserve.toString(), paid_onchain: paidGross.toString(), platform_fee: platformFee.toString(),
+        fees: fee.toString(), net_paid: (paidGross - platformFee - fee).toString(), fees_simulated: true,
       },
       _times: { funded_at: funded?.at ?? null, settled_at: confirmed.length ? confirmed[confirmed.length - 1].at : null },
     };
@@ -194,7 +199,7 @@ export function createReconciliation(deps: ReconciliationDeps) {
     return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const dec = (v: string) => formatMicro(BigInt(v), 6);
-  const CSV_COLUMNS = ["invoice_number", "invoice_date", "country", "funded_at", "settled_at", "gross", "fee", "tax_reserve", "net_paid", "currency",
+  const CSV_COLUMNS = ["invoice_number", "invoice_date", "country", "funded_at", "settled_at", "gross", "platform_fee", "fee", "tax_reserve", "net_paid", "currency",
     "chain_id", "escrow_tx", "release_tx", "payout_txs", "receipt_id", "receipt_mint_tx", "trace_id", "complete"];
 
   function csv(q: { from?: string | null; to?: string | null; country?: string | null }) {
@@ -208,7 +213,7 @@ export function createReconciliation(deps: ReconciliationDeps) {
       const m = getMilestone(l.milestone_id)!;
       lines.push([
         csvCell(l.invoice.number, true), l.invoice.issued_at.slice(0, 10), csvCell(l.country), l._times.funded_at ?? "", l._times.settled_at ?? "",
-        dec(l.totals.gross), dec(l.totals.fees), dec(l.totals.tax_reserve), dec(l.totals.net_paid), "USDT",
+        dec(l.totals.gross), dec(l.totals.platform_fee), dec(l.totals.fees), dec(l.totals.tax_reserve), dec(l.totals.net_paid), "USDT",
         m.chain_id, l.escrow_tx ?? "", l.release_tx ?? "", csvCell(l.payouts.map((p) => p.tx).filter(Boolean).join(";")),
         l.receipt?.token_id ?? "", l.receipt?.mint_tx ?? "", l.settlement_plan?.trace_id ?? "", l.complete,
       ].map((x) => (typeof x === "string" ? x : String(x))).join(","));

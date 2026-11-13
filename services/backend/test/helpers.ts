@@ -180,7 +180,7 @@ export function fakePolicy(signer: Pick<Wallet, "signTypedData">, opts: { decisi
       for (let i = 0; i < proposal.actions.length; i++) {
         const a = proposal.actions[i];
         if (a.type !== "payout" && a.type !== "mobile_money_payout") continue;
-        const to = a.payee_id === "payee_amara" ? getAddress("0x00000000000000000000000000000000000000b2") : getAddress("0x00000000000000000000000000000000000000b3");
+        const to = getAddress(a.payee_id === "payee_amara" ? "0x00000000000000000000000000000000000000b2" : a.payee_id === "tethran_earnings" ? "0x00000000000000000000000000000000000000e0" : "0x00000000000000000000000000000000000000b3");
         const actionId = keccakUtf8(`${proposal_hash}:${i}`);
         const domain = { name: "TethranVault", version: "1", chainId: CHAIN_ID, verifyingContract: VAULT };
         const signature = await signer.signTypedData(domain, { Transfer: [...VAULT_TYPES.Transfer] },
@@ -205,7 +205,7 @@ export const GOOD_PROPOSAL = {
   confidence: 0.92,
   evidence_used: ["ev-1"],
   actions: [
-    { type: "payout", payee_id: "payee_amara", amount: "60000000", asset: "USDT" },
+    { type: "payout", payee_id: "payee_amara", amount: "55000000", asset: "USDT" },
     { type: "mobile_money_payout", payee_id: "payee_kofi", amount: "30000000", provider: "mpesa" },
     { type: "tax_reserve", amount: "10000000", reason: "10 percent reserve" },
   ],
@@ -250,6 +250,7 @@ export function harness(opts: { decision?: PolicyDecision["decision"]; reply?: u
   db.prepare("INSERT INTO vaults (provider_id, chain_id, vault, operator, provider_payout) VALUES ('prov-1', ?, ?, ?, ?)").run(CHAIN_ID, VAULT, OPERATOR, PROVIDER);
   db.prepare("INSERT INTO payees VALUES ('payee_amara', 'prov-1', 'Amara Studio (demo)', '0x00000000000000000000000000000000000000b2', 'usdt', 0, 'Amara Studio')").run();
   db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-1', 'Kofi Print Works (demo)', '0x00000000000000000000000000000000000000b3', 'mpesa', 1, 'Kofi Print Works')").run();
+  db.prepare("INSERT INTO payees VALUES ('tethran_earnings', 'prov-1', 'Tethran earnings account (demo)', '0x00000000000000000000000000000000000000e0', 'usdt', 0, 'Tethran')").run();
   const identity = createIdentityCheck(db);
   const tracer = new MemoryTracer();
   const treasury = createTreasury({

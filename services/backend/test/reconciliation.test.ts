@@ -49,12 +49,12 @@ test("complete chain: every record joined, no gaps", async () => {
   assert.ok(l.escrow_tx && l.release_tx);
   assert.equal(l.settlement_plan.decision, "paid_out");
   assert.ok(l.settlement_plan.trace_id);
-  assert.equal(l.payouts.length, 2);
+  assert.equal(l.payouts.length, 3); // incl. the platform fee line (no off-chain leg)
   assert.equal(l.offchain_legs.length, 2);
   assert.ok(l.receipt.mint_tx);
   assert.equal(l.receipt.token_id, 1);
-  // 100 gross, 10 tax reserve, 60 + 30 paid on-chain, simulated M-Pesa fee 1.5% of 30 = 0.45
-  assert.deepEqual(l.totals, { gross: "100000000", tax_reserve: "10000000", paid_onchain: "90000000", fees: "450000", net_paid: "89550000", fees_simulated: true });
+  // 100 gross, 10 tax reserve, 55 + 30 paid on-chain to payees + 5 platform fee, simulated M-Pesa fee 1.5% of 30 = 0.45
+  assert.deepEqual(l.totals, { gross: "100000000", tax_reserve: "10000000", paid_onchain: "90000000", platform_fee: "5000000", fees: "450000", net_paid: "84550000", fees_simulated: true });
 });
 
 test("gap: paid but not released", async () => {
@@ -165,10 +165,10 @@ test("CSV: raw text/csv response with the tax columns and proper escaping", asyn
   assert.equal(res.__raw, true);
   assert.equal(res.contentType, "text/csv");
   const lines: string = res.body;
-  assert.ok(lines.startsWith("invoice_number,invoice_date,country,funded_at,settled_at,gross,fee,tax_reserve,net_paid,currency,chain_id,escrow_tx,release_tx,payout_txs,receipt_id,receipt_mint_tx,trace_id,complete\r\n"));
+  assert.ok(lines.startsWith("invoice_number,invoice_date,country,funded_at,settled_at,gross,platform_fee,fee,tax_reserve,net_paid,currency,chain_id,escrow_tx,release_tx,payout_txs,receipt_id,receipt_mint_tx,trace_id,complete\r\n"));
   // formula guard, doubled quotes, comma and newline kept inside quotes
   assert.ok(lines.includes('"\'=HYPERLINK(""x""),""quoted""\nline"'));
-  assert.ok(lines.includes(",100.000000,0.450000,10.000000,89.550000,USDT,31337,"));
+  assert.ok(lines.includes(",100.000000,5.000000,0.450000,10.000000,84.550000,USDT,31337,"));
   assert.ok(lines.trimEnd().endsWith(",true"));
   const empty: any = await call(h, "GET", "/reconciliation/export.csv?country=NG");
   assert.equal(empty.body.trim().split("\r\n").length, 1);

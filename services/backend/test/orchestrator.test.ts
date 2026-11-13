@@ -13,11 +13,12 @@ test("settle: agent -> Policy -> both signatures -> vault payouts -> receipt, al
   await fundedAndReleased(h);
   const r: any = await h.orchestrator.settle(M1);
   assert.equal(r.decision, "approved");
-  assert.equal(r.payouts.length, 2); // payout + mobile_money_payout; the tax reserve stays in the vault
+  assert.equal(r.payouts.length, 3); // payout + mobile_money_payout + the 5% platform fee; the tax reserve stays in the vault
   assert.ok(r.payouts.every((p: any) => p.status === "confirmed"));
-  assert.equal(h.bal("0x00000000000000000000000000000000000000b2"), 60_000_000n);
+  assert.equal(h.bal("0x00000000000000000000000000000000000000b2"), 55_000_000n);
   assert.equal(h.bal("0x00000000000000000000000000000000000000b3"), 30_000_000n);
   assert.equal(h.bal(VAULT), 10_000_000n);
+  assert.equal(h.bal("0x00000000000000000000000000000000000000e0"), 5_000_000n); // 5% platform fee to the earnings account
   assert.equal(h.receipts.get(M1)?.holder, PROVIDER);
   assert.equal(h.receipts.get(M1)?.settlementHash, "0x" + "ab".repeat(32));
 
@@ -41,7 +42,7 @@ test("settle twice: nothing is paid or minted again, and the agent is not asked 
   const again: any = await h.orchestrator.settle(M1);
   assert.equal(again.resumed, true);
   assert.equal(h.llm.calls, 1);
-  assert.equal(h.sent.filter((s) => s === "vaultExecute").length, 2);
+  assert.equal(h.sent.filter((s) => s === "vaultExecute").length, 3);
   assert.equal(h.sent.filter((s) => s === "mintReceipt").length, 1);
 });
 

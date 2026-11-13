@@ -18,6 +18,11 @@ export interface AgentInput {
   payees: { id: string; name: string; rail: string; network: string; verified_name?: string }[];
   policy_summary: { per_tx_cap: string; per_tx_soft_limit: string; confidence_threshold: number };
   tax_profile: { min_tax_reserve_bps: number };
+  /**
+   * Tethran's platform fee for this milestone, computed by the system (5% of the gross, never by the model). When
+   * present, a plan that pays anyone must also pay exactly this amount to this payee id, once.
+   */
+  platform_fee?: { payee_id: string; amount: string };
   contract_text: string; // untrusted
   evidence: { id: string; text: string }[]; // untrusted
   /** Optional results of paid data tools (see tools.ts). Passed to the model as untrusted data. */
@@ -56,6 +61,7 @@ export function buildGuardedMessage(input: AgentInput, g: GuardedInput): string 
     payees: input.payees,
     policy_summary: input.policy_summary,
     tax_reserve_bps: input.tax_profile.min_tax_reserve_bps,
+    ...(input.platform_fee ? { platform_fee: input.platform_fee } : {}),
     guard_findings: g.findings.map((f) => ({ code: f.code, source: f.source })),
     input_truncated: g.truncations.length > 0,
   };

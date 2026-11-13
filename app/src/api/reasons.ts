@@ -4,7 +4,7 @@
 export interface ReasonInfo { title: string; plain: string; kind: "rejected" | "escalated" | "blocked" | "info" }
 
 export const POLICY_REJECT_CODES = [
-  "SCHEMA_INVALID", "MILESTONE_ID_MISMATCH", "ALREADY_SETTLED", "ZERO_AMOUNT_PAYOUT", "DUPLICATE_PROPOSAL", "MILESTONE_NOT_RELEASED", "HOLD_ACTIVE", "PAYEE_NOT_ALLOWED", "OVER_PER_TX_CAP",
+  "SCHEMA_INVALID", "MILESTONE_ID_MISMATCH", "ALREADY_SETTLED", "FEE_MISMATCH", "ZERO_AMOUNT_PAYOUT", "DUPLICATE_PROPOSAL", "MILESTONE_NOT_RELEASED", "HOLD_ACTIVE", "PAYEE_NOT_ALLOWED", "OVER_PER_TX_CAP",
   "OVER_DAILY_CAP", "BELOW_VAULT_RESERVE", "OVER_MILESTONE_AMOUNT", "TAX_RESERVE_TOO_LOW",
 ] as const;
 export const POLICY_ESCALATE_CODES = [
@@ -13,6 +13,7 @@ export const POLICY_ESCALATE_CODES = [
 
 const REASONS: Record<string, ReasonInfo> = {
   // ---- Policy Service: rejected (INTERFACES v0.10) ----
+  FEE_MISMATCH: { kind: "rejected", title: "Platform fee is wrong", plain: "The plan must pay Tethran's 5% platform fee, exactly once and only to the Tethran earnings account. This one did not, so nothing was paid." },
   MILESTONE_ID_MISMATCH: { kind: "rejected", title: "Plan for a different milestone", plain: "The plan names another milestone than the one being settled, so it was refused without paying anything." },
   ALREADY_SETTLED: { kind: "rejected", title: "Already settled", plain: "This milestone was already paid out under an approved plan. A second plan can never pay it again." },
   MILESTONE_NOT_RELEASED: { kind: "rejected", title: "Not released yet", plain: "The escrow has not released this milestone to the vault, so nothing can be paid from it yet." },

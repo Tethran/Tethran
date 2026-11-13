@@ -1,5 +1,6 @@
 // Invoicing logic (PRD M2, FR-2.1 to FR-2.5). Data and rules only: no screens, no chain, no email.
 // Everything is integer USD cents. Reminder delivery is SIMULATED: reminders are recorded and returned.
+import { PLATFORM_FEE_BPS } from "../../policy/src/fee";
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { requireCountryProfile } from "./countryProfiles";
@@ -7,13 +8,15 @@ import { getContractRow, milestoneState, type ContractTerms, type Recurrence } f
 import { ApiError } from "./errors";
 
 /**
- * Fee model (placeholder, configurable): fee = round_half_up(subtotal * bps / 10000) + fixed_cents.
- * Defaults 1% + 30 cents. FEE_BPS and FEE_FIXED_CENTS override them.
- * fee_payer "client": total = subtotal + fee, provider payout = subtotal.
- * fee_payer "provider": total = subtotal, provider payout = subtotal - fee.
+ * Fee model: Tethran's platform fee, 5% of the invoice (PLATFORM_FEE_BPS in services/policy/src/fee.ts), paid by the
+ * freelancer. The client pays exactly the milestone amount; the fee is deducted from the freelancer's payout at
+ * settlement, where the Policy Service enforces it on-chain (FEE_MISMATCH).
+ * On the invoice: fee = round_half_up(subtotal * 5%) in cents (the settlement computes the same 5% exactly in USDT
+ * base units, so the two can differ by at most half a cent), total = subtotal, provider payout = subtotal - fee.
+ * The old 1% + $0.30 client fee is gone; the fee is not configurable by environment (it must match the Policy rule).
  */
 export interface FeeConfig { bps: number; fixed_cents: number }
-export const DEFAULT_FEE: FeeConfig = { bps: 100, fixed_cents: 30 };
+export const DEFAULT_FEE: FeeConfig = { bps: PLATFORM_FEE_BPS, fixed_cents: 0 };
 export const DEFAULT_PUBLIC_BASE_URL = "http://localhost:3000";
 export const REMINDER_KINDS = ["before_due", "due_today", "overdue_7"] as const;
 export type ReminderKind = (typeof REMINDER_KINDS)[number];
@@ -27,9 +30,9 @@ export interface EscrowMilestoneBody {
 
 export interface InvoiceEnv { db: DatabaseSync; now: () => Date; publicBaseUrl?: string; fee?: FeeConfig }
 
-export function feeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): FeeConfig {
-  const n = (v: string | undefined, d: number) => (v !== undefined && /^\d+$/.test(v) ? Number(v) : d);
-  return { bps: n(env.FEE_BPS, DEFAULT_FEE.bps), fixed_cents: n(env.FEE_FIXED_CENTS, DEFAULT_FEE.fixed_cents) };
+/** The platform fee. Environment overrides (FEE_BPS, FEE_FIXED_CENTS) are no longer read: the fee must match the Policy rule. */
+export function feeConfigFromEnv(_env: NodeJS.ProcessEnv = process.env): FeeConfig {
+  return { ...DEFAULT_FEE };
 }
 
 export function computeAmounts(subtotal: number, feePayer: "provider" | "client", cfg: FeeConfig) {
@@ -154,7 +157,7 @@ export function createInvoice(env: InvoiceEnv, milestoneId: string, body: any = 
   if (contract.status !== "signed") throw new ApiError(409, "contract is not signed by both parties", "NOT_SIGNED");
   const terms = JSON.parse(contract.terms_json) as ContractTerms;
   const feePayer = body?.fee_payer ?? "provider";
-  if (feePayer !== "provider" && feePayer !== "client") throw new ApiError(400, 'fee_payer must be "provider" or "client"');
+  if (feePayer !== "provider") throw new ApiError(400, 'the platform fee is paid by the freelancer: fee_payer must be "provider"');
   const row = insertInvoice(env, {
     contractId: m.contract_id, milestoneId, occurrence: 0, dueDate: m.due_date, feePayer,
     taxIds: parseTaxIds(terms.country, body?.provider_tax_ids), now: env.now(),

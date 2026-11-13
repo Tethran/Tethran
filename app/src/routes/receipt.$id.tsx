@@ -43,7 +43,7 @@ function ReceiptPage() {
               {v === "invalid" && <span className="text-danger">This receipt doesn't match. Don't trust it.</span>}
             </div>
             <p className="mt-6 flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck className="size-4" aria-hidden />Hashes only. No personal data is stored.</p>
-            <div className="mt-6"><Details rows={[["Token ID", r.tokenId], ["Content hash", r.contentHash], ["Transaction", r.txHash], ["Network", r.network]]} /></div>
+            <div className="mt-6"><Details rows={[["Token ID", r.tokenId], ...(r.platformFee !== undefined ? [["Platform fee (5%, paid by the freelancer)", usd(r.platformFee)] as [string, string]] : []), ["Content hash", r.contentHash], ["Transaction", r.txHash], ["Network", r.network]]} /></div>
           </>
         )}
       </div>

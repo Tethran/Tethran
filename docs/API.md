@@ -770,13 +770,13 @@ The list is `{ "profiles": [ … ] }` (GH, KE, NG, ZA). Unknown code: `404`.
 (`created: false`) and ignores the body.
 
 ```json
-{ "fee_payer": "client", "provider_tax_ids": { "TIN": "1234567-0001" } }
+{ "provider_tax_ids": { "TIN": "1234567-0001" } }
 ```
 
-`fee_payer` is `provider` (default) or `client`. Fee model (placeholder, configurable with `FEE_BPS` and
-`FEE_FIXED_CENTS`, defaults 100 and 30): `fee = round_half_up(subtotal x bps / 10000) + fixed_cents`. If the client pays,
-`total = subtotal + fee` and the payout is the subtotal; if the provider pays, `total = subtotal` and the payout is
-`subtotal - fee`. Numbers are `INV-{year}-{seq}`, sequential per provider and year.
+Fee (v0.12): Tethran's platform fee, 5% of the subtotal, paid by the freelancer: `fee_cents = round_half_up(subtotal x
+5%)`, `total = subtotal` (the client pays exactly the milestone amount), `provider_payout = subtotal - fee`. `fee_payer`
+may only be `provider` (anything else is 400). The old 1% + $0.30 client fee and the `FEE_BPS`/`FEE_FIXED_CENTS`
+settings are removed. The fee itself is paid at settlement (INTERFACES 2c, Policy rule `FEE_MISMATCH`). Numbers are `INV-{year}-{seq}`, sequential per provider and year.
 
 ```json
 { "id": "0d3e…", "number": "INV-2026-0001", "provider_id": "prov-demo", "contract_id": "5b1c…", "milestone_id": "c9fe85ad-…",
@@ -784,8 +784,8 @@ The list is `{ "profiles": [ … ] }` (GH, KE, NG, ZA). Unknown code: `404`.
   "provider_name": "Amara Design Studio", "client_name": "Kofi Traders Ltd",
   "provider_tax_ids": { "TIN": "1234567-0001" }, "missing_required_fields": [],
   "line_items": [{ "description": "Brand identity pack", "quantity": 1, "unit_amount_cents": 10000, "amount_cents": 10000 }],
-  "subtotal_cents": 10000, "fee_cents": 130, "total_cents": 10130, "provider_payout_cents": 10000,
-  "fee_payer": "client", "issue_date": "2026-03-01", "due_date": "2026-03-15", "status": "unpaid",
+  "subtotal_cents": 10000, "fee_cents": 500, "total_cents": 10000, "provider_payout_cents": 9500,
+  "fee_payer": "provider", "issue_date": "2026-03-01", "due_date": "2026-03-15", "status": "unpaid",
   "paid_at": null, "paid_reference": null, "pay_url": "http://localhost:3000/pay/0d3e…", "created": true }
 ```
 
@@ -812,7 +812,7 @@ An invoice is paid when its escrow milestone row exists in a state other than `d
 
 ```json
 { "receipt_for": "INV-2026-0001", "invoice_id": "0d3e…", "provider_name": "Amara Design Studio", "client_name": "Kofi Traders Ltd",
-  "currency": "USD", "line_items": [ … ], "subtotal_cents": 10000, "fee_cents": 130, "fee_payer": "client", "total_paid_cents": 10130,
+  "currency": "USD", "line_items": [ … ], "subtotal_cents": 10000, "fee_cents": 500, "fee_payer": "provider", "total_paid_cents": 10000,
   "paid_at": null, "payment_reference": null, "escrow_milestone_id": "c9fe85ad-…", "escrow_state": "funded",
   "receipt_token_id": null, "chain_id": null }
 ```
@@ -970,7 +970,7 @@ carries a printed invoice number.
   "offchain_legs": [ { "simulated": true, "payout_id": 2, "adapter": "MobileMoneySim", "rail": "mpesa", "provider_ref": "SIM-MPESA-…", "status": "delivered", "reason": null, "fee": "450000", "local_amount": "3811.95", "currency": "KES", "country": "KE" } ],
   "receipt": { "token_id": 1, "mint_tx": "0x…", "holder": "0x…", "chain_id": 11155111, "at": "…" },
   "identity": { "match": true, "simulated": true },
-  "totals": { "gross": "100000000", "tax_reserve": "10000000", "paid_onchain": "90000000", "fees": "450000", "net_paid": "89550000", "fees_simulated": true }
+  "totals": { "gross": "100000000", "tax_reserve": "10000000", "paid_onchain": "90000000", "platform_fee": "5000000", "fees": "450000", "net_paid": "84550000", "fees_simulated": true }
 }
 ```
 
@@ -1001,6 +1001,14 @@ Failed, disputed and suspicious items, each with a reason and the record it poin
 ```json
 { "count": 1, "items": [ { "kind": "offchain_failed", "reason": "off-chain leg failed after the on-chain payout confirmed: provider timeout (simulated)", "milestone_id": "…", "record": { "table": "offchain_payouts", "id": 2 }, "at": "…", "simulated": true } ] }
 ```
+
+#### `GET /earnings` — Tethran earnings (operator)
+
+`{ "label": "Demo earnings account (a company treasury in production). …", "fee": { "bps": 500, "rule": "…" },
+"account": { "address": "0x…", "balance": "<base units>" | null }, "total_collected": "<base units>", "lines": [{ "milestone_id",
+"title", "gross", "fee", "tx", "status", "at" }] }`: every 5% platform fee line (confirmed ones count in the total).
+The ledger's `totals.platform_fee` and the CSV column `platform_fee` carry the same fee per milestone; a fee line has no
+off-chain leg.
 
 #### `GET /reconciliation/export.csv?from=&to=&country=`
 

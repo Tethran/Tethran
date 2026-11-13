@@ -64,7 +64,10 @@ the milestone page in demo mode; it runs in the same presenter process with the 
    a split; the Policy Service decides with reason codes and co-signs; the agent signer adds the second signature;
    the vault pays inside its on-chain limits; a soulbound receipt NFT is minted. The milestone page shows the
    agent's plan, the Policy decision and the vault payouts.
-5. **Receipt.** **View the receipt**, then **Verify**: the page checks the receipt against the chain.
+   The plan has a fixed fee line: Tethran's **5% platform fee** to the Tethran earnings account (demo), computed by
+   code and enforced by the Policy Service (`FEE_MISMATCH` otherwise). The freelancer receives gross - fee - tax reserve.
+   **Earnings** (operator) shows the total collected, each fee line and the demo earnings account balance.
+5. **Receipt.** **View the receipt** (it shows the platform fee), then **Verify**: the page checks the receipt against the chain.
 6. **Operator: a limit the chain obeys.** Operator → Limits: set the per-payment limit to 5 and **Change limit**.
    The operator's signatures go to the Policy Service, which relays the vault update on-chain. **Ask the vault**
    with 6: the vault contract's own `check` (the rule `execute` applies) refuses it, `OVER_PER_TX_CAP`. Set it back

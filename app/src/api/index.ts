@@ -6,7 +6,7 @@ import { demoSetLimits, demoSettle, demoSignerInfo, signAs, type Via } from "./w
 export { DEMO_LABEL, type Via } from "./wallet";
 import type {
   ApprovalItem, AuditEntry, Contract, Country, Decision, Dispute, IdentityHold, Invoice, Limits, Milestone, MilestoneStatus,
-  Proposal, Receipt, ReconRow, WalletActivity, WalletReview,
+  Earnings, Proposal, Receipt, ReconRow, WalletActivity, WalletReview,
 } from "./types";
 
 export { ApiError, API_BASE } from "./http";
@@ -42,14 +42,18 @@ let providerCache: Promise<ProviderInfo> | undefined;
 const provider = () => (providerCache ??= get<ProviderInfo>(`/providers/${PROVIDER_ID}`).catch((e) => { providerCache = undefined; throw e; }));
 
 const isPayout = (a: any) => a?.type === "payout" || a?.type === "mobile_money_payout";
+/** The reserved payee of Tethran's earnings account (the 5% platform fee line). */
+export const EARNINGS_ID = "tethran_earnings";
 
 /** A plain-language summary of the agent's plan, built from its actions (the agent's own text is not shown). */
 function summarize(actions: any[], payees: PayeeInfo[]): string {
   const name = (id: string) => payees.find((p) => p.payee_id === id)?.name ?? id;
-  const pays = actions.filter(isPayout).map((a) => `$${dollars(a.amount).toLocaleString("en-US")} to ${name(a.payee_id)}`);
+  const fee = actions.filter((a) => isPayout(a) && a.payee_id === EARNINGS_ID).reduce((n, a) => n + dollars(a.amount), 0);
+  const pays = actions.filter((a) => isPayout(a) && a.payee_id !== EARNINGS_ID).map((a) => `$${dollars(a.amount).toLocaleString("en-US")} to ${name(a.payee_id)}`);
+  const feeText = fee > 0 ? `; Tethran's 5% platform fee $${fee.toLocaleString("en-US")}` : "";
   const tax = actions.filter((a) => a?.type === "tax_reserve").reduce((n, a) => n + dollars(a.amount), 0);
   if (pays.length === 0) return tax > 0 ? `Pays nobody. Sets aside $${tax.toLocaleString("en-US")} for tax.` : "Pays nobody.";
-  return `Pays ${pays.join(" and ")}${tax > 0 ? `; sets aside $${tax.toLocaleString("en-US")} for tax` : ""}.`;
+  return `Pays ${pays.join(" and ")}${tax > 0 ? `; sets aside $${tax.toLocaleString("en-US")} for tax` : ""}${feeText}.`;
 }
 
 function proposalFrom(raw: any, meta: { id: string; milestoneId: string; decision: string; reasons: string[]; traceId?: string | null; agentMode?: string | null; approvalId?: string | null; at: string }, payees: PayeeInfo[]): Proposal {
@@ -142,7 +146,8 @@ async function milestoneDetail(id: string) {
     evidence: (t.evidence ?? []).map((e: any) => `Evidence #${e.id} · ${String(e.at).slice(0, 16).replace("T", " ")}`),
     ...(holdEnds ? { cardHoldEndsAt: holdEnds } : {}),
     payouts: (t.payouts ?? []).map((p: any) => ({
-      to: prov.payees.find((x) => x.payee_id === p.payee_id)?.name ?? p.payee_id, amount: dollars(p.amount), rail: String(p.rail ?? "usdt"),
+      to: p.payee_id === EARNINGS_ID ? "Tethran earnings account (demo)" : prov.payees.find((x) => x.payee_id === p.payee_id)?.name ?? p.payee_id, amount: dollars(p.amount), rail: String(p.rail ?? "usdt"),
+      platformFee: p.payee_id === EARNINGS_ID,
       simulated: p.simulated === 1 || p.simulated === true, tx: p.tx ?? null, status: String(p.status ?? ""),
     })),
   };
@@ -237,9 +242,11 @@ ${label}: ${xs.join("; ")}` : "");
     let r: any;
     try { r = await get<any>(`/receipts/${id}`); } catch (e) { if ((e as ApiError).status === 404) return null; throw e; }
     const title = (cs ?? await contracts()).flatMap((c) => c.milestones).find((m) => m.id === id)?.title ?? "Milestone";
+    const ledger = await get<any>(`/reconciliation/milestones/${id}`).catch(() => null);
     return {
       id, milestoneId: id, milestoneTitle: title, amount: dollars(r.amount), date: new Date(r.mintedAt * 1000).toISOString().slice(0, 10),
       tokenId: `#${String(r.tokenId).padStart(4, "0")}`, contentHash: r.settlementHash, txHash: r.releaseTx, network: networkName(r.chainId), holder: r.holder,
+      ...(ledger?.totals?.platform_fee ? { platformFee: dollars(ledger.totals.platform_fee) } : {}),
     };
   },
   /** Reads the receipt from the chain again and checks it belongs to this milestone. */
@@ -257,9 +264,19 @@ ${label}: ${xs.join("; ")}` : "");
         escrow: l.escrow_tx ? String(l.escrow_tx).slice(0, 12) : null,
         payout: (l.payouts ?? []).find((p: any) => p.tx)?.tx?.slice(0, 12) ?? null,
         receipt: l.receipt?.token_id ? `#${l.receipt.token_id}` : null,
+        platformFee: dollars(l.totals?.platform_fee ?? "0"),
         complete: it.complete, gaps: it.gaps ?? [],
       };
     }));
+  },
+  /** Tethran earnings (operator): fee lines, total collected, the demo earnings account and its balance. */
+  earnings: async (): Promise<Earnings> => {
+    const e = await get<any>("/earnings");
+    return {
+      label: e.label, address: e.account?.address ?? null, balance: e.account?.balance == null ? null : dollars(e.account.balance),
+      totalCollected: dollars(e.total_collected),
+      lines: (e.lines as any[]).map((l) => ({ milestoneId: l.milestone_id, title: l.title ?? "Milestone", gross: dollars(l.gross ?? "0"), fee: dollars(l.fee), tx: l.tx ?? null, status: l.status, at: l.at })),
+    };
   },
   /** The backend's tax export (country from the contract's profile; refuses rows without one). */
   reconCsvUrl: () => `${API_BASE}/reconciliation/export.csv`,

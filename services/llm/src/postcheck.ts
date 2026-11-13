@@ -39,7 +39,8 @@ export function applyGuardFindings(proposal: SettlementProposal, findings: Findi
 export function postCheck(proposal: SettlementProposal, input: AgentInput): PostCheckOutcome {
   const p: SettlementProposal = { ...proposal, flags: proposal.flags.map((f) => ({ ...f })), actions: proposal.actions };
   const added: string[] = [];
-  const listed = new Set(input.payees.map((x) => x.id));
+  // The platform fee's payee is set by the system (trusted input), so it counts as listed.
+  const listed = new Set([...input.payees.map((x) => x.id), ...(input.platform_fee ? [input.platform_fee.payee_id] : [])]);
 
   const unlisted = p.actions
     .filter((a) => a.type === "payout" || a.type === "mobile_money_payout")

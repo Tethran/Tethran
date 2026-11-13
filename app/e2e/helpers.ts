@@ -106,6 +106,7 @@ export async function pay(page: Page, invoiceId: string, method: "Card" | "Tethr
     await page.locator("label", { hasText: method }).click();
     await expect(page.getByTestId("payer-balance")).toBeVisible({ timeout: 2 * 60_000 });
   }
+  await expect(page.getByTestId("platform-fee-note")).toContainText("Platform fee 5%, deducted from the freelancer's payout");
   await page.getByRole("button", { name: /Confirm and pay/ }).click();
   await wait(() => expect(page.getByText("Funds locked.")).toBeVisible({ timeout: 10 * 60_000 }));
 }

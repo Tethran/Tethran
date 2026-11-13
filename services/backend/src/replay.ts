@@ -39,14 +39,40 @@ export function loadSavedProposals(path = resolve(__dirname, "../replay/proposal
   return new Map(list.map((p) => [p.scenario, p]));
 }
 
-/** Turns a saved proposal into a real one for this milestone. */
+/**
+ * Turns a saved proposal into a real one for this milestone. Tax reserve (and any other non-payout line) is scaled from
+ * the gross. When the input carries a platform fee, the payouts share what is left after the tax reserve and the fee,
+ * in the saved proportions (the last payout takes the rounding remainder), and the fee line is added exactly.
+ */
 export function instantiate(saved: SavedProposal, input: AgentInput): Record<string, unknown> {
   const gross = BigInt(input.milestone.gross_amount);
+  const isPay = (a: Record<string, unknown>) => a.type === "payout" || a.type === "mobile_money_payout";
+  const scaled = saved.proposal.actions.map(({ amount_ppm, ...rest }) => ({ ...rest, amount: ((gross * BigInt(amount_ppm)) / 1_000_000n).toString(), ppm: BigInt(amount_ppm) }) as Record<string, unknown> & { amount: string; ppm: bigint });
+  let actions: Record<string, unknown>[] = scaled.map(({ ppm: _ppm, ...a }) => a);
+  const fee = input.platform_fee ? BigInt(input.platform_fee.amount) : 0n;
+  const pays = scaled.filter(isPay);
+  if (input.platform_fee && fee > 0n && pays.length > 0) {
+    const reserved = scaled.filter((a) => !isPay(a) && a.type === "tax_reserve").reduce((n, a) => n + BigInt(a.amount), 0n);
+    const left = gross - reserved - fee;
+    // Each payout keeps its share of what the saved plan paid out of (gross - tax): payable ppm = 1e6 - tax ppm.
+    const taxPpm = scaled.filter((a) => a.type === "tax_reserve").reduce((n, a) => n + a.ppm, 0n);
+    const payablePpm = 1_000_000n - taxPpm;
+    const totalPpm = pays.reduce((n, a) => n + a.ppm, 0n);
+    actions = scaled.map(({ ppm, ...a }) => (isPay(a) ? { ...a, amount: ((left * ppm) / payablePpm).toString() } : a));
+    // A plan that paid out everything after tax still does: the last payout takes the rounding remainder.
+    if (totalPpm === payablePpm) {
+      const payIdx = actions.map((a, i) => (isPay(a) ? i : -1)).filter((i) => i >= 0);
+      const given = payIdx.reduce((n, i) => n + BigInt(actions[i].amount as string), 0n);
+      const lastIdx = payIdx[payIdx.length - 1];
+      actions[lastIdx] = { ...actions[lastIdx], amount: (BigInt(actions[lastIdx].amount as string) + (left - given)).toString() };
+    }
+    actions.push({ type: "payout", payee_id: input.platform_fee.payee_id, amount: fee.toString(), asset: "USDT" });
+  }
   return {
     milestone_id: input.milestone.id,
     confidence: saved.proposal.confidence,
     evidence_used: saved.proposal.evidence_used,
-    actions: saved.proposal.actions.map(({ amount_ppm, ...rest }) => ({ ...rest, amount: ((gross * BigInt(amount_ppm)) / 1_000_000n).toString() })),
+    actions,
     flags: saved.proposal.flags,
     needs_human: saved.proposal.needs_human,
   };

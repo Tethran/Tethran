@@ -1,5 +1,6 @@
 // Backend HTTP API (node:http, JSON). Routes are documented in docs/API.md.
 // Errors are { error, code? } with a safe message: no stack traces, URLs or key material.
+import { PLATFORM_FEE_BPS } from "../../policy/src/fee";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
@@ -213,11 +214,32 @@ export function createHttpServer(deps: HttpDeps): Server {
       const s = await needWallets().signContractTypedData(params[1], typed as never);
       return signContract(db, params[2], { party: "client", signer: s.signer, signature: s.signature }, deps.now());
     }],
+    // Tethran earnings (operator view): every confirmed 5% platform fee line and the earnings account. The account is a
+    // demo wallet (DEMO earnings account); in production it would be a company treasury.
+    ["GET", /^\/earnings$/, async () => {
+      const lines = (db.prepare(
+        `SELECT p.milestone_id, m.title, m.amount AS gross, p.amount, p.tx, p.status, p.at, p.to_address FROM payouts p
+           LEFT JOIN milestones m ON m.id = p.milestone_id WHERE p.payee_id = 'tethran_earnings' ORDER BY p.at DESC`,
+      ).all() as any[]);
+      const confirmed = lines.filter((l) => l.status === "confirmed");
+      const total = confirmed.reduce((n, l) => n + BigInt(l.amount), 0n);
+      const payee = db.prepare("SELECT address FROM payees WHERE payee_id = 'tethran_earnings' LIMIT 1").get() as { address: string } | undefined;
+      let balance: string | null = null;
+      if (deps.wallets) { try { balance = ((await deps.wallets.balance("earnings")) as any).usdt.base_units; } catch { /* RPC read failed: shown as unavailable */ } }
+      return {
+        label: "Demo earnings account (a company treasury in production). Test USDT on a test network.",
+        fee: { bps: PLATFORM_FEE_BPS, rule: "5% of each milestone's gross, paid by the freelancer, enforced by the Policy Service (FEE_MISMATCH)" },
+        account: { address: payee?.address ?? null, balance },
+        total_collected: total.toString(),
+        lines: lines.map((l) => ({ milestone_id: l.milestone_id, title: l.title, gross: l.gross, fee: l.amount, tx: l.tx, status: l.status, at: l.at })),
+      };
+    }],
     // What the app needs to create a contract for a provider: its payout address (the vault's fixed payee) and payees.
     ["GET", /^\/providers\/([^/]+)$/, async ({ params }) => {
       const v = db.prepare("SELECT * FROM vaults WHERE provider_id = ?").get(params[1]) as Record<string, unknown> | undefined;
       if (!v) throw new ApiError(404, "provider not found");
-      const payees = (db.prepare("SELECT payee_id, name, rail, simulated FROM payees WHERE provider_id = ? ORDER BY payee_id").all(params[1]) as any[])
+      // The Tethran earnings account is not one of the provider's payees (it only receives the platform fee).
+      const payees = (db.prepare("SELECT payee_id, name, rail, simulated FROM payees WHERE provider_id = ? AND payee_id != 'tethran_earnings' ORDER BY payee_id").all(params[1]) as any[])
         .map((p) => ({ ...p, simulated: p.simulated === 1 }));
       return { provider_id: params[1], chain_id: v.chain_id, vault: v.vault, operator: v.operator, provider_address: v.provider_payout, payees };
     }],

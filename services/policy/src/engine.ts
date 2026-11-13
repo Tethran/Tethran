@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { platformFee } from "./fee";
 import { validateProposal } from "./schema";
 import type {
   Action,
@@ -86,6 +87,10 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
   if (!Number.isInteger(ctx.settled.approvedCount) || ctx.settled.approvedCount < 0) throw new Error("invalid context: settled.approvedCount");
   if (typeof ctx.milestone.released !== "boolean") throw new Error("invalid context: milestone.released must be a boolean");
   if (typeof ctx.requestMilestoneId !== "string" || ctx.requestMilestoneId.length === 0) throw new Error("invalid context: requestMilestoneId");
+  const pf = ctx.platformFee;
+  if (!pf || !Number.isInteger(pf.bps) || pf.bps < 0 || pf.bps > 10_000 || typeof pf.payeeId !== "string" || pf.payeeId.length === 0 || typeof pf.address !== "string") {
+    throw new Error("invalid context: platformFee");
+  }
   const proposal_hash = hashProposal(proposal);
 
   // Nothing else can be evaluated safely on a malformed proposal.
@@ -154,6 +159,18 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
     // The milestone's budget, cumulative: what earlier approved plans for this milestone allocated, plus this plan's
     // payouts and tax reserve, may not exceed what the escrow released.
     if (BigInt(ctx.settled.allocated) + payoutTotal + taxTotal > gross) rejected.push("OVER_MILESTONE_AMOUNT");
+
+    // The platform fee (fee.ts): exactly one `payout` to the earnings payee, for exactly fee(gross), and that payee must
+    // be the earnings address configured in this service. Missing, wrong, doubled, sent by another rail or to another
+    // address: rejected. It is a payout like any other, so the caps, the daily cap and the budget rule above count it.
+    const expectedFee = platformFee(gross, pf.bps);
+    const feeLines = p.actions.filter((a) => (a.type === "payout" || a.type === "mobile_money_payout") && a.payee_id === pf.payeeId);
+    const earnings = Object.hasOwn(ctx.payees, pf.payeeId) ? ctx.payees[pf.payeeId] : undefined;
+    const feeOk = expectedFee === 0n
+      ? feeLines.length === 0
+      : feeLines.length === 1 && feeLines[0].type === "payout" && BigInt((feeLines[0] as { amount: string }).amount) === expectedFee &&
+        earnings !== undefined && pf.address.length > 0 && earnings.address.toLowerCase() === pf.address.toLowerCase();
+    if (!feeOk) rejected.push("FEE_MISMATCH");
 
     // The tax reserve is a share of the gross milestone amount, required whenever money is paid out.
     // Rule: taxTotal / grossAmount >= min_tax_reserve_bps / 10000, checked as taxTotal * 10000 >= bps * gross.

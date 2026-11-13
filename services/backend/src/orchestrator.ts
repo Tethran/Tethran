@@ -16,6 +16,20 @@ import type { Agent, AgentMode } from "./replay";
 import type { AgentSigner } from "./agentSigner";
 import type { TreasuryChain } from "./chainPort";
 import { milestones, payeesOf, type MilestoneRow } from "./db";
+import { EARNINGS_PAYEE_ID, platformFee } from "../../policy/src/fee";
+
+/**
+ * Adds Tethran's platform fee line (5% of the gross, fee.ts) to a plan that pays anyone and has no fee line yet. A fee
+ * line the agent wrote is left exactly as it is, so a wrong one reaches the Policy Service and is rejected
+ * (FEE_MISMATCH). A plan that pays nobody gets no fee line.
+ */
+export function withPlatformFee<T extends { actions: Record<string, unknown>[] }>(proposal: T, grossAmount: string): T {
+  const pays = proposal.actions.some((a) => (a.type === "payout" || a.type === "mobile_money_payout") && a.payee_id !== EARNINGS_PAYEE_ID && BigInt(String(a.amount ?? "0")) > 0n);
+  const hasFee = proposal.actions.some((a) => a.payee_id === EARNINGS_PAYEE_ID);
+  const fee = platformFee(BigInt(grossAmount));
+  if (!pays || hasFee || fee === 0n) return proposal;
+  return { ...proposal, actions: [...proposal.actions, { type: "payout", payee_id: EARNINGS_PAYEE_ID, amount: fee.toString(), asset: "USDT" }] };
+}
 import { ApiError, safeErrorMessage } from "./errors";
 import type { Cosignature, PolicyClient } from "./policyClient";
 
@@ -46,7 +60,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
   const iso = () => deps.now().toISOString();
 
   function agentInput(m: MilestoneRow, policy: Record<string, any>): AgentInput {
-    const payees = payeesOf(db, m.provider_id).map((p) => ({
+    // The earnings account is not a payee the agent may choose; it gets only the fixed fee line (platform_fee).
+    const payees = payeesOf(db, m.provider_id).filter((p) => p.payee_id !== EARNINGS_PAYEE_ID).map((p) => ({
       id: p.payee_id, name: p.name, rail: p.rail, network: deps.chainName, verified_name: p.verified_name ?? undefined,
     }));
     const evidence = (db.prepare("SELECT id, text FROM evidence WHERE milestone_id = ? ORDER BY id").all(m.id) as { id: number; text: string }[])
@@ -61,6 +76,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         confidence_threshold: Number(policy.confidence_threshold),
       },
       tax_profile: { min_tax_reserve_bps: Number(policy.min_tax_reserve_bps) },
+      platform_fee: { payee_id: EARNINGS_PAYEE_ID, amount: platformFee(BigInt(m.amount)).toString() },
       contract_text: `Milestone "${m.title}" for ${m.amount} base units of USDT, paid to the provider's listed payees.`,
       evidence,
     };
@@ -174,6 +190,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
             }
           }
           const proposed = await deps.agent.propose(input, mode, m.scenario ?? "clean_delivery");
+          if (proposed.ok) proposed.proposal = withPlatformFee(proposed.proposal, m.amount);
           const agent = { agent_mode: proposed.agent_mode, ...(proposed.replay_source ? { replay_source: proposed.replay_source } : {}) };
           if (proposed.agent_mode !== "live") run.span({ name: "agent.replay", type: "general", output: agent });
           if (!proposed.ok) {

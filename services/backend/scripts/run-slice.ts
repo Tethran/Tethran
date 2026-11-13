@@ -93,6 +93,7 @@ async function main() {
 
   // Payee wallets: deterministic test addresses standing in for a USDT wallet and a SIMULATED M-Pesa rail wallet.
   const amara = await wdk.address("payee_amara"); // WDK wallet
+  const earnings = await wdk.address("earnings"); // the Tethran earnings account (demo): receives the 5% platform fee
   const kofiRail = new Wallet(keccakUtf8("tethran demo rail wallet mpesa")).address;
 
   const dir = mkdtempSync(join(tmpdir(), "tethran-slice-"));
@@ -109,6 +110,7 @@ async function main() {
   db.prepare("INSERT INTO vaults VALUES ('prov-demo', ?, ?, ?, ?)").run(chain.chainId, vault, vs.operator, vs.providerPayout);
   db.prepare("INSERT INTO payees VALUES ('payee_amara', 'prov-demo', 'Amara Studio (demo)', ?, 'usdt', 0, 'Amara Studio')").run(amara);
   db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-demo', 'Kofi Print Works (demo, simulated M-Pesa)', ?, 'mpesa', 1, 'Kofi Print Works')").run(kofiRail);
+  db.prepare("INSERT INTO payees VALUES ('tethran_earnings', 'prov-demo', 'Tethran earnings account (demo)', ?, 'usdt', 0, 'Tethran')").run(earnings);
   db.close();
   say("seeded", "provider vault and two payees (one on a simulated M-Pesa rail)");
 
@@ -136,7 +138,7 @@ async function main() {
   process.on("exit", stop);
   try {
     children.push(start("policy", join(ROOT, "services/policy/src/main.ts"), {
-      ...rpcEnv, CHAIN: chain.key, POLICY_SIGNER_PRIVATE_KEY: env("POLICY_SIGNER_PRIVATE_KEY"), OPERATOR_ADDRESS: operator.address,
+      ...rpcEnv, CHAIN: chain.key, POLICY_SIGNER_PRIVATE_KEY: env("POLICY_SIGNER_PRIVATE_KEY"), OPERATOR_ADDRESS: operator.address, EARNINGS_ADDRESS: earnings,
       BACKEND_URL: BACKEND, INTERNAL_TOKEN: internalToken, POLICY_DATA_DIR: dir, POLICY_PORT: String(policyPort),
     }));
     const llmEnv = Object.fromEntries(Object.entries(fileEnv).filter(([k]) => /^(LLM_|GROQ_|GEMINI_|NVIDIA_|OPIK_)/.test(k)));
@@ -155,10 +157,10 @@ async function main() {
     const current = await call(POLICY, "GET", "/v1/policy");
     const doc = {
       version: current.version + 1, per_tx_cap: usdt(1000), per_tx_soft_limit: usdt(800), daily_cap: usdt(1_000_000),
-      vault_min_reserve: "0", payee_allowlist: ["payee_amara", "payee_kofi"], min_tax_reserve_bps: 1000,
+      vault_min_reserve: "0", payee_allowlist: ["payee_amara", "payee_kofi", "tethran_earnings"], min_tax_reserve_bps: 1000,
       confidence_threshold: 0.7, chargeback_hold_seconds: 600,
     };
-    const set = await call(POLICY, "POST", "/v1/policy", await signPolicyChange(doc, await relay.vaultState(vault), [amara, kofiRail]));
+    const set = await call(POLICY, "POST", "/v1/policy", await signPolicyChange(doc, await relay.vaultState(vault), [amara, kofiRail, earnings]));
     say("policy service", `policy v${doc.version} accepted: per-tx 1000, tax reserve 10%, soft limit 800`);
     for (const t of set.vault_transactions) say(`  vault ${t.type}`, `v${t.version} relayed on-chain ${t.tx}`);
 

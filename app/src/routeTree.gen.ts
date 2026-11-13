@@ -15,6 +15,7 @@ import { Route as TrustRouteImport } from './routes/trust'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppArbiterRouteImport } from './routes/app.arbiter'
 import { Route as AppDashboardRouteImport } from './routes/app.dashboard'
+import { Route as AppEarningsRouteImport } from './routes/app.earnings'
 import { Route as AppOperatorRouteImport } from './routes/app.operator'
 import { Route as AppReconciliationRouteImport } from './routes/app.reconciliation'
 import { Route as AppSendRouteImport } from './routes/app.send'
@@ -54,6 +55,11 @@ const AppArbiterRoute = AppArbiterRouteImport.update({
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppEarningsRoute = AppEarningsRouteImport.update({
+  id: '/earnings',
+  path: '/earnings',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOperatorRoute = AppOperatorRouteImport.update({
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/trust': typeof TrustRoute
   '/app/arbiter': typeof AppArbiterRoute
   '/app/dashboard': typeof AppDashboardRoute
+  '/app/earnings': typeof AppEarningsRoute
   '/app/operator': typeof AppOperatorRoute
   '/app/reconciliation': typeof AppReconciliationRoute
   '/app/send': typeof AppSendRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/trust': typeof TrustRoute
   '/app/arbiter': typeof AppArbiterRoute
   '/app/dashboard': typeof AppDashboardRoute
+  '/app/earnings': typeof AppEarningsRoute
   '/app/operator': typeof AppOperatorRoute
   '/app/reconciliation': typeof AppReconciliationRoute
   '/app/send': typeof AppSendRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/trust': typeof TrustRoute
   '/app/arbiter': typeof AppArbiterRoute
   '/app/dashboard': typeof AppDashboardRoute
+  '/app/earnings': typeof AppEarningsRoute
   '/app/operator': typeof AppOperatorRoute
   '/app/reconciliation': typeof AppReconciliationRoute
   '/app/send': typeof AppSendRoute
@@ -169,6 +178,7 @@ export interface FileRouteTypes {
     | '/trust'
     | '/app/arbiter'
     | '/app/dashboard'
+    | '/app/earnings'
     | '/app/operator'
     | '/app/reconciliation'
     | '/app/send'
@@ -186,6 +196,7 @@ export interface FileRouteTypes {
     | '/trust'
     | '/app/arbiter'
     | '/app/dashboard'
+    | '/app/earnings'
     | '/app/operator'
     | '/app/reconciliation'
     | '/app/send'
@@ -204,6 +215,7 @@ export interface FileRouteTypes {
     | '/trust'
     | '/app/arbiter'
     | '/app/dashboard'
+    | '/app/earnings'
     | '/app/operator'
     | '/app/reconciliation'
     | '/app/send'
@@ -267,6 +279,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/app/dashboard'
       preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/earnings': {
+      id: '/app/earnings'
+      path: '/earnings'
+      fullPath: '/app/earnings'
+      preLoaderRoute: typeof AppEarningsRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/operator': {
@@ -345,6 +364,7 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppArbiterRoute: typeof AppArbiterRoute
   AppDashboardRoute: typeof AppDashboardRoute
+  AppEarningsRoute: typeof AppEarningsRoute
   AppOperatorRoute: typeof AppOperatorRoute
   AppReconciliationRoute: typeof AppReconciliationRoute
   AppSendRoute: typeof AppSendRoute
@@ -359,6 +379,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppArbiterRoute: AppArbiterRoute,
   AppDashboardRoute: AppDashboardRoute,
+  AppEarningsRoute: AppEarningsRoute,
   AppOperatorRoute: AppOperatorRoute,
   AppReconciliationRoute: AppReconciliationRoute,
   AppSendRoute: AppSendRoute,

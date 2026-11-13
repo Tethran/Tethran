@@ -15,7 +15,8 @@ export type RejectReason =
   | "ZERO_AMOUNT_PAYOUT"
   | "MILESTONE_NOT_RELEASED"
   | "ALREADY_SETTLED"
-  | "MILESTONE_ID_MISMATCH";
+  | "MILESTONE_ID_MISMATCH"
+  | "FEE_MISMATCH";
 
 export type EscalateReason = "LOW_CONFIDENCE" | "NEEDS_HUMAN" | "IDENTITY_MISMATCH" | "OVER_SOFT_LIMIT" | "INJECTION_FLAGGED" | "NO_PAYOUTS";
 
@@ -83,6 +84,9 @@ export interface EvaluationContext {
   // The milestone the authenticated request is about (POST /v1/proposals body `milestone_id`, sent by the backend).
   // Every fact above was read for this milestone. A proposal naming any other milestone is rejected.
   requestMilestoneId: string;
+  // The platform fee (fee.ts): basis points of the gross, and the earnings account's payee id and address as configured
+  // in the Policy Service (EARNINGS_ADDRESS). A plan that moves money must pay exactly that fee to exactly that account.
+  platformFee: { bps: number; payeeId: string; address: string };
 }
 
 export interface EvaluationResult {

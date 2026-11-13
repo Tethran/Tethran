@@ -102,6 +102,8 @@ async function waitHealthy(url: string, what: string) {
 
 /** The platform credential for release, refund and settle (generated per seed, kept in demo.json). */
 let PLATFORM_TOKEN = "";
+/** The Tethran earnings account (demo): a WDK wallet from the demo seed that receives the 5% platform fee. */
+let EARNINGS_ADDRESS = "";
 
 async function call(base: string, method: string, path: string, body?: unknown): Promise<any> {
   const headers: Record<string, string> = body ? { "content-type": "application/json" } : {};
@@ -171,6 +173,7 @@ function serviceEnv(chainKey: string, internalToken: string) {
     policy: {
       ...rpcEnv, CHAIN: chainKey, POLICY_SIGNER_PRIVATE_KEY: env("POLICY_SIGNER_PRIVATE_KEY"), OPERATOR_ADDRESS: wallet("OPERATOR").address,
       BACKEND_URL: BACKEND, INTERNAL_TOKEN: internalToken, POLICY_DATA_DIR: DATA, POLICY_PORT: String(POLICY_PORT),
+      EARNINGS_ADDRESS: EARNINGS_ADDRESS,
     },
     backend: {
       ...rpcEnv, ...llmEnv, LLM_TIMEOUT_MS: "90000", CHAIN: chainKey, TREASURY_PRIVATE_KEY: env("TREASURY_PRIVATE_KEY"),
@@ -237,6 +240,14 @@ async function main() {
   const other = Object.entries<any>(chainsFile.chains).find(([k, c]) => k !== chain.key && k !== "localhost" && c.testnet === true && c.chainId !== chain.chainId);
   const otherChain = other ? { key: other[0], chainId: other[1].chainId as number, name: other[1].name as string } : undefined;
 
+  // The earnings account's address (derived locally from the demo seed; no network needed).
+  {
+    const s = env("DEMO_WALLET_SEED");
+    if (!s) throw new Error("DEMO_WALLET_SEED is not set (run: cd contracts && npm run wallets)");
+    const w = createWdkWallets({ chain, seed: s, maxTransfer: 1n });
+    EARNINGS_ADDRESS = await w.address("earnings");
+    w.dispose();
+  }
   const children: ChildProcess[] = [];
   const stop = () => children.forEach((c) => c.kill());
   process.on("exit", stop);
@@ -308,8 +319,10 @@ async function main() {
   db.prepare("INSERT INTO vaults VALUES ('prov-demo', ?, ?, ?, ?)").run(chain.chainId, vault, vs.operator, vs.providerPayout);
   db.prepare("INSERT INTO payees VALUES ('payee_amara', 'prov-demo', 'Amara Studio (demo)', ?, 'usdt', 0, 'Amara Studio')").run(amara);
   db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-demo', 'Kofi Print Works (demo, simulated M-Pesa)', ?, 'mpesa', 1, 'Kofi Print Works')").run(kofiRail);
+  // The Tethran earnings account (demo): receives only the 5% platform fee line (Policy rule FEE_MISMATCH).
+  db.prepare("INSERT INTO payees VALUES ('tethran_earnings', 'prov-demo', 'Tethran earnings account (demo)', ?, 'usdt', 0, 'Tethran')").run(EARNINGS_ADDRESS);
   db.close();
-  say("seeded", "provider vault and two payees (one on a simulated M-Pesa rail)");
+  say("seeded", "provider vault, two payees (one on a simulated M-Pesa rail) and the Tethran earnings account (demo)");
   }
 
   // ---- 2. services, each with only its own key ----
@@ -326,7 +339,7 @@ async function main() {
   const current = await call(POLICY, "GET", "/v1/policy");
   const doc = {
     version: current.version + 1, per_tx_cap: usdt(1000), per_tx_soft_limit: usdt(800), daily_cap: usdt(1_000_000),
-    vault_min_reserve: "0", payee_allowlist: ["payee_amara", "payee_kofi"], min_tax_reserve_bps: 1000,
+    vault_min_reserve: "0", payee_allowlist: ["payee_amara", "payee_kofi", "tethran_earnings"], min_tax_reserve_bps: 1000,
     confidence_threshold: 0.7, chargeback_hold_seconds: 600,
   };
   const actions: Record<string, unknown>[] = [];
@@ -335,8 +348,8 @@ async function main() {
     const a = { version: ++v, perTxCap: doc.per_tx_cap, dailyCap: doc.daily_cap, minReserve: doc.vault_min_reserve };
     actions.push({ type: "setPolicy", ...a, operator_signature: await operator.signTypedData(domain, { SetPolicy: [...VAULT_TYPES.SetPolicy] }, a) });
   }
-  const allowed = await Promise.all([amara, kofiRail].map((p) => relay.vaultPayeeAllowed(vault, p)));
-  const missing = [amara, kofiRail].filter((_, i) => !allowed[i]);
+  const allowed = await Promise.all([amara, kofiRail, EARNINGS_ADDRESS].map((p) => relay.vaultPayeeAllowed(vault, p)));
+  const missing = [amara, kofiRail, EARNINGS_ADDRESS].filter((_, i) => !allowed[i]);
   if (missing.length > 0) {
     const a = { version: ++v, payees: missing, allowed: true };
     actions.push({ type: "setPayees", ...a, operator_signature: await operator.signTypedData(domain, { SetPayees: [...VAULT_TYPES.SetPayees] }, a) });

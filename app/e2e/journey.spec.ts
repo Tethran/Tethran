@@ -57,8 +57,19 @@ test("the whole journey", async ({ page }) => {
     await expect(page.getByTestId("view-receipt")).toBeVisible({ timeout: 15 * 60_000 });
     await expect(page.getByTestId("policy-approved")).toBeVisible();
     await expect(page.getByTestId("vault-payouts")).toContainText("to ");
-    await caption(page, "Approved by the Policy Service; the vault paid; receipt minted");
+    await expect(page.getByTestId("fee-line")).toContainText("Platform fee 5%");
+    await caption(page, "Approved by the Policy Service; the vault paid the freelancer and Tethran's 5% fee; receipt minted");
     await shot(page, "journey-06-settled");
+  });
+
+  await step("Operator: Earnings shows the 5% fee collected", async () => {
+    await page.goto("/app/earnings", { waitUntil: "domcontentloaded" });
+    await settled(page);
+    await expect(page.getByTestId("earnings-lines")).toContainText(/\$\d/);
+    await caption(page, "Operator: Tethran's earnings, 5% of each settled milestone (demo earnings account)");
+    await shot(page, "journey-06a-earnings");
+    await page.goBack();
+    await settled(page);
   });
 
   await step("Receipt: verified against the chain", async () => {

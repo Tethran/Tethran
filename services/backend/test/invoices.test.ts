@@ -40,18 +40,17 @@ test("invoice: refused for an unsigned contract, unknown milestone, bad fee paye
   await expectApi(invoiceFor(s, c.milestones[0].id, { provider_tax_ids: { KRA_PIN: "A1" } }), 400);
 });
 
-test("fees: exact cents with the client paying and with the provider paying", async () => {
+test("fees: Tethran's 5% platform fee, paid by the freelancer; the client pays exactly the subtotal", async () => {
   const s = setup();
   const c = await signedContract(s);
-  // 10,000 cents: 1% = 100, plus 30 fixed = 130
-  const client = await invoiceFor(s, c.milestones[0].id, { fee_payer: "client" });
-  assert.deepEqual([client.subtotal_cents, client.fee_cents, client.total_cents, client.provider_payout_cents], [10_000, 130, 10_130, 10_000]);
-  // 25,050 cents: 1% = 250.5, rounded half up to 251, plus 30 = 281
-  const provider = await invoiceFor(s, c.milestones[1].id, { fee_payer: "provider" });
-  assert.deepEqual([provider.subtotal_cents, provider.fee_cents, provider.total_cents, provider.provider_payout_cents], [25_050, 281, 25_050, 24_769]);
-  // default fee payer is the provider
-  const d = await signedContract(s, { provider_id: "p3" });
-  assert.equal((await invoiceFor(s, d.milestones[0].id)).fee_payer, "provider");
+  // The old client-paid fee is gone.
+  await expectApi(invoiceFor(s, c.milestones[0].id, { fee_payer: "client" }), 400);
+  // 10,000 cents: 5% = 500; the client pays 10,000; the freelancer receives 9,500
+  const a = await invoiceFor(s, c.milestones[0].id);
+  assert.deepEqual([a.subtotal_cents, a.fee_cents, a.total_cents, a.provider_payout_cents, a.fee_payer], [10_000, 500, 10_000, 9_500, "provider"]);
+  // 25,050 cents: 5% = 1,252.5, rounded half up to 1,253
+  const b = await invoiceFor(s, c.milestones[1].id, { fee_payer: "provider" });
+  assert.deepEqual([b.subtotal_cents, b.fee_cents, b.total_cents, b.provider_payout_cents], [25_050, 1_253, 25_050, 23_797]);
 });
 
 test("fees: the model is configurable and integer only", () => {
@@ -63,7 +62,7 @@ test("fees: the model is configurable and integer only", () => {
 test("invoice creation is idempotent per milestone", async () => {
   const s = setup();
   const c = await signedContract(s);
-  const a = await invoiceFor(s, c.milestones[0].id, { fee_payer: "client" });
+  const a = await invoiceFor(s, c.milestones[0].id, { fee_payer: "provider" });
   const b = await invoiceFor(s, c.milestones[0].id, { fee_payer: "provider" });
   assert.equal(a.created, true);
   assert.equal(b.created, false);
@@ -76,10 +75,10 @@ test("invoice creation is idempotent per milestone", async () => {
 test("public pay payload: link, QR data, no client email or wallet", async () => {
   const s = setup();
   const c = await signedContract(s);
-  const inv = await invoiceFor(s, c.milestones[0].id, { fee_payer: "client" });
+  const inv = await invoiceFor(s, c.milestones[0].id, { fee_payer: "provider" });
   const pay = await s.call("GET", `/pay/${inv.id}`);
   assert.deepEqual(pay, {
-    invoice_id: inv.id, invoice_number: "INV-2026-0001", provider_name: "Amara Design Studio", amount_usd_cents: 10_130, currency: "USD",
+    invoice_id: inv.id, invoice_number: "INV-2026-0001", provider_name: "Amara Design Studio", amount_usd_cents: 10_000, currency: "USD",
     due_date: "2026-03-15", status: "unpaid", escrow_milestone_id: c.milestones[0].id,
     pay_url: `https://pay.example.test/pay/${inv.id}`, qr_data: `https://pay.example.test/pay/${inv.id}`, payment_options_endpoint: "/checkout/options",
   });
@@ -105,7 +104,7 @@ test("default public base URL", async () => {
 test("receipts exist only after payment (escrow row, or markInvoicePaid); chain link fields are nullable", async () => {
   const s = setup();
   const c = await signedContract(s);
-  const a = await invoiceFor(s, c.milestones[0].id, { fee_payer: "client" });
+  const a = await invoiceFor(s, c.milestones[0].id, { fee_payer: "provider" });
   const b = await invoiceFor(s, c.milestones[1].id);
   await expectApi(s.call("GET", `/invoices/${a.id}/receipt`), 409, "NOT_PAID");
   insertEscrowRow(s.db, c.milestones[0].id, "draft");
@@ -113,7 +112,7 @@ test("receipts exist only after payment (escrow row, or markInvoicePaid); chain 
   s.db.exec("UPDATE milestones SET state = 'funded'");
   const r = await s.call("GET", `/invoices/${a.id}/receipt`);
   assert.equal(r.receipt_for, "INV-2026-0001");
-  assert.equal(r.total_paid_cents, 10_130);
+  assert.equal(r.total_paid_cents, 10_000);
   assert.equal(r.escrow_state, "funded");
   assert.equal(r.receipt_token_id, null);
   assert.equal(r.chain_id, null);
@@ -180,12 +179,12 @@ test("recurring invoices: issued when due, idempotent across repeated runs, stop
   const body = contractBody();
   (body.milestones[0] as any).recurrence = { frequency: "monthly", count: 3 }; // due 03-15, 04-15, 05-15
   const c = await signedContract(s, body);
-  await invoiceFor(s, c.milestones[0].id, { fee_payer: "client" });
+  await invoiceFor(s, c.milestones[0].id, { fee_payer: "provider" });
   const run = (iso: string) => s.call("POST", "/invoices/recurring/run", { now: iso });
   assert.deepEqual((await run("2026-03-20T00:00:00Z")).issued, []);
   const r1 = await run("2026-04-08T00:00:00Z");
   assert.equal(r1.issued.length, 1);
-  assert.deepEqual([r1.issued[0].number, r1.issued[0].due_date, r1.issued[0].fee_payer, r1.issued[0].total_cents, r1.issued[0].occurrence], ["INV-2026-0002", "2026-04-15", "client", 10_130, 1]);
+  assert.deepEqual([r1.issued[0].number, r1.issued[0].due_date, r1.issued[0].fee_payer, r1.issued[0].total_cents, r1.issued[0].occurrence], ["INV-2026-0002", "2026-04-15", "provider", 10_000, 1]);
   assert.deepEqual((await run("2026-04-08T00:00:00Z")).issued, []);
   assert.deepEqual((await run("2026-04-20T00:00:00Z")).issued, []);
   const r2 = await run("2026-06-01T00:00:00Z");

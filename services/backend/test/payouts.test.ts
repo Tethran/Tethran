@@ -119,7 +119,7 @@ test("routes: list, get, quote, status advance and forced failure", async () => 
   await rejects(call(routes, "POST", "/payouts/quote", { rail: "paypal", amount: "1" }), 400);
 
   const list: any = await call(routes, "GET", `/payouts?milestone_id=${M1}`);
-  assert.equal(list.payouts.length, 2);
+  assert.equal(list.payouts.length, 3); // incl. the platform fee line
   const kofi = list.payouts.find((p: any) => p.rail === "mpesa");
   assert.equal(kofi.offchain, null); // no leg until processing
 

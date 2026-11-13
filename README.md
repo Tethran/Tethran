@@ -16,6 +16,14 @@ Service **decides** and co-signs. The vault pays only with both signatures and o
 go out, a non-transferable receipt NFT is minted, and every step is joined in a reconciliation ledger with a CSV
 tax export.
 
+**Business model.** Tethran takes a **5% platform fee** on each milestone, paid by the freelancer out of the settlement
+into the Tethran earnings account (in the demo a demo wallet, "Demo earnings account"; in production a company
+treasury). The client pays exactly the milestone amount. The fee is computed by code, not by the AI, and the Policy
+Service rejects any plan whose fee line is missing, wrong or sent elsewhere (`FEE_MISMATCH`). The freelancer receives
+the gross minus the fee minus the tax reserve (10% of the gross in the demo policy). Refunds and disputes decided for
+the client pay no fee. The operator sees it all on the **Earnings** screen; the fee also appears in the payout step,
+on the receipt and in reconciliation.
+
 ## Run the demo (one command)
 
 Requires Node.js 22.13 or newer. Once:
