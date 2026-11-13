@@ -6,7 +6,7 @@ import { api, ApiError, DEMO_LABEL, type Via } from "@/api";
 import { SignChoice, DemoNote } from "@/components/app/SignChoice";
 import type { Dispute } from "@/api/types";
 import { PageHead } from "@/components/app/AppShell";
-import { Async, EmptyBlock, useApi } from "@/components/app/demo-state";
+import { Async, EmptyBlock, LIVE, useApi } from "@/components/app/demo-state";
 import { Object3D } from "@/components/tethran/Object3D";
 import { Amount, Card, StatusChip } from "@/components/tethran/ui";
 
@@ -74,7 +74,7 @@ function Case({ d, onDone }: { d: Dispute; onDone: () => void }) {
 }
 
 function Arbiter() {
-  const q = useApi(["disputes"], api.listDisputes);
+  const q = useApi(["disputes"], api.listDisputes, LIVE);
   return (
     <div>
       <PageHead eyebrow="Two of three decide" light="Make a" title="fair call." />

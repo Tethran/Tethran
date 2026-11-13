@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Mail } from "lucide-react";
 import { api } from "@/api";
 import { PageHead } from "@/components/app/AppShell";
-import { Async, EmptyBlock, useApi } from "@/components/app/demo-state";
+import { Async, EmptyBlock, LIVE, useApi } from "@/components/app/demo-state";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/emails")({
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/app/emails")({
 const TONE: Record<string, string> = { sent: "bg-success/15 text-success", failed: "bg-danger/15 text-danger", capped: "bg-danger/15 text-danger", blocked: "bg-progress/20", skipped: "bg-progress/20", not_configured: "bg-progress/20", invalid_address: "bg-danger/15 text-danger", sending: "bg-line" };
 
 function EmailsPage() {
-  const q = useApi(["emails"], api.emails);
+  const q = useApi(["emails"], api.emails, LIVE);
   return (
     <div className="mx-auto max-w-3xl">
       <PageHead eyebrow="Emails" light="Invoice" title="emails." />

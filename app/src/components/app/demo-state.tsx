@@ -7,9 +7,12 @@ import type { ObjKey } from "@/lib/objects";
 
 
 /** Query wrapper for the Tethran API: loading, empty and error states come from the real request. */
-export function useApi<T>(key: unknown[], fn: () => Promise<T>) {
-  return useQuery({ queryKey: key, queryFn: fn, retry: 1, refetchOnWindowFocus: true });
+export function useApi<T>(key: unknown[], fn: () => Promise<T>, opts: { refetchInterval?: number } = {}) {
+  return useQuery({ queryKey: key, queryFn: fn, retry: 1, refetchOnWindowFocus: true, ...(opts.refetchInterval ? { refetchInterval: opts.refetchInterval } : {}) });
 }
+
+/** Live screens refresh by themselves (every 2 s) so one side's action shows on the other side without a reload. */
+export const LIVE = { refetchInterval: 2000 } as const;
 
 export function LoadingBlock({ rows = 3 }: { rows?: number }) {
   return <div className="grid gap-3" aria-busy="true" aria-label="Loading">{Array.from({ length: rows }, (_, k) => <Skeleton key={k} className="h-20 rounded-[var(--radius-card)] bg-line" />)}</div>;

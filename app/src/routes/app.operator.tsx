@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, ApiError, DEMO_LABEL, reasonInfo, type Via } from "@/api";
 import type { ApprovalItem } from "@/api/types";
 import { PageHead } from "@/components/app/AppShell";
-import { Async, EmptyBlock, useApi } from "@/components/app/demo-state";
+import { Async, EmptyBlock, LIVE, useApi } from "@/components/app/demo-state";
 import { DemoSigned, SignChoice, useDemoSigner, DemoNote } from "@/components/app/SignChoice";
 import { Card, DecisionChip, ReasonList, SimTag, usd } from "@/components/tethran/ui";
 
@@ -126,9 +126,9 @@ function Approval({ a, onDone }: { a: ApprovalItem; onDone: () => void }) {
 }
 
 function Operator() {
-  const queue = useApi(["approvals"], api.listApprovals);
-  const holds = useApi(["identity-holds"], api.listIdentityHolds);
-  const log = useApi(["audit"], api.listAudit);
+  const queue = useApi(["approvals"], api.listApprovals, LIVE);
+  const holds = useApi(["identity-holds"], api.listIdentityHolds, LIVE);
+  const log = useApi(["audit"], api.listAudit, LIVE);
   const [busy, setBusy] = useState<string | null>(null);
   const decideHold = async (milestoneId: string, decision: "release" | "hold", via: Via) => {
     setBusy(milestoneId);

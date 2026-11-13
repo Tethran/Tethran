@@ -1068,3 +1068,11 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   timeout (the request was raised to 20 s), the second was sent (status and message id in the lead's report).
 - Tests (provider mocked): sent once with the pay link and footer, outbox without config, reserved domains, allowlist
   and cap, provider error without the key, HTML escaping, and the route wiring (one email per invoice, 429 per IP).
+
+### Feature 5: role dashboards and live updates (branch dashboards)
+- Home follows the current role (no new backend work: it reads existing data): freelancer (balance, active milestones,
+  unpaid invoices, receipts, and what was paid to them from the wallet's payouts); client (invoices to pay, work
+  awaiting approval with the AI's delivery check, funded milestones, wallet balance and Add funds); operator and
+  arbiter link to their screens.
+- Live: Home, the milestone page, the operator queues and audit log, the arbiter queue, the Emails view and the bell
+  refresh every 2 seconds (polling; there is no SSE), so one side's action shows on the other side without a reload.

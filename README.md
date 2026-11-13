@@ -25,6 +25,11 @@ unclear criterion to a person (`CRITERIA_UNMET`, `CRITERIA_UNCLEAR`). The seed a
 (**Replay**) by default; `AGENT_MODE=live npm run demo` (or `demo:serve`) calls the model (Groq first, Gemini fallback)
 and the app labels each answer **Live model** or **Replay**.
 
+**Role dashboards, live.** Home follows the role (Switch role): the freelancer sees balance, active milestones, unpaid
+invoices, receipts and what was paid to them; the client sees invoices to pay, work awaiting approval and funded
+milestones with their wallet balance. Home, the milestone page, the operator and arbiter queues, the Emails view and
+the bell refresh every 2 seconds, so one side's action appears on the other side without a reload.
+
 **Invoice email.** A new invoice is emailed to the client's address (Resend REST API) with the pay link
 (`<APP_BASE_URL>/pay/<invoiceId>`); `EMAIL_PROVIDER`, `EMAIL_API_KEY` and `EMAIL_FROM` configure it, and without them the
 message stays in the **Emails** view ("Outbox only"). Daily send cap, per-IP limit on invoice creation, one email per

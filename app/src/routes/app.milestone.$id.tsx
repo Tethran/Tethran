@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, ApiError } from "@/api";
 import type { MilestoneStatus } from "@/api/types";
 import { PageHead } from "@/components/app/AppShell";
-import { Async, EmptyBlock, useApi } from "@/components/app/demo-state";
+import { Async, EmptyBlock, LIVE, useApi } from "@/components/app/demo-state";
 import { useDemoSigner } from "@/components/app/SignChoice";
 import { Amount, Card, DecisionChip, PillButton, ReasonList, SimTag, StatusChip, usd } from "@/components/tethran/ui";
 import { cn } from "@/lib/utils";
@@ -43,7 +43,7 @@ function Countdown({ until }: { until: string }) {
 
 function MilestonePage() {
   const { id } = Route.useParams();
-  const q = useApi(["milestone", id], () => api.getMilestone(id));
+  const q = useApi(["milestone", id], () => api.getMilestone(id), LIVE);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [link, setLink] = useState("");

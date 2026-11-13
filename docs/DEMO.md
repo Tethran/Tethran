@@ -82,6 +82,8 @@ the milestone page in demo mode; it runs in the same presenter process with the 
    key). Arbiter: vote on the dispute; the client votes from the milestone page; two of three decide on-chain.
    **Invoice email:** with EMAIL_* set, the client's address receives the pay link; Notifications → **Emails** lists
    every send (status, provider message id). The contract form's default client@example.com is never emailed.
+   **Two sides at once:** open the app twice with `?as=client` and `?as=freelancer`; each Home and the bell update
+   within 2 seconds of the other side's action.
 9. **Notifications.** The bell (top right) shows the current role's unread count; switch role to see each side's
    notifications (client: invoice, work submitted with the delivery check; freelancer: funded, approved, paid; operator:
    fee collected, escalations).
