@@ -2517,6 +2517,35 @@
         "Lead decisions on acceptance criteria to the agent, notifications and the platform fee"
       ],
       "notes": "Recordings: app/e2e-artifacts/recordings/tethran-demo-short.webm and tethran-journey-1440.webm."
+    },
+    {
+      "session_id": "2026-11-13-features-2-to-8",
+      "date": "2026-11-13",
+      "summary": "Merged features 2 to 6 (delivery check, notifications, invoice email, role dashboards, external wallets), FX indicative rates, recording tooling and the deployment plan; each passed unit tests and a clean Sepolia reseed (12 of 12, 0 problems). Send page retries a dropped review request.",
+      "completed": [
+        "Labels",
+        "Delivery check and uploads",
+        "Notifications",
+        "Indicative FX rates (app only; x402 keeps Sample rates)",
+        "Invoice email via Resend",
+        "Role dashboards with 2 s polling",
+        "External wallets (Reown AppKit 1.8.24, lazy-loaded)",
+        "Film tooling (film.ts, film-1920 project)",
+        "docs/DEPLOY.md",
+        "Send page retry"
+      ],
+      "blockers": [
+        "Payout address to a connected wallet needs a vault allowlist change (not built)",
+        "Disputes from a connected wallet not built"
+      ],
+      "errors_encountered": [
+        "Nitro server build failed on the wallet library optional peer (@coinbase/cdp-sdk); fixed by keeping the wallet packages external on the server",
+        "Full journey failed on a dropped connection while the machine slept; not re-run"
+      ],
+      "next_steps": [
+        "Record the final two-sided film at 1920x1080"
+      ],
+      "notes": "Gate for the push: unit tests, clean reseed 12/12, short demo passed. Full journey not re-run after the Send fix."
     }
   ]
 }

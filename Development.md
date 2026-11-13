@@ -1112,3 +1112,11 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
 - The journey now covers the delivery submission with a file and the delivery check, the client's Home with the work
   awaiting approval, the bell and notifications, and the Emails view.
 - docs/DEPLOY.md: the deployment plan (planning only, nothing deployed).
+
+### Send page: retry a dropped review request; final gate
+- The Send page re-checks the transfer with the backend when the network changes. A single dropped request used to
+  leave "Confirm and send" disabled with no way back except a reload. It now retries a dropped connection three
+  times, 2 seconds apart, and shows "Try again" if it still fails.
+- Gate for this push (set by the lead): unit tests pass, a clean Sepolia reseed passed (12 scenarios, 0 problems)
+  and the short demo recording passed (cut to 61 s). The full journey run failed at its last step (wrong network,
+  then duplicate send) on a connection dropped while the machine slept; it was **not re-run after this fix**.

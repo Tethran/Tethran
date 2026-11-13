@@ -38,10 +38,24 @@ function SendReview() {
   useEffect(() => { if (chainId === null && other) setChainId(other.id); }, [other, chainId]);
   const transfer = useMemo(() => payee && chainId ? { to: payee.address, amount: AMOUNT_BASE_UNITS, chainId, reference: ref } : null, [payee, chainId, ref]);
 
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!transfer || phase !== "review") return;
-    api.reviewTransfer(transfer).then((r) => { setReview(r); setError(null); }).catch((e) => setError((e as ApiError).message));
-  }, [transfer, phase]);
+    let live = true;
+    // A dropped connection is retried (three tries, 2 s apart) so one lost request does not leave the page stuck.
+    (async () => {
+      for (let i = 0; i < 3; i++) {
+        try { const r = await api.reviewTransfer(transfer); if (live) { setReview(r); setError(null); } return; }
+        catch (e) {
+          const err = e as ApiError;
+          if (err.code !== "UNREACHABLE" || i === 2) { if (live) setError(err.message); return; }
+          await new Promise((res) => setTimeout(res, 2000));
+          if (!live) return;
+        }
+      }
+    })();
+    return () => { live = false; };
+  }, [transfer, phase, attempt]);
 
   const send = async () => {
     if (!transfer) return;
@@ -91,7 +105,12 @@ function SendReview() {
         {review && review.blocked.filter((b) => b !== "WRONG_NETWORK").map((b) => <p key={b} className="mt-3 text-sm text-muted-foreground">{reasonInfo(b).title}. {reasonInfo(b).plain}</p>)}
         <div className="mt-5"><Details rows={[["From (your WDK wallet)", review?.from ?? "…"], ["Token", "Test USDT"], ["Payment reference", ref], ["Custody", review?.custody ?? "…"]]} /></div>
         <div aria-live="polite" className="mt-5 grid gap-3">
-          {error && <p className="rounded-[var(--radius-input)] border border-danger/40 p-4 text-sm">{error}</p>}
+          {error && (
+            <div className="rounded-[var(--radius-input)] border border-danger/40 p-4 text-sm">
+              <p>{error}</p>
+              <button type="button" onClick={() => { setError(null); setAttempt((n) => n + 1); }} className="mt-3 min-h-11 rounded-full border px-4">Try again</button>
+            </div>
+          )}
           {(phase === "sending" || phase === "pending") && <p className="flex items-center gap-2 rounded-[var(--radius-input)] bg-progress/10 p-4 text-sm"><Loader2 className="size-4 animate-spin" aria-hidden />Sent to the network, waiting for confirmation{tx ? ` (${tx.slice(0, 12)}…)` : ""}.</p>}
           {notice && <p className="flex items-center gap-2 rounded-[var(--radius-input)] border border-progress/50 p-4 text-sm"><AlertTriangle className="size-4 text-progress" aria-hidden />{notice}</p>}
           {phase === "pending" && <button onClick={recheck} className="inline-flex min-h-11 w-fit items-center gap-2 rounded-full border px-4 text-sm hover:border-ink"><RefreshCw className="size-4" aria-hidden />Check again</button>}
