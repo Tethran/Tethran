@@ -14,7 +14,9 @@ Runs on Sepolia with our own test token, `TestUSDT`.
 
 ## Demo
 
-▶ Watch the 3-minute demo: `<VIDEO_URL>`
+▶ [Watch the 3-minute demo](https://youtu.be/Ly5IhJZuIVM)
+
+[Open the live website](https://tethran.onrender.com)
 
 ![Tethran milestone and escrow flow](app/public/objects/02_contract_milestones.png)
 
