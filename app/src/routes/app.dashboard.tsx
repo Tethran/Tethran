@@ -7,7 +7,7 @@ import { Object3D } from "@/components/tethran/Object3D";
 import { PillLink, SimTag, StatusChip, pill, usd } from "@/components/tethran/ui";
 
 export const Route = createFileRoute("/app/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard — Tethran demo" }, { name: "description", content: "Your balance, milestones, invoices and receipts." }] }),
+  head: () => ({ meta: [{ title: "Dashboard — Tethran" }, { name: "description", content: "Your balance, milestones, invoices and receipts." }] }),
   component: Dashboard,
 });
 

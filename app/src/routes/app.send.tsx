@@ -9,7 +9,7 @@ import { Object3D } from "@/components/tethran/Object3D";
 import { Details, PillButton, SimTag, usd } from "@/components/tethran/ui";
 
 export const Route = createFileRoute("/app/send")({
-  head: () => ({ meta: [{ title: "Review and send — Tethran demo" }, { name: "description", content: "Review a payment before it moves." }] }),
+  head: () => ({ meta: [{ title: "Review and send — Tethran" }, { name: "description", content: "Review a payment before it moves." }] }),
   component: SendReview,
 });
 
@@ -70,7 +70,7 @@ function SendReview() {
       <div className="rounded-[var(--radius-sheet)] border bg-surface p-6 shadow-soft">
         <div className="flex items-center gap-4">
           <Object3D name="phone" className="size-16" decorative />
-          <div><p className="text-sm text-muted-foreground">To</p><p className="text-xl font-medium">{review?.recipient.savedName ?? "Amara Studio (demo)"}</p><p className="font-mono text-xs text-muted-foreground">{payee?.address ?? "…"}</p></div>
+          <div><p className="text-sm text-muted-foreground">To</p><p className="text-xl font-medium">{review?.recipient.savedName ?? "Amara Studio"}</p><p className="font-mono text-xs text-muted-foreground">{payee?.address ?? "…"}</p></div>
         </div>
         <dl className="mt-6 grid gap-3 border-t pt-5">
           <div className="flex justify-between"><dt className="text-muted-foreground">Amount</dt><dd className="font-mono">{usd(5)} test USDT</dd></div>
@@ -104,7 +104,7 @@ function SendReview() {
           </PillButton>
         )}
       </div>
-      <p className="mt-4 flex items-center justify-center gap-2 text-center text-xs text-muted-foreground">Test network only. <SimTag label="Demo custody" /></p>
+      <p className="mt-4 flex items-center justify-center gap-2 text-center text-xs text-muted-foreground">Test network only.</p>
     </div>
   );
 }

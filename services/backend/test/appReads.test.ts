@@ -42,7 +42,7 @@ test("GET /contracts lists contracts with provider and status filters", async ()
   try {
     const body = {
       provider_id: "prov-1", provider_address: "0x00000000000000000000000000000000000000a1", client_address: "0x00000000000000000000000000000000000000c1",
-      client_name: "Demo Client Ltd", currency: "USD", country: "KE",
+      client_name: "Kofi Mensah Ltd", currency: "USD", country: "KE",
       milestones: [{ title: "Logo", amount_usd_cents: 5000, due_date: "2026-12-01", acceptance_criteria: "Delivered as agreed." }],
     };
     const c = await s.post("/contracts", body);
@@ -81,7 +81,7 @@ test("GET /earnings: the 5% platform fee lines, the total collected and the earn
     assert.equal(e.total_collected, "5000000"); // 5% of 100 USDT
     assert.deepEqual(e.lines.map((l: any) => [l.milestone_id, l.gross, l.fee, l.status]), [[M1, "100000000", "5000000", "confirmed"]]);
     assert.equal(e.account.address, "0x00000000000000000000000000000000000000e0");
-    assert.match(e.label, /Demo earnings account/);
+    assert.match(e.label, /Tethran earnings account/);
   } finally {
     await s.close();
   }

@@ -75,7 +75,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Tethran — Contracts that pay themselves" },
-      { name: "description", content: "Milestone escrow for African freelancers, paid out to phones, banks and wallets. Demo on test networks." },
+      { name: "description", content: "Milestone escrow for African freelancers, paid out to phones, banks and wallets. Test networks only." },
       { name: "theme-color", content: "#0A1F1B" },
     ],
     links: [

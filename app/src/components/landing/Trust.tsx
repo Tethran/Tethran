@@ -6,7 +6,7 @@ import { pill } from "@/components/tethran/ui";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 export const FAQ = [
-  ["Is this real money?", "No. Tethran is a demo on test networks. Card payments run in a sandbox; conversion, identity checks, mobile-money and bank payouts are simulated and labelled."],
+  ["Is this real money?", "No. Tethran is a hackathon prototype on test networks. Card payments run in a sandbox; conversion, identity checks, mobile-money and bank payouts are simulated and labelled."],
   ["Can the AI spend my money?", "No. The AI only proposes. A separate rules engine and an on-chain spending guard decide, and a human has the final say above the limits."],
   ["What if a client disputes?", "Two of three decide: client, provider and arbiter."],
   ["Who sees my data?", "Receipts store hashes only. No personal data goes on-chain."],

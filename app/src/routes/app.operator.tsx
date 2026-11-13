@@ -10,7 +10,7 @@ import { DemoSigned, SignChoice, useDemoSigner, DemoNote } from "@/components/ap
 import { Card, DecisionChip, ReasonList, SimTag, usd } from "@/components/tethran/ui";
 
 export const Route = createFileRoute("/app/operator")({
-  head: () => ({ meta: [{ title: "Operator console — Tethran demo" }, { name: "description", content: "Limits, approval queue and audit log." }] }),
+  head: () => ({ meta: [{ title: "Operator console — Tethran" }, { name: "description", content: "Limits, approval queue and audit log." }] }),
   component: Operator,
 });
 
@@ -72,7 +72,7 @@ function Limits() {
                 {changed && <p className="text-xs"><DemoSigned via={changed.via} /> {changed.txs.length > 0 && <span className="font-mono">vault update {changed.txs[0]!.slice(0, 14)}…</span>}</p>}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">Policy version {l.version}. Changing the limits takes the operator's signature on the policy and on the vault update (demo mode offers a one-click test key).</p>
+              <p className="text-xs text-muted-foreground">Policy version {l.version}. Changing the limits takes the operator's signature on the policy and on the vault update.</p>
             )}
             <div className="grid gap-2 rounded-[var(--radius-input)] bg-muted p-4">
               <p className="font-medium">Would the vault pay this?</p>
@@ -142,12 +142,12 @@ function Operator() {
   return (
     <div>
       <PageHead eyebrow="Operator" light="Rules the AI" title="can't break." />
-      <DemoNote />
+      
       <div className="grid gap-8 grid-cols-1 lg:grid-cols-[1fr_1.4fr] *:min-w-0">
         <div className="grid content-start gap-8">
           <Limits />
           <Card>
-            <div className="flex items-center justify-between"><h2 className="text-2xl">Identity holds</h2><SimTag label="Simulated check" className="text-muted-foreground" /></div>
+            <div className="flex items-center justify-between"><h2 className="text-2xl">Identity holds</h2></div>
             <div className="mt-4">
               <Async q={holds} rows={1} empty={<p className="text-sm text-muted-foreground">No releases on hold.</p>}>
                 {(hs) => (

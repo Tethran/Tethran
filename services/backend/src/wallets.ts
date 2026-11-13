@@ -49,10 +49,10 @@ export interface WalletLayerDeps {
 }
 
 /** The demo's people: each has one Tethran wallet (demo wallet). The client and the freelancer (Amara Studio). */
-export const WALLET_USERS = { client: "Demo Client Ltd (client)", payee_amara: "Amara Studio (freelancer)" } as const;
+export const WALLET_USERS = { client: "Kofi Mensah Ltd (client)", payee_amara: "Amara Studio (freelancer)" } as const;
 /** Largest single top-up, in cents ($10,000). */
 export const MAX_TOPUP_CENTS = 1_000_000;
-export const DEMO_WALLET_LABEL = "Demo wallet. Simulated: test USDT on a test network, keys held by the demo seed; not real money.";
+export const DEMO_WALLET_LABEL = "Wallet: test USDT on a test network; not real money. Adding funds by card is simulated.";
 
 const usdtString = (base: bigint) => {
   const whole = base / 1_000_000n;

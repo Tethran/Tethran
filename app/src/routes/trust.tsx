@@ -15,7 +15,7 @@ export const Route = createFileRoute("/trust")({
 });
 
 const REAL = ["Milestone escrow in USDT on a test network", "Spending limits enforced by the contract", "Receipts as non-transferable tokens (hashes only)", "The rules engine that approves or rejects proposals"];
-const SIM = ["Card and wallet payments (sandbox)", "Currency conversion", "Identity and name checks", "Mobile-money and bank payouts"];
+const SIM = ["Card checkout", "Mobile-money and bank payouts"];
 const LAYERS = [
   { icon: UserRound, t: "The AI proposes", d: "It reads evidence and suggests a split. It holds no keys." },
   { icon: CheckCircle2, t: "Rules decide", d: "A separate engine checks limits, payees and inputs." },
@@ -31,7 +31,7 @@ function TrustPage() {
         <div className="mx-auto grid max-w-[1100px] items-center gap-10 md:grid-cols-[1.3fr_1fr]">
           <div>
             <h1 className="display-hero"><span className="weight-light">Nothing here</span> is hidden.</h1>
-            <p className="mt-6 max-w-[40ch] text-lg text-muted-foreground">Tethran is a hackathon demo on test networks. No real money moves.</p>
+            <p className="mt-6 max-w-[40ch] text-lg text-muted-foreground">Tethran is a hackathon prototype on test networks. No real money moves.</p>
           </div>
           <Object3D name="gate" className="mx-auto size-64 md:size-80" />
         </div>
@@ -61,7 +61,7 @@ function TrustPage() {
               </li>
             ))}
           </ol>
-          <div className="mt-14"><PillLink to="/app" variant="lime" size="lg">Try the demo</PillLink></div>
+          <div className="mt-14"><PillLink to="/app" variant="lime" size="lg">Open the app</PillLink></div>
         </div>
       </section>
     </main>

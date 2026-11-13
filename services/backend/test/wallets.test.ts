@@ -51,10 +51,10 @@ const code = (c: string) => (e: unknown) => e instanceof ApiError && e.code === 
 
 test("review shows recipient, network, amount and the network fee separately, before anything is signed", async () => {
   const f = fake();
-  f.layer.saveRecipient("client", { name: "Tethran treasury (demo)", address: TO });
+  f.layer.saveRecipient("client", { name: "Tethran treasury", address: TO });
   const r: any = await f.layer.review("client", body());
   assert.equal(r.can_sign, true);
-  assert.deepEqual(r.recipient, { address: TO, saved_name: "Tethran treasury (demo)", saved: true });
+  assert.deepEqual(r.recipient, { address: TO, saved_name: "Tethran treasury", saved: true });
   assert.deepEqual(r.network, { name: "Sepolia", chain_id: CHAIN });
   assert.equal(r.amount.display, "5 tUSDT (test token)");
   assert.equal(r.fee.paid_in, "ETH");

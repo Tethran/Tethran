@@ -227,7 +227,7 @@ export function createHttpServer(deps: HttpDeps): Server {
       let balance: string | null = null;
       if (deps.wallets) { try { balance = ((await deps.wallets.balance("earnings")) as any).usdt.base_units; } catch { /* RPC read failed: shown as unavailable */ } }
       return {
-        label: "Demo earnings account (a company treasury in production). Test USDT on a test network.",
+        label: "Tethran earnings account (a company treasury in production). Test USDT on a test network.",
         fee: { bps: PLATFORM_FEE_BPS, rule: "5% of each milestone's gross, paid by the freelancer, enforced by the Policy Service (FEE_MISMATCH)" },
         account: { address: payee?.address ?? null, balance },
         total_collected: total.toString(),

@@ -6,7 +6,7 @@ import { Async, EmptyBlock, useApi } from "@/components/app/demo-state";
 import { Card, SimTag, usd } from "@/components/tethran/ui";
 
 export const Route = createFileRoute("/app/earnings")({
-  head: () => ({ meta: [{ title: "Earnings — Tethran demo" }, { name: "description", content: "Tethran's 5% platform fee: total collected, per-milestone fee lines, the earnings account." }] }),
+  head: () => ({ meta: [{ title: "Earnings — Tethran" }, { name: "description", content: "Tethran's 5% platform fee: total collected, per-milestone fee lines, the earnings account." }] }),
   component: EarningsPage,
 });
 
@@ -17,19 +17,19 @@ function EarningsPage() {
       <PageHead eyebrow="Operator · Earnings" light="Tethran" title="earnings." />
       <p className="mb-6 flex items-start gap-2 rounded-[var(--radius-input)] border border-dashed border-progress bg-progress/10 p-3 text-sm">
         <Landmark className="mt-0.5 size-4 shrink-0" aria-hidden />
-        <span><span className="font-medium">Demo earnings account.</span> Tethran's platform fee is 5% of each milestone, paid by the freelancer out of the settlement and enforced by the Policy Service. In production this account is a company treasury; here it is a demo wallet with test USDT.</span>
+        <span><span className="font-medium">Tethran earnings account.</span> Tethran's platform fee is 5% of each milestone, paid by the freelancer out of the settlement and enforced by the Policy Service. A wallet on a test network holding test USDT; in production this is a company treasury.</span>
       </p>
       <Async q={q} rows={2} empty={<EmptyBlock title="No earnings yet." />}>
         {(e) => (
           <div className="grid gap-6">
             <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
               <Card>
-                <div className="flex items-center justify-between"><h2 className="text-xl">Total collected</h2><SimTag label="Test USDT" className="text-muted-foreground" /></div>
+                <div className="flex items-center justify-between"><h2 className="text-xl">Total collected</h2></div>
                 <p className="mt-4 font-display text-5xl font-semibold tracking-[-0.04em]" data-testid="earnings-total">{usd(e.totalCollected)}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{e.lines.filter((l) => l.status === "confirmed").length} fee line(s) confirmed on-chain</p>
               </Card>
               <Card>
-                <div className="flex items-center justify-between"><h2 className="text-xl">Earnings account</h2><SimTag label="Demo wallet" className="text-muted-foreground" /></div>
+                <div className="flex items-center justify-between"><h2 className="text-xl">Earnings account</h2></div>
                 <p className="mt-4 font-display text-5xl font-semibold tracking-[-0.04em]" data-testid="earnings-balance">{e.balance === null ? "unavailable" : usd(e.balance)}</p>
                 <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{e.address ?? "not configured"}</p>
               </Card>

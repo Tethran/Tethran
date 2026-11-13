@@ -123,7 +123,7 @@ test("8. a retried release on an identity mismatch keeps one hold, opened at the
   h.deposits.set(tx, [{ from: CLIENT, to: TREASURY, value: "100000000" }]);
   h.add(TREASURY, 100_000_000n);
   await h.treasury.confirmDeposit(M1, tx);
-  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Bola Trading Co', 'Demo Client Ltd', 'SIM-T')").run(M1);
+  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Bola Trading Co', 'Kofi Mensah Ltd', 'SIM-T')").run(M1);
   h.chain.approve(M1);
   await assert.rejects(h.treasury.release(M1), code("IDENTITY_MISMATCH"));
   const first = h.db.prepare("SELECT opened_at FROM identity_holds WHERE milestone_id = ?").get(M1) as { opened_at: string };

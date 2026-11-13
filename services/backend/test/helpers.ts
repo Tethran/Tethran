@@ -248,9 +248,9 @@ export function harness(opts: { decision?: PolicyDecision["decision"]; reply?: u
   migratePayouts(db);
   migrateReconciliation(db);
   db.prepare("INSERT INTO vaults (provider_id, chain_id, vault, operator, provider_payout) VALUES ('prov-1', ?, ?, ?, ?)").run(CHAIN_ID, VAULT, OPERATOR, PROVIDER);
-  db.prepare("INSERT INTO payees VALUES ('payee_amara', 'prov-1', 'Amara Studio (demo)', '0x00000000000000000000000000000000000000b2', 'usdt', 0, 'Amara Studio')").run();
-  db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-1', 'Kofi Print Works (demo)', '0x00000000000000000000000000000000000000b3', 'mpesa', 1, 'Kofi Print Works')").run();
-  db.prepare("INSERT INTO payees VALUES ('tethran_earnings', 'prov-1', 'Tethran earnings account (demo)', '0x00000000000000000000000000000000000000e0', 'usdt', 0, 'Tethran')").run();
+  db.prepare("INSERT INTO payees VALUES ('payee_amara', 'prov-1', 'Amara Studio', '0x00000000000000000000000000000000000000b2', 'usdt', 0, 'Amara Studio')").run();
+  db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-1', 'Zuri Print Works', '0x00000000000000000000000000000000000000b3', 'mpesa', 1, 'Zuri Print Works')").run();
+  db.prepare("INSERT INTO payees VALUES ('tethran_earnings', 'prov-1', 'Tethran earnings account', '0x00000000000000000000000000000000000000e0', 'usdt', 0, 'Tethran')").run();
   const identity = createIdentityCheck(db);
   const tracer = new MemoryTracer();
   const treasury = createTreasury({
@@ -277,7 +277,7 @@ export async function fundedAndReleased(h: ReturnType<typeof harness>, id = M1) 
   h.add(TREASURY, 100_000_000n); // the deposit itself
   await h.treasury.confirmDeposit(id, "0x" + "dd".repeat(32));
   // SIMULATED identity verification: the payer is the customer.
-  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Demo Client Ltd', 'Demo Client Ltd', 'SIM-T')").run(id);
+  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Kofi Mensah Ltd', 'Kofi Mensah Ltd', 'SIM-T')").run(id);
   h.chain.approve(id);
   await h.treasury.release(id);
 }

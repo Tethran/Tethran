@@ -139,7 +139,7 @@ Field notes:
 ### 2c. Platform fee (v0.12)
 
 Tethran's business model: **5% of each milestone's gross amount, paid by the freelancer**, into the **Tethran earnings
-account** (in the demo a separate demo wallet derived from the demo seed, labelled "Demo earnings account"; in
+account** (in the demo a separate demo wallet derived from the demo seed, labelled "Tethran earnings account"; in
 production a company treasury).
 
 - **Computed deterministically, never by the agent:** `fee = round_half_up(gross * 500 / 10000)` in USDT base units
@@ -470,7 +470,7 @@ Everything outside `ChainClient` stays chain-agnostic.
 
 ## 4. Backend API surface (web app ↔ backend)
 
-Demo wallet (v0.11, DEMO_MODE): `POST /wallets/{role}/fund` (simulated card top-up, idempotency key), `GET /wallets/{role}/activity`, `POST /wallets/{role}/contracts/{id}/sign`; paying from the wallet is the stablecoin deposit (`POST /wallets/{role}/transfers`, review code `INSUFFICIENT_BALANCE`). See docs/API.md.
+Wallet (v0.11, DEMO_MODE): `POST /wallets/{role}/fund` (simulated card top-up, idempotency key), `GET /wallets/{role}/activity`, `POST /wallets/{role}/contracts/{id}/sign`; paying from the wallet is the stablecoin deposit (`POST /wallets/{role}/transfers`, review code `INSUFFICIENT_BALANCE`). See docs/API.md.
 
 `POST /contracts`, `POST /contracts/{id}/sign`, `POST /milestones/{id}/invoice`, `GET /pay/{invoiceId}` (no-account pay link), `POST /webhooks/stripe` (verified, idempotent), `POST /milestones/{id}/evidence`, `POST /milestones/{id}/settle` (triggers the agent), `GET /milestones/{id}/timeline`, `POST /payouts/{id}/status`.
 

@@ -7,7 +7,7 @@ import { Async, useApi } from "@/components/app/demo-state";
 import { Card, SimTag } from "@/components/tethran/ui";
 
 export const Route = createFileRoute("/app/settings")({
-  head: () => ({ meta: [{ title: "Settings — Tethran demo" }, { name: "description", content: "Country profile and payout methods." }] }),
+  head: () => ({ meta: [{ title: "Settings — Tethran" }, { name: "description", content: "Country profile and payout methods." }] }),
   component: SettingsPage,
 });
 

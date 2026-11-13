@@ -37,11 +37,11 @@ export async function signTyped(typed: Typed): Promise<{ signer: string; signatu
 
 // ---------- DEMO MODE ONLY: one-click signing with server-side TEST keys ----------
 // The demo signer runs in the presenter's process (`npm run demo`), never in the backend. Every action signed this
-// way is labelled "Demo: signed with a test key" in the UI. The browser wallet above is the real path.
+// way is labelled "Signed with a test key" in the UI. The browser wallet above is the real path.
 
 export type SignRole = "operator" | "arbiter" | "provider";
 export type Via = "wallet" | "demo";
-export const DEMO_LABEL = "Demo: signed with a test key";
+export const DEMO_LABEL = "Signed with a test key";
 
 export const DEMO_SIGNER: string =
   (import.meta.env?.["VITE_TETHRAN_DEMO_SIGNER_URL"] as string | undefined) ?? "http://127.0.0.1:18789";

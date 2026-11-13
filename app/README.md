@@ -27,7 +27,7 @@ There are two ways to sign each operator, arbiter and provider action:
   the backend. Use test keys only.
 - **Sign with demo key** (DEMO_MODE only, for the demo video): one click, no wallet switching. The demo signer in
   the presenter's `npm run demo` process signs with that role's TEST key; the backend and the Policy Service never
-  hold those keys. Every result is labelled "Demo: signed with a test key", and each page says which button is which.
+  hold those keys. Every result is labelled "Signed with a test key", and each page says which button is which.
   The demo signer signs only the message types each role needs and refuses anything else. In demo mode the milestone
   page also offers the platform's own step, **Release and settle**, run by the same process with the platform token
   (the browser never holds it).

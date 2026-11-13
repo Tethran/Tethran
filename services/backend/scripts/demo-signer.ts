@@ -1,6 +1,6 @@
 // DEMO MODE ONLY. One-click signing for the demo video: the operator, arbiter and provider TEST keys sign in the
 // presenter's process (the seed), never in the backend or the Policy Service, and the web app labels every such
-// action "Demo: signed with a test key". The real path stays the person's own browser wallet.
+// action "Signed with a test key". The real path stays the person's own browser wallet.
 //
 //   GET  /health                 roles and addresses
 //   POST /sign                   { role, typed } -> { signer, signature, demo: true }   (only the typed data below)
@@ -58,7 +58,7 @@ export function startDemoSigner(opts: {
     }
     const signature = await wallet.signTypedData(typed.domain, types, typed.message);
     opts.log(`demo signer: ${role} signed ${typed.domain.name}.${primary}`);
-    return { signer: wallet.address, signature, demo: true, label: "Demo: signed with a test key" };
+    return { signer: wallet.address, signature, demo: true, label: "Signed with a test key" };
   }
 
   // The soft limit may not exceed the cap, so lowering the cap lowers it too. The soft limit from before is kept here
@@ -112,7 +112,7 @@ export function startDemoSigner(opts: {
     opts.log(`demo signer: operator set per-tx cap ${doc.per_tx_cap} (policy v${doc.version}, vault v${after.policyVersion})`);
     return {
       policy_version: doc.version, vault_policy_version: after.policyVersion, per_tx_cap: after.perTxCap,
-      vault_transactions: out.vault_transactions ?? [], demo: true, label: "Demo: signed with a test key",
+      vault_transactions: out.vault_transactions ?? [], demo: true, label: "Signed with a test key",
     };
   }
 
@@ -174,7 +174,7 @@ export function startDemoSigner(opts: {
       const url = new URL(req.url ?? "/", "http://localhost");
       if (req.method === "GET" && url.pathname === "/health") {
         return send(res, origin, 200, {
-          demo: true, label: "Demo: signed with a test key",
+          demo: true, label: "Signed with a test key",
           roles: { operator: opts.keys.operator.address, arbiter: opts.keys.arbiter.address, provider: opts.keys.provider.address },
         });
       }

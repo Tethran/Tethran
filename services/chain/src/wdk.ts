@@ -55,7 +55,7 @@ export function createWdkProvider(chain: Pick<ChainConfig, "chainId" | "rpcUrl" 
 }
 
 /** Which seed account each demo role uses. */
-/** earnings: the Tethran earnings account (demo), where the 5% platform fee is paid; a company treasury in production. */
+/** earnings: the Tethran earnings account, where the 5% platform fee is paid; a company treasury in production. */
 export const WALLET_ROLES = { client: 0, payee_amara: 1, subcontractor: 2, client_b: 3, agent_budget: 4, earnings: 5 } as const;
 export type WalletRole = keyof typeof WALLET_ROLES;
 

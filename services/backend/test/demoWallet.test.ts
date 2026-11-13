@@ -69,7 +69,7 @@ test("balance: a new demo wallet shows 0; adding $250 by simulated card shows 25
   const r: any = await h.layer.fund("client", { amount_usd_cents: 25_000, idempotency_key: "topup-0001" });
   assert.equal(r.amount.base_units, "250000000");
   assert.equal(r.simulated, true);
-  assert.match(r.label, /Demo wallet\. Simulated/);
+  assert.match(r.label, /^Wallet: test USDT/);
   assert.equal(r.status, "confirmed");
   assert.deepEqual(h.mints, [{ to: ADDR.client, amount: "250000000", key: "wallet-topup:topup-0001" }]);
   assert.equal((await h.layer.balance("client") as any).usdt.base_units, "250000000");

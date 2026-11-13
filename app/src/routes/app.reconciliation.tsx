@@ -8,7 +8,7 @@ import { pill, usd } from "@/components/tethran/ui";
 import type { ReconRow } from "@/api/types";
 
 export const Route = createFileRoute("/app/reconciliation")({
-  head: () => ({ meta: [{ title: "Reconciliation — Tethran demo" }, { name: "description", content: "Every invoice linked to payment, escrow, payout and receipt." }] }),
+  head: () => ({ meta: [{ title: "Reconciliation — Tethran" }, { name: "description", content: "Every invoice linked to payment, escrow, payout and receipt." }] }),
   component: Recon,
 });
 

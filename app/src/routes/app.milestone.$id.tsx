@@ -11,7 +11,7 @@ import { Amount, Card, DecisionChip, PillButton, ReasonList, SimTag, StatusChip,
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/milestone/$id")({
-  head: () => ({ meta: [{ title: "Milestone — Tethran demo" }, { name: "description", content: "Timeline, evidence, approval or dispute." }] }),
+  head: () => ({ meta: [{ title: "Milestone — Tethran" }, { name: "description", content: "Timeline, evidence, approval or dispute." }] }),
   component: MilestonePage,
 });
 
@@ -104,7 +104,7 @@ function MilestonePage() {
               )}
               {demo && m.live && (st === "Approved" || st === "Released") && (
                 <Card className="border-dashed border-progress">
-                  <p className="flex items-center gap-2 text-sm font-medium"><FlaskConical className="size-4" aria-hidden />Platform step (demo)</p>
+                  <p className="flex items-center gap-2 text-sm font-medium"><FlaskConical className="size-4" aria-hidden />Platform step</p>
                   <p className="mt-1 text-sm text-muted-foreground">Releases the escrow to the provider's vault, then asks the AI for a settlement plan. The Policy Service decides; the vault pays only what it co-signed.</p>
                   <button data-testid="demo-settle" disabled={busy} onClick={() => run(() => api.demoSettle(m.id), "Settled. The vault paid and the receipt is minted.")} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 text-sm font-medium text-on-dark disabled:opacity-40">
                     <FlaskConical className="size-4" aria-hidden />{busy ? "Settling…" : "Release and settle"}

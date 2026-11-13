@@ -991,3 +991,14 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
 - App: pay page (pays exactly the amount; "Platform fee 5%, deducted from the freelancer's payout"), fee line in the
   payout list, receipt and ledger, Earnings screen (operator), FEE_MISMATCH explained. INTERFACES v0.12 (2c), API.md,
   README, DEMO.md.
+
+### Label clean-up (branch labels; lead's rule)
+- Removed every visible "Demo" label, pill and banner: page titles, the demo-mode note on Operator and Arbiter, "Demo
+  wallet" (now "Wallet", balances in test USDT), "Demo earnings account" (now "Tethran earnings account"), "Demo
+  custody", the landing page's "Demo" pills and "Try the demo" (now "Open the app"), and "(demo)" in payee names.
+- The test-key signing label is now "Signed with a test key".
+- "Simulated" stays only on card checkout (including card top-ups) and bank/mobile-money payouts. The identity-check
+  pill and "(simulated identity check)" in the reason text were removed per the rule; the identity verification and
+  FX rates are still simulated in code and in the docs (flagged to the lead).
+- Names: the demo client "Demo Client Ltd" is now "Kofi Mensah Ltd" (the lead's side-by-side calls the client Kofi);
+  the M-Pesa payee "Kofi Print Works" is now "Zuri Print Works" so there are not two Kofis. Payee ids are unchanged.

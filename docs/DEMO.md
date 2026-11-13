@@ -50,7 +50,7 @@ the milestone page in demo mode; it runs in the same presenter process with the 
 
 1. **Freelancer: a contract.** Home → **Create contract**: one milestone, Continue three times, tick the box, **Sign and
    send** (demo key). The invoice opens.
-2. **Client: adds funds and pays.** Wallet → Demo Client Ltd → **Add $500 by card**: a simulated card top-up; the
+2. **Client: adds funds and pays.** Wallet → Kofi Mensah Ltd → **Add $500 by card**: a simulated card top-up; the
    treasury mints the same amount of test USDT to the client's Tethran demo wallet (1 USD = 1 test USDT). Then open
    the invoice's pay link and choose **Tethran wallet**: the page shows the wallet's balance (or says it is not enough
    and links to Add funds); it pays test USDT from the wallet after a review (network, recipient, amount, fee) and
@@ -96,7 +96,7 @@ What the seed produced on Sepolia in the last clean run (`0 problems`; agent mod
 | low_confidence_plan | Escalated: `LOW_CONFIDENCE`, `NEEDS_HUMAN` |
 | duplicate_send | Handled failure: the second identical deposit send is refused (`DUPLICATE_PENDING`); the settlement escalated, and a second settle paid nothing new |
 | wrong_network | Blocked before signing: the review for Base Sepolia is refused (`WRONG_NETWORK`); nothing sent |
-| identity_mismatch | Release held (`IDENTITY_MISMATCH`): payer "Bola Trading Co" and customer "Demo Client Ltd" differ (simulated identity check); in the operator queue until the operator releases or refunds |
+| identity_mismatch | Release held (`IDENTITY_MISMATCH`): payer "Bola Trading Co" and customer "Kofi Mensah Ltd" differ (simulated identity check); in the operator queue until the operator releases or refunds |
 
 Reconciliation after the seed: nine milestones in the ledger, one complete (clean_delivery; the others are waiting
 on a person, by design).

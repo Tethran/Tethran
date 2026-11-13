@@ -30,13 +30,13 @@ const REASONS: Record<string, ReasonInfo> = {
   // ---- Policy Service: escalated to a human (INTERFACES v0.10) ----
   LOW_CONFIDENCE: { kind: "escalated", title: "The AI is not sure", plain: "The AI's confidence is below the threshold, so a person decides." },
   NEEDS_HUMAN: { kind: "escalated", title: "Asked for a person", plain: "The AI asked for a human to look at this before anything is paid." },
-  IDENTITY_MISMATCH: { kind: "escalated", title: "Names don't match", plain: "The payer's verified name and the customer's name differ (simulated identity check)." },
+  IDENTITY_MISMATCH: { kind: "escalated", title: "Names don't match", plain: "The payer's verified name and the customer's name differ." },
   OVER_SOFT_LIMIT: { kind: "escalated", title: "Large payment", plain: "A payment is above the review threshold, so a person confirms it." },
   INJECTION_FLAGGED: { kind: "escalated", title: "Suspicious instructions", plain: "The evidence or other input tried to give the AI orders. Nothing was paid; a person decides." },
   NO_PAYOUTS: { kind: "escalated", title: "Pays nobody", plain: "The plan moves no money. Request a new plan or reject it; it cannot be approved." },
   // ---- Wallet review and sending (docs/API.md) ----
   WRONG_NETWORK: { kind: "blocked", title: "Wrong network", plain: "Your wallet is on a different network from this payment. Switch before signing." },
-  INSUFFICIENT_BALANCE: { kind: "blocked", title: "Not enough in the wallet", plain: "Your Tethran demo wallet holds less test USDT than this payment. Add funds, or pay by card." },
+  INSUFFICIENT_BALANCE: { kind: "blocked", title: "Not enough in the wallet", plain: "Your wallet holds less test USDT than this payment. Add funds, or pay by card." },
   DUPLICATE_PENDING: { kind: "blocked", title: "Already sending", plain: "The same payment is still on its way. It will not be sent twice." },
   ALREADY_SENT: { kind: "blocked", title: "Already sent", plain: "This payment was already sent. It will not be sent again." },
   BAD_ADDRESS: { kind: "blocked", title: "Bad address", plain: "The recipient address is not valid." },

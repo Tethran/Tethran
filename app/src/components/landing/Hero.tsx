@@ -24,7 +24,7 @@ export function Hero() {
             Contracts that pay themselves, in dollars, to your phone.
           </p>
           <div className="mt-9 flex flex-wrap gap-3 animate-word" style={{ animationDelay: "1.6s" }}>
-            <PillLink to="/app" variant="ink" size="lg">Try the demo</PillLink>
+            <PillLink to="/app" variant="ink" size="lg">Open the app</PillLink>
             <a href="#how" className={pill({ variant: "ghost", size: "plain" })}>See how it works</a>
           </div>
         </div>

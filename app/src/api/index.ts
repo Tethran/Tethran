@@ -82,7 +82,7 @@ function proposalFrom(raw: any, meta: { id: string; milestoneId: string; decisio
 
 /** The demo's people, each with one Tethran wallet (a WDK wallet from the demo seed). */
 export const WALLET_USERS = [
-  { role: "client", name: "Demo Client Ltd", as: "client" },
+  { role: "client", name: "Kofi Mensah Ltd", as: "client" },
   { role: "payee_amara", name: "Amara Studio", as: "freelancer" },
 ] as const;
 export type WalletUser = (typeof WALLET_USERS)[number]["role"];
@@ -146,7 +146,7 @@ async function milestoneDetail(id: string) {
     evidence: (t.evidence ?? []).map((e: any) => `Evidence #${e.id} · ${String(e.at).slice(0, 16).replace("T", " ")}`),
     ...(holdEnds ? { cardHoldEndsAt: holdEnds } : {}),
     payouts: (t.payouts ?? []).map((p: any) => ({
-      to: p.payee_id === EARNINGS_ID ? "Tethran earnings account (demo)" : prov.payees.find((x) => x.payee_id === p.payee_id)?.name ?? p.payee_id, amount: dollars(p.amount), rail: String(p.rail ?? "usdt"),
+      to: p.payee_id === EARNINGS_ID ? "Tethran earnings account" : prov.payees.find((x) => x.payee_id === p.payee_id)?.name ?? p.payee_id, amount: dollars(p.amount), rail: String(p.rail ?? "usdt"),
       platformFee: p.payee_id === EARNINGS_ID,
       simulated: p.simulated === 1 || p.simulated === true, tx: p.tx ?? null, status: String(p.status ?? ""),
     })),
@@ -345,7 +345,7 @@ ${label}: ${xs.join("; ")}` : "");
 
   /** Creates and signs a contract: the provider signs with their own wallet, the client with its WDK wallet. */
   /**
-   * clientWallet: which demo wallet is the contract's client and pays it. "client" is Demo Client Ltd; "payee_amara"
+   * clientWallet: which demo wallet is the contract's client and pays it. "client" is Kofi Mensah Ltd; "payee_amara"
    * is the freelancer's own Tethran wallet (one person can be a freelancer and a client).
    */
   createContract: async (input: { clientName: string; clientEmail: string; country: Country; milestones: { title: string; amountUsd: number; criteria: string }[]; clientWallet?: WalletUser }, via: Via = "wallet") => {

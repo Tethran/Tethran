@@ -160,7 +160,7 @@ test("verifyStripeSignature accepts any matching v1 among several and rejects a 
 test("release: only after the client approved, then once", async () => {
   const h = harness();
   await create(h);
-  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Demo Client Ltd', 'Demo Client Ltd', 'SIM-T')").run(M1); // simulated verification
+  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Kofi Mensah Ltd', 'Kofi Mensah Ltd', 'SIM-T')").run(M1); // simulated verification
   const tx = "0x" + "dd".repeat(32);
   h.deposits.set(tx, [{ from: CLIENT, to: TREASURY, value: "100000000" }]);
   h.add(TREASURY, 100_000_000n);
@@ -189,7 +189,7 @@ test("release: an identity mismatch holds the release (simulated identity check)
 test("card: release waits for the hold; a chargeback during the hold refunds the escrow to the treasury", async () => {
   const h = harness();
   await create(h);
-  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Demo Client Ltd', 'Demo Client Ltd', 'SIM-T')").run(M1); // simulated verification
+  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Kofi Mensah Ltd', 'Kofi Mensah Ltd', 'SIM-T')").run(M1); // simulated verification
   const body = event();
   await h.treasury.handleStripeWebhook(body, signed(h, body));
   h.chain.approve(M1);
@@ -203,7 +203,7 @@ test("card: release waits for the hold; a chargeback during the hold refunds the
 test("card: after the hold a chargeback is flagged for a human, not refunded", async () => {
   const h = harness();
   await create(h);
-  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Demo Client Ltd', 'Demo Client Ltd', 'SIM-T')").run(M1); // simulated verification
+  h.db.prepare("INSERT OR REPLACE INTO identity_records VALUES (?, 'Kofi Mensah Ltd', 'Kofi Mensah Ltd', 'SIM-T')").run(M1); // simulated verification
   const body = event();
   await h.treasury.handleStripeWebhook(body, signed(h, body));
   h.chain.approve(M1);

@@ -16,7 +16,7 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Tethran — Get paid for the work you deliver" },
-      { name: "description", content: "Contracts that pay themselves, in dollars, to your phone. Milestone escrow with an AI that proposes and rules that decide. Demo on test networks." },
+      { name: "description", content: "Contracts that pay themselves, in dollars, to your phone. Milestone escrow with an AI that proposes and rules that decide. Test networks only." },
     ],
   }),
   component: Landing,

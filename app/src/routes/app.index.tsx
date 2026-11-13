@@ -6,7 +6,7 @@ import { Object3D } from "@/components/tethran/Object3D";
 import type { ObjKey } from "@/lib/objects";
 
 export const Route = createFileRoute("/app/")({
-  head: () => ({ meta: [{ title: "Choose a role — Tethran demo" }, { name: "description", content: "Pick a role to explore the Tethran demo." }] }),
+  head: () => ({ meta: [{ title: "Choose a role — Tethran" }, { name: "description", content: "Pick a role to explore Tethran." }] }),
   component: RolePicker,
 });
 
@@ -25,7 +25,7 @@ function RolePicker() {
   return (
     <div>
       <h1 className="display-section max-w-[14ch]"><span className="weight-light">Who are</span> you today?</h1>
-      <p className="mt-4 text-muted-foreground">Everything here is a demo on test networks.</p>
+      <p className="mt-4 text-muted-foreground">Everything here runs on a test network with test tokens.</p>
       <div className="mt-10 grid gap-4 sm:grid-cols-2">
         {roles.map((r, k) => (
           <Link key={r.label} to={r.to} params={r.params as never}

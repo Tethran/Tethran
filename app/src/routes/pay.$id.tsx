@@ -64,7 +64,7 @@ function PayPage() {
             </fieldset>
             {method === "coin" && (
               <div data-testid="wallet-choice" className="mt-4 rounded-[var(--radius-input)] border border-dashed border-progress bg-progress/10 p-3 text-sm">
-                <p><span className="font-medium">Tethran wallet</span>{wallet && <> · {wallet.name}</>}: {wallet?.balance === null || wallet === null ? "balance unavailable" : <span data-testid="payer-balance">{usd(wallet.balance)} test USDT</span>} <SimTag label="Demo wallet" /></p>
+                <p><span className="font-medium">Tethran wallet</span>{wallet && <> · {wallet.name}</>}: {wallet?.balance === null || wallet === null ? "balance unavailable" : <span data-testid="payer-balance">{usd(wallet.balance)} test USDT</span>}</p>
                 {wallet && wallet.balance !== null && wallet.balance < inv.amount
                   ? <p className="mt-1 text-danger">Not enough to pay {usd(inv.amount)}. <Link to="/app/wallet" className="underline">Add funds</Link>, or pay by card.</p>
                   : <p className="mt-1 text-muted-foreground">Pays {usd(inv.amount)} in test USDT from your wallet into the escrow, after a review of network, recipient and fee.</p>}

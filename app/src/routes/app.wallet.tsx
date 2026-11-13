@@ -9,7 +9,7 @@ import { Card, SimTag, usd } from "@/components/tethran/ui";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/wallet")({
-  head: () => ({ meta: [{ title: "Wallet — Tethran demo" }, { name: "description", content: "Your Tethran demo wallet: balance, add funds, activity." }] }),
+  head: () => ({ meta: [{ title: "Wallet — Tethran" }, { name: "description", content: "Your wallet: balance in test USDT, add funds, activity." }] }),
   component: WalletPage,
 });
 
@@ -30,7 +30,7 @@ function WalletPage() {
     try {
       await api.addFunds(who, usdAmount, key.current);
       key.current = newKey();
-      toast.success(`Added ${usd(usdAmount)} to your demo wallet`, { description: "Simulated card. Test USDT minted on Sepolia (1 USD = 1 test USDT)." });
+      toast.success(`Added ${usd(usdAmount)} to your wallet`, { description: "Simulated card. Test USDT minted on Sepolia (1 USD = 1 test USDT)." });
       await Promise.all([balance.refetch(), activity.refetch()]);
     } catch (e) {
       toast.error((e as Error).message);
@@ -44,7 +44,7 @@ function WalletPage() {
       <PageHead eyebrow="Tethran wallet" light="Your" title="wallet." />
       <p className="mb-6 flex items-start gap-2 rounded-[var(--radius-input)] border border-dashed border-progress bg-progress/10 p-3 text-sm">
         <Wallet className="mt-0.5 size-4 shrink-0" aria-hidden />
-        <span><span className="font-medium">Demo wallet.</span> Simulated: test USDT on a test network (Sepolia). One demo seed holds the keys. Not real money.</span>
+        <span><span className="font-medium">Wallet.</span> Balances are test USDT on a test network (Sepolia). Not real money. Adding funds by card is simulated.</span>
       </p>
       <div role="tablist" aria-label="Whose wallet" className="mb-6 inline-flex rounded-full border bg-surface p-1">
         {WALLET_USERS.map((u) => (
@@ -56,7 +56,7 @@ function WalletPage() {
       </div>
       <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
         <Card>
-          <div className="flex items-center justify-between"><h2 className="text-xl">Balance</h2><SimTag label="Demo wallet" className="text-muted-foreground" /></div>
+          <div className="flex items-center justify-between"><h2 className="text-xl">Balance</h2></div>
           <p className="mt-4 font-display text-5xl font-semibold tracking-[-0.04em]" data-testid="wallet-balance">
             {balance.isPending ? "…" : balance.data === null || balance.data === undefined ? "unavailable" : usd(balance.data)}
           </p>

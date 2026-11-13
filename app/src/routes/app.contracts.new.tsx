@@ -11,7 +11,7 @@ import { PillButton, usd } from "@/components/tethran/ui";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/contracts/new")({
-  head: () => ({ meta: [{ title: "New contract — Tethran demo" }, { name: "description", content: "Set parties, milestones and sign." }] }),
+  head: () => ({ meta: [{ title: "New contract — Tethran" }, { name: "description", content: "Set parties, milestones and sign." }] }),
   component: Builder,
 });
 
@@ -22,11 +22,11 @@ const input = "h-12 w-full rounded-[var(--radius-input)] border bg-surface px-4 
 function Builder() {
   const nav = useNavigate();
   const [step, setStep] = useState(0);
-  const [client, setClient] = useState("Demo Client Ltd");
+  const [client, setClient] = useState("Kofi Mensah Ltd");
   const [email, setEmail] = useState("client@example.com");
   const [busy, setBusy] = useState(false);
   const [country, setCountry] = useState("NG");
-  // Which demo wallet is the client: Demo Client Ltd, or the freelancer's own Tethran wallet (hiring someone else).
+  // Which demo wallet is the client: Kofi Mensah Ltd, or the freelancer's own Tethran wallet (hiring someone else).
   const [payer, setPayer] = useState<WalletUser>("client");
   const [ms, setMs] = useState<M[]>([{ title: "Logo design", amount: "400", criteria: "Three concepts, one refined" }]);
   const [signed, setSigned] = useState(false);
@@ -44,11 +44,11 @@ function Builder() {
             <label className="grid gap-1.5 text-sm font-medium">Client name<input className={input} value={client} onChange={(e) => setClient(e.target.value)} /></label>
             <label className="grid gap-1.5 text-sm font-medium">Client email<input className={input} type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
             <label className="grid gap-1.5 text-sm font-medium">Client pays from
-              <select aria-label="Client pays from" className={input} value={payer} onChange={(e) => { const v = e.target.value as WalletUser; setPayer(v); if (v === "payee_amara") setClient("Amara Studio"); else if (client === "Amara Studio") setClient("Demo Client Ltd"); }}>
-                <option value="client">Demo Client Ltd's Tethran wallet</option>
-                <option value="payee_amara">My own Tethran wallet (I am the client here)</option>
+              <select aria-label="Client pays from" className={input} value={payer} onChange={(e) => { const v = e.target.value as WalletUser; setPayer(v); if (v === "payee_amara") setClient("Amara Studio"); else if (client === "Amara Studio") setClient("Kofi Mensah Ltd"); }}>
+                <option value="client">Kofi Mensah Ltd's wallet</option>
+                <option value="payee_amara">My own wallet (I am the client here)</option>
               </select>
-              <span className="text-xs font-normal text-muted-foreground">Demo wallets on a test network. The client's wallet signs the contract, pays, and approves the work.</span>
+              <span className="text-xs font-normal text-muted-foreground">Wallets on a test network (test USDT). The client's wallet signs the contract, pays, and approves the work.</span>
             </label>
             <label className="grid gap-1.5 text-sm font-medium">Your country profile
               <select className={input} value={country} onChange={(e) => setCountry(e.target.value)}><option value="NG">Nigeria</option><option value="KE">Kenya</option><option value="ZA">South Africa</option><option value="GH">Ghana</option></select>
@@ -97,7 +97,7 @@ function Builder() {
             setBusy(true);
             try {
               const r = await api.createContract({ clientName: client, clientEmail: email, country: country as Country, milestones: ms.map((m) => ({ title: m.title, amountUsd: Number(m.amount), criteria: m.criteria })), clientWallet: payer }, via);
-              toast.success("Contract signed by both parties", { description: via === "demo" ? "Provider: demo, signed with a test key. The invoice is ready to share." : "The invoice is ready to share.", icon: <Check className="size-4" /> });
+              toast.success("Contract signed by both parties", { description: via === "demo" ? "Signed with a test key. The invoice is ready to share." : "The invoice is ready to share.", icon: <Check className="size-4" /> });
               if (r.invoiceId) nav({ to: "/app/invoice/$id", params: { id: r.invoiceId } }); else nav({ to: "/app/dashboard" });
             } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
           }} />}

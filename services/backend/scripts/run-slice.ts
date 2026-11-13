@@ -93,7 +93,7 @@ async function main() {
 
   // Payee wallets: deterministic test addresses standing in for a USDT wallet and a SIMULATED M-Pesa rail wallet.
   const amara = await wdk.address("payee_amara"); // WDK wallet
-  const earnings = await wdk.address("earnings"); // the Tethran earnings account (demo): receives the 5% platform fee
+  const earnings = await wdk.address("earnings"); // the Tethran earnings account: receives the 5% platform fee
   const kofiRail = new Wallet(keccakUtf8("tethran demo rail wallet mpesa")).address;
 
   const dir = mkdtempSync(join(tmpdir(), "tethran-slice-"));
@@ -108,9 +108,9 @@ async function main() {
   const db = openDb(join(dir, "backend.sqlite"));
   const vs = await relay.vaultState(vault);
   db.prepare("INSERT INTO vaults VALUES ('prov-demo', ?, ?, ?, ?)").run(chain.chainId, vault, vs.operator, vs.providerPayout);
-  db.prepare("INSERT INTO payees VALUES ('payee_amara', 'prov-demo', 'Amara Studio (demo)', ?, 'usdt', 0, 'Amara Studio')").run(amara);
-  db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-demo', 'Kofi Print Works (demo, simulated M-Pesa)', ?, 'mpesa', 1, 'Kofi Print Works')").run(kofiRail);
-  db.prepare("INSERT INTO payees VALUES ('tethran_earnings', 'prov-demo', 'Tethran earnings account (demo)', ?, 'usdt', 0, 'Tethran')").run(earnings);
+  db.prepare("INSERT INTO payees VALUES ('payee_amara', 'prov-demo', 'Amara Studio', ?, 'usdt', 0, 'Amara Studio')").run(amara);
+  db.prepare("INSERT INTO payees VALUES ('payee_kofi', 'prov-demo', 'Zuri Print Works (simulated M-Pesa)', ?, 'mpesa', 1, 'Zuri Print Works')").run(kofiRail);
+  db.prepare("INSERT INTO payees VALUES ('tethran_earnings', 'prov-demo', 'Tethran earnings account', ?, 'usdt', 0, 'Tethran')").run(earnings);
   db.close();
   say("seeded", "provider vault and two payees (one on a simulated M-Pesa rail)");
 
@@ -193,9 +193,9 @@ async function main() {
     // 6. client approves on-chain from its own wallet; provider adds evidence; backend releases
     const appr = await call(BACKEND, "POST", `/wallets/client/escrow/${id}/approve`);
     say("client approved", `${appr.tx_hash} (signed by the WDK client wallet)`);
-    const idr = await call(BACKEND, "POST", `/milestones/${id}/identity`, { payer_verified_name: "Demo Client Ltd", customer_verified_name: "Demo Client Ltd" });
+    const idr = await call(BACKEND, "POST", `/milestones/${id}/identity`, { payer_verified_name: "Kofi Mensah Ltd", customer_verified_name: "Kofi Mensah Ltd" });
     say("identity", `payer and customer verified (${idr.simulated_id_ref}, simulated)`);
-    await call(BACKEND, "POST", `/milestones/${id}/evidence`, { text: "All brand files delivered on 12 Nov 2026. The client confirmed receipt by email. Split: 60 to Amara Studio, 30 to Kofi Print Works by M-Pesa." });
+    await call(BACKEND, "POST", `/milestones/${id}/evidence`, { text: "All brand files delivered on 12 Nov 2026. The client confirmed receipt by email. Split: 60 to Amara Studio, 30 to Zuri Print Works by M-Pesa." });
     const rel = await call(BACKEND, "POST", `/milestones/${id}/release`);
     say("released", `${rel.release_tx} (identity matched, simulated)`);
 

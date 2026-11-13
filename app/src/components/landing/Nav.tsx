@@ -12,7 +12,7 @@ export function Nav() {
           <Link to="/trust" className="hover:text-ink">Trust</Link>
           <a href="#faq" className="hover:text-ink">FAQ</a>
         </div>
-        <PillLink to="/app" variant="ink">Try the demo</PillLink>
+        <PillLink to="/app" variant="ink">Open the app</PillLink>
       </nav>
     </header>
   );

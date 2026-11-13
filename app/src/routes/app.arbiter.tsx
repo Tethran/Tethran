@@ -11,7 +11,7 @@ import { Object3D } from "@/components/tethran/Object3D";
 import { Amount, Card, StatusChip } from "@/components/tethran/ui";
 
 export const Route = createFileRoute("/app/arbiter")({
-  head: () => ({ meta: [{ title: "Arbiter — Tethran demo" }, { name: "description", content: "Review a dispute and decide." }] }),
+  head: () => ({ meta: [{ title: "Arbiter — Tethran" }, { name: "description", content: "Review a dispute and decide." }] }),
   component: Arbiter,
 });
 
@@ -78,7 +78,7 @@ function Arbiter() {
   return (
     <div>
       <PageHead eyebrow="Two of three decide" light="Make a" title="fair call." />
-      <DemoNote />
+      
       <Async q={q} rows={3} empty={<EmptyBlock obj="scales" title="No open disputes." />}>
         {(ds) => <div className="grid gap-10">{ds.map((d) => <Case key={d.milestoneId} d={d} onDone={() => q.refetch()} />)}</div>}
       </Async>

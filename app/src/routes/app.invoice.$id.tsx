@@ -8,7 +8,7 @@ import { QR } from "@/components/landing/ThreeSteps";
 import { Amount, pill, StatusChip, Ticket } from "@/components/tethran/ui";
 
 export const Route = createFileRoute("/app/invoice/$id")({
-  head: () => ({ meta: [{ title: "Invoice — Tethran demo" }, { name: "description", content: "Invoice and pay link." }] }),
+  head: () => ({ meta: [{ title: "Invoice — Tethran" }, { name: "description", content: "Invoice and pay link." }] }),
   component: InvoicePage,
 });
 

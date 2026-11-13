@@ -24,7 +24,7 @@ export function Overspend() {
         </Reveal>
         <div className="mt-12 grid gap-6 grid-cols-1 lg:grid-cols-[1fr_1.1fr] *:min-w-0">
           <div className="rounded-[var(--radius-sheet)] border bg-surface p-6 shadow-soft md:p-8">
-            <div className="flex items-center justify-between"><p className="font-medium">Ask the AI agent to send</p><SimTag label="Demo" /></div>
+            <div className="flex items-center justify-between"><p className="font-medium">Ask the AI agent to send</p></div>
             <p className="mt-4 font-display text-6xl font-semibold tracking-[-0.05em] tabular-nums">{usd(ask)}</p>
             <Slider className="mt-6" value={[ask]} min={0} max={2000} step={10} onValueChange={([v]) => setAsk(v ?? 0)} aria-label="Amount to send" />
             <label className="mt-8 flex items-center justify-between gap-4 rounded-[var(--radius-input)] bg-background p-4">
@@ -70,7 +70,7 @@ export function Overspend() {
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {!ok && <span className="inline-flex items-center gap-1 rounded-full bg-forest px-2.5 py-1 text-xs"><ShieldCheck className="size-3.5" aria-hidden />Enforced on-chain</span>}
                 {r.reasons.map((x) => <span key={x} className="text-xs text-muted-dark">{reasonInfo(x).title} <span className="font-mono text-[0.68rem]">{x}</span></span>)}
-                <SimTag label="Demo" className="ml-auto text-muted-dark" />
+                
               </div>
             </div>
           </div>

@@ -434,10 +434,10 @@ Runs the same checks and refuses before signing: `409 WRONG_NETWORK`, `409 DUPLI
 `{ "payment_reference": "…", "tx_hash": "0x178e…", "status": "pending", "fee": { … }, "custody": "…" }`.
 If the outcome is unknown (`502 SEND_UNKNOWN`), the reference stays blocked; it is never sent twice.
 
-#### Demo wallet (Tethran wallet): add funds and activity
+#### Wallet: add funds and activity
 
-Every user of the demo has one Tethran wallet: the client (`client`, Demo Client Ltd) and the freelancer
-(`payee_amara`, Amara Studio, which also receives vault payouts). **Demo wallet, simulated:** test USDT on a test
+Every user of the demo has one Tethran wallet: the client (`client`, Kofi Mensah Ltd) and the freelancer
+(`payee_amara`, Amara Studio, which also receives vault payouts). **Wallet:** test USDT on a test
 network, keys held by the one demo seed; not real money. Paying a milestone from the wallet is the stablecoin-deposit
 path above (review, then send to the deposit address, then `POST /milestones/{id}/deposit/confirm`), from the
 wallet that is the milestone's client. Any user wallet can be a contract's client (`POST /wallets/{role}/contracts/{id}/sign`),
@@ -446,7 +446,7 @@ so the freelancer can pay for work from the same balance their payouts arrive in
 - `POST /wallets/{role}/fund` — add funds by SIMULATED card. **DEMO_MODE only** (`403 DEMO_ONLY` otherwise). Body
   `{ "amount_usd_cents": 50000, "idempotency_key": "topup-…" }`. The treasury mints test USDT to the wallet, 1 USD =
   1 tUSDT (the same mint card funding uses). Answers `{ "amount": { "base_units": "500000000", … }, "tx_hash": "0x…",
-  "status": "confirmed", "repeated": false, "simulated": true, "method": "card (simulated)", "label": "Demo wallet. …" }`.
+  "status": "confirmed", "repeated": false, "simulated": true, "method": "card (simulated)", "label": "Wallet: test USDT …" }`.
   The same key again returns the first top-up with `"repeated": true` and mints nothing; two submits at once mint
   once (`409 TOPUP_IN_PROGRESS` for the second). Errors: `400 NOT_A_USER_WALLET` (only `client` and `payee_amara`),
   `400 BAD_AMOUNT` (whole cents, at least 100), `400 AMOUNT_TOO_LARGE` (over $10,000), `400 NO_IDEMPOTENCY_KEY`,
@@ -475,7 +475,7 @@ Pass the result to `POST /arbiter/disputes/{id}/attestations`.
 
 #### `POST /milestones/{id}/identity` — record the verified names (simulated verification provider)
 
-`{ "payer_verified_name": "Demo Client Ltd", "customer_verified_name": "Demo Client Ltd" }` →
+`{ "payer_verified_name": "Kofi Mensah Ltd", "customer_verified_name": "Kofi Mensah Ltd" }` →
 `{ "milestone_id": "…", "simulated": true, "simulated_id_ref": "SIM-ID-c9fe85ad", "note": "SIMULATED verification: …" }`.
 
 The release check is **strict**: no identity record, or names that differ, hold the release
@@ -1004,7 +1004,7 @@ Failed, disputed and suspicious items, each with a reason and the record it poin
 
 #### `GET /earnings` — Tethran earnings (operator)
 
-`{ "label": "Demo earnings account (a company treasury in production). …", "fee": { "bps": 500, "rule": "…" },
+`{ "label": "Tethran earnings account (a company treasury in production). …", "fee": { "bps": 500, "rule": "…" },
 "account": { "address": "0x…", "balance": "<base units>" | null }, "total_collected": "<base units>", "lines": [{ "milestone_id",
 "title", "gross", "fee", "tx", "status", "at" }] }`: every 5% platform fee line (confirmed ones count in the total).
 The ledger's `totals.platform_fee` and the CSV column `platform_fee` carry the same fee per milestone; a fee line has no
@@ -1077,7 +1077,7 @@ fall back to `live`).
 
 Started by `npm run demo` in the presenter's process on `DEMO_SIGNER_PORT` (default 18789), with CORS for the app. It holds
 the operator, arbiter and provider TEST keys; the backend and the Policy Service never do. The app shows "Sign with demo
-key" only when it answers, and labels each such action "Demo: signed with a test key".
+key" only when it answers, and labels each such action "Signed with a test key".
 - `GET /health` → `{ "demo": true, "roles": { "operator": "0x…", "arbiter": "0x…", "provider": "0x…" } }`
 - `POST /sign` `{ "role": "operator", "typed": { domain, types, message } }` → `{ "signer", "signature", "demo": true }`. Only
   TethranOperator.IdentityDecision and TethranPolicy.ApprovalDecision (operator), TethranEscrow.Attestation on the

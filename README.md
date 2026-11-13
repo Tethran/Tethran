@@ -17,7 +17,7 @@ go out, a non-transferable receipt NFT is minted, and every step is joined in a 
 tax export.
 
 **Business model.** Tethran takes a **5% platform fee** on each milestone, paid by the freelancer out of the settlement
-into the Tethran earnings account (in the demo a demo wallet, "Demo earnings account"; in production a company
+into the Tethran earnings account (in the demo a demo wallet, "Tethran earnings account"; in production a company
 treasury). The client pays exactly the milestone amount. The fee is computed by code, not by the AI, and the Policy
 Service rejects any plan whose fee line is missing, wrong or sent elsewhere (`FEE_MISMATCH`). The freelancer receives
 the gross minus the fee minus the tax reserve (10% of the gross in the demo policy). Refunds and disputes decided for
@@ -55,11 +55,11 @@ state; `npm run seed -- --retry-failed` (with `DEMO_MODE=1`) reruns only failed 
 mode defaults to `replay` (saved proposals, labelled "Replay"); `AGENT_MODE=live+replay` calls the model and falls
 back to replay. The demo, step by step, is in [docs/DEMO.md](docs/DEMO.md).
 
-**Tethran wallet (demo wallet).** Each user, the client (Demo Client Ltd) and the freelancer (Amara Studio), has one
+**Tethran wallet (demo wallet).** Each user, the client (Kofi Mensah Ltd) and the freelancer (Amara Studio), has one
 Tethran wallet showing a test USDT balance (the Wallet screen). **Add funds** is a simulated card top-up: the treasury
 mints the same amount of test USDT (1 USD = 1 test USDT; DEMO_MODE only). At checkout the payer chooses **Tethran
 wallet** (pay from the balance) or card. Payouts arrive in the freelancer's wallet, and a contract can name the
-freelancer's own wallet as its client, so one person can be both. Labelled "Demo wallet" and "Simulated": one demo
+freelancer's own wallet as its client, so one person can be both. Labelled "Wallet" (balances in test USDT): one demo
 seed holds the keys; not real custody, not real money.
 
 **Demo-key buttons.** In the app, each operator, arbiter and provider action offers **Sign with demo key** (DEMO_MODE
