@@ -18,7 +18,7 @@ export type RejectReason =
   | "MILESTONE_ID_MISMATCH"
   | "FEE_MISMATCH";
 
-export type EscalateReason = "LOW_CONFIDENCE" | "NEEDS_HUMAN" | "IDENTITY_MISMATCH" | "OVER_SOFT_LIMIT" | "INJECTION_FLAGGED" | "NO_PAYOUTS";
+export type EscalateReason = "LOW_CONFIDENCE" | "NEEDS_HUMAN" | "IDENTITY_MISMATCH" | "OVER_SOFT_LIMIT" | "INJECTION_FLAGGED" | "NO_PAYOUTS" | "CRITERIA_UNMET" | "CRITERIA_UNCLEAR";
 
 export type ReasonCode = RejectReason | EscalateReason;
 
@@ -47,6 +47,8 @@ export interface SettlementProposal {
   evidence_used: string[];
   actions: Action[];
   flags: { code: string; detail: string }[];
+  /** Per acceptance criterion: met / unmet / unclear with a short reason (optional; see the delivery check rules). */
+  delivery_check?: { criterion: string; status: "met" | "unmet" | "unclear"; reason: string }[];
   needs_human: boolean;
 }
 

@@ -1,5 +1,6 @@
 // Backend HTTP API (node:http, JSON). Routes are documented in docs/API.md.
 // Errors are { error, code? } with a safe message: no stack traces, URLs or key material.
+import { createEvidenceStore, MAX_EVIDENCE_BODY, type EvidenceStore } from "./evidence";
 import { PLATFORM_FEE_BPS } from "../../policy/src/fee";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
@@ -46,18 +47,20 @@ export interface HttpDeps {
   wallets?: WalletLayer;
   phoneHashSalt?: string;
   operator?: Operator;
+  /** Delivery evidence store (notes, links, files on the data disk). Created from db when not given. */
+  evidence?: EvidenceStore;
   x402?: ReturnType<typeof createX402Server>;
 }
 
 type Handler = (ctx: { params: Record<string, string>; body: any; raw: string; req: IncomingMessage; url: URL }) => Promise<unknown>;
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, limit = MAX_BODY): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
         reject(new ApiError(413, "body too large"));
         req.destroy();
         return;
@@ -82,6 +85,9 @@ function sameSecret(a: string, b: string): boolean {
 
 export function createHttpServer(deps: HttpDeps): Server {
   const { db, treasury, orchestrator } = deps;
+  // Created on first use (some servers in tests have no database).
+  let ev: EvidenceStore | undefined;
+  const evidenceStore = () => (ev ??= deps.evidence ?? createEvidenceStore(db));
 
   const internal = (h: Handler): Handler => async (ctx) => {
     const token = String(ctx.req.headers["x-internal-token"] ?? "");
@@ -106,7 +112,9 @@ export function createHttpServer(deps: HttpDeps): Server {
     return {
       milestone: m,
       fundings: db.prepare("SELECT source, reference, amount, chain_id, escrow_tx, status, at FROM fundings WHERE milestone_id = ? ORDER BY id").all(id),
-      evidence: db.prepare("SELECT id, at FROM evidence WHERE milestone_id = ? ORDER BY id").all(id),
+      // The actual note, link and files of every submission, and the agent's latest delivery check (advisory).
+      evidence: evidenceStore().list(id),
+      delivery_check: evidenceStore().latestCheck(id),
       // The agent's proposal is shown as data (it is untrusted output, already schema-checked); the decision and its
       // reason codes are the Policy Service's.
       settlement_plans: (db.prepare("SELECT id, proposal_json, proposal_hash, trace_id, decision, reasons, approval_id, agent_mode, at FROM settlement_plans WHERE milestone_id = ? ORDER BY id").all(id) as any[])
@@ -135,16 +143,22 @@ export function createHttpServer(deps: HttpDeps): Server {
     }],
     ["GET", /^\/milestones\/([^/]+)\/deposit$/, async ({ params }) => treasury.depositInstructions(params[1])],
     ["POST", /^\/milestones\/([^/]+)\/deposit\/confirm$/, async ({ params, body }) => treasury.confirmDeposit(params[1], String(body?.tx_hash ?? ""))],
+    // Delivery: a note, a link and up to 5 files (untrusted data; they reach the agent only inside the evidence
+    // delimiters). Then the agent's advisory delivery check against the acceptance criteria, shown to the client.
     ["POST", /^\/milestones\/([^/]+)\/evidence$/, async ({ params, body }) => {
       const m = milestones.get(db, params[1]);
       if (!m) throw new ApiError(404, "milestone not found");
-      const text = body?.text;
-      if (typeof text !== "string" || text.length === 0 || text.length > 20_000) throw new ApiError(400, "text is required (max 20000 chars)");
-      // Stored as untrusted data; it reaches the agent only inside the evidence delimiters.
-      const id = db.prepare("INSERT INTO evidence (milestone_id, text, at) VALUES (?, ?, ?)").run(m.id, text, deps.now().toISOString()).lastInsertRowid;
+      const id = evidenceStore().submit(m.id, body ?? {}, deps.now());
       if (m.state === "funded") milestones.setState(db, m.id, "in_review");
-      return { evidence_id: Number(id), milestone_state: milestones.get(db, m.id)!.state };
+      const check = await orchestrator.checkDelivery(m.id, id);
+      return { evidence_id: id, milestone_state: milestones.get(db, m.id)!.state, delivery_check: check };
     }],
+    ["GET", /^\/milestones\/([^/]+)\/delivery-check$/, async ({ params }) => {
+      if (!milestones.get(db, params[1])) throw new ApiError(404, "milestone not found");
+      return evidenceStore().latestCheck(params[1]) ?? { checks: [], agent_mode: null, error: null, at: null };
+    }],
+    // Download an evidence file: always an attachment (octet-stream, nosniff, sandboxed); never rendered or executed.
+    ["GET", /^\/evidence\/files\/([^/]+)$/, async ({ params }) => evidenceStore().download(params[1])],
     // Platform actions: only the platform (x-platform-token) may release, refund or settle. Funding never has a public
     // route of its own: card funding comes only through the signature-verified webhook (or, in DEMO_MODE, the
     // simulated checkout), stablecoin funding only from a deposit proven on-chain.
@@ -294,7 +308,8 @@ export function createHttpServer(deps: HttpDeps): Server {
         res.setHeader("allow", matching.map(([m]) => m).join(", "));
         return send(res, 405, { error: "method not allowed" });
       }
-      const raw = req.method === "GET" ? "" : await readBody(req);
+      // A delivery submission may carry up to 5 files of 10 MB (base64); every other route keeps the small limit.
+      const raw = req.method === "GET" ? "" : await readBody(req, /^\/milestones\/[^/]+\/evidence$/.test(url.pathname) ? MAX_EVIDENCE_BODY : MAX_BODY);
       let body: any;
       if (raw && !/^\/webhooks\//.test(url.pathname)) {
         try {

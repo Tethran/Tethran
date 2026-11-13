@@ -69,6 +69,22 @@ export const proposalSchema = {
         properties: { code: { type: "string" }, detail: { type: "string" } },
       },
     },
+    // Delivery check (v0.12): per acceptance criterion, met / unmet / unclear with one short reason. Advisory for the
+    // client; at settlement any unmet or unclear criterion escalates the plan (CRITERIA_UNMET / CRITERIA_UNCLEAR).
+    delivery_check: {
+      type: "array",
+      maxItems: 20,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["criterion", "status", "reason"],
+        properties: {
+          criterion: { type: "string", maxLength: 500 },
+          status: { enum: ["met", "unmet", "unclear"] },
+          reason: { type: "string", maxLength: 500 },
+        },
+      },
+    },
     needs_human: { type: "boolean" },
   },
 } as const;

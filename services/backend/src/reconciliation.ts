@@ -243,7 +243,7 @@ type Ctx = { params: Record<string, string>; body: any; url: URL };
 type Handler = (ctx: Ctx) => Promise<unknown>;
 
 /** `{ __raw: true, ... }` tells the HTTP layer to send `body` as is with `contentType` instead of JSON. */
-export interface RawResponse { __raw: true; contentType: string; body: string; filename?: string }
+export interface RawResponse { __raw: true; contentType: string; body: string | Buffer; filename?: string }
 
 export function reconciliationRoutes(deps: ReconciliationDeps): [string, RegExp, Handler][] {
   const r = createReconciliation(deps);

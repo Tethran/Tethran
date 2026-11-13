@@ -85,6 +85,10 @@ Off-chain milestone states (database) add `draft`, `in_review` and `paid_out`.
       "items": { "type": "object", "required": ["code", "detail"],
         "properties": { "code": { "type": "string" }, "detail": { "type": "string" } } }
     },
+    "delivery_check": { "type": "array", "maxItems": 20, "items": { "type": "object", "additionalProperties": false,
+      "required": ["criterion", "status", "reason"],
+      "properties": { "criterion": { "type": "string", "maxLength": 500 }, "status": { "enum": ["met", "unmet", "unclear"] },
+        "reason": { "type": "string", "maxLength": 500 } } } },
     "needs_human": { "type": "boolean" }
   }
 }
@@ -158,6 +162,16 @@ production a company treasury).
 - **Invoice:** `fee_cents = round_half_up(subtotal_cents * 5%)`, `fee_payer` is always `provider`, the client pays
   exactly the subtotal. The old 1% + $0.30 client fee is removed.
 
+### 2d. Delivery check (v0.12)
+
+The agent's output has an optional `delivery_check`: one entry per acceptance criterion of the milestone (the
+contract milestone's "Done when" text, one criterion per line or per ";"), `met` / `unmet` / `unclear` with one short
+reason. The backend makes it cover every criterion: a criterion the agent skipped becomes `unclear`. The agent sees
+the criteria, the delivery note, the link and the text of txt/md/csv/json files; other files only as name, type, size
+and sha256, marked "not inspected" (it must never call a criterion met from those alone). It is advisory: it runs when
+the freelancer submits and is shown to the client at approval time. At settlement the Policy Service escalates
+`CRITERIA_UNMET` / `CRITERIA_UNCLEAR` (never rejects); a check where every criterion is met changes nothing.
+
 ### 2a. Co-signatures
 
 An approved proposal gets one co-signature per action that moves funds out of the vault (`payout` and
@@ -216,7 +230,7 @@ Reason codes:
 | Decision | Codes |
 |---|---|
 | `rejected` | `SCHEMA_INVALID`, `MILESTONE_ID_MISMATCH`, `ALREADY_SETTLED`, `FEE_MISMATCH`, `ZERO_AMOUNT_PAYOUT`, `DUPLICATE_PROPOSAL`, `MILESTONE_NOT_RELEASED`, `HOLD_ACTIVE`, `PAYEE_NOT_ALLOWED`, `OVER_PER_TX_CAP`, `OVER_DAILY_CAP`, `BELOW_VAULT_RESERVE`, `OVER_MILESTONE_AMOUNT`, `TAX_RESERVE_TOO_LOW` |
-| `escalated` | `LOW_CONFIDENCE`, `NEEDS_HUMAN`, `IDENTITY_MISMATCH`, `OVER_SOFT_LIMIT`, `INJECTION_FLAGGED`, `NO_PAYOUTS` |
+| `escalated` | `LOW_CONFIDENCE`, `NEEDS_HUMAN`, `IDENTITY_MISMATCH`, `OVER_SOFT_LIMIT`, `INJECTION_FLAGGED`, `CRITERIA_UNMET`, `CRITERIA_UNCLEAR`, `NO_PAYOUTS` |
 
 Rule order (v0.10, 13 Nov 2026): schema valid (`SCHEMA_INVALID` always rejects) → milestone id (the proposal's
 `milestone_id` must equal the request's; otherwise `MILESTONE_ID_MISMATCH`, whatever the plan contains) → already settled (once the Policy
@@ -228,7 +242,8 @@ milestone released (`MILESTONE_NOT_RELEASED` unless the escrow milestone is in s
 source; read by the Policy Service itself) → hold active → payee allowed → per-tx cap → daily cap → vault reserve → milestone amount (what earlier signed plans for this milestone allocated, plus this plan's payouts and
 tax reserve, may not exceed `grossAmount`) → platform fee (`FEE_MISMATCH` unless exactly one `payout` to `tethran_earnings`
 for exactly fee(grossAmount), resolving to the configured earnings address; see 2c) → minimum tax reserve (any failure so far is `rejected`) → soft limit → confidence threshold →
-`needs_human` → identity match → injection flag (any failure here is `escalated`). A plan that moves no money is never
+`needs_human` → identity match → injection flag → delivery check (`CRITERIA_UNMET` if any criterion is unmet,
+`CRITERIA_UNCLEAR` if any is unclear; v0.12) (any failure here is `escalated`). A plan that moves no money is never
 rejected for a hard rule; if nothing else escalates it, it is escalated `NO_PAYOUTS` (a plan that pays nobody is
 never approved automatically). `needs_human=true` is never approved.
 

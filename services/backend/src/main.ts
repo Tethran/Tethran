@@ -8,7 +8,8 @@
 //   CHAIN, BACKEND_DATA_DIR (default "."), PORT (default 8788), HOST (default 127.0.0.1)
 //   CARD_HOLD_SECONDS (default 600), MILESTONE_TIMEOUT_SECONDS (default 7 days)
 //   LLM_* and OPIK_* as in services/llm
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { createEvidenceStore } from "./evidence";
 import { Wallet } from "ethers";
 import { EvmChainClient, SqliteIdempotencyStore, createWdkWallets, loadChain, loadEnvOnly, newProvider } from "../../chain/src/index";
 import { createWalletLayer } from "./wallets";
@@ -122,7 +123,10 @@ const buyPaidData = wdkWallets
     }
   : undefined;
 
+// Delivery evidence: notes, links and files; files on the data disk (${dir}/uploads, git-ignored with the data dir).
+const evidence = createEvidenceStore(db, join(dir, "uploads"));
 const orchestrator = createOrchestrator({
+  evidence,
   buyPaidData,
   db, chain, agentSigner, tracer, now, chainName: chainCfg.name,
   policy: policyClient,
@@ -147,6 +151,7 @@ const wallets = wdkWallets
 const operator = createOperator({ db, chain, treasury, policy: policyClient, now });
 
 listen(createHttpServer({
+  evidence,
   db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets, phoneHashSalt: process.env.PHONE_HASH_SALT, operator, x402,
   platformToken: process.env.PLATFORM_TOKEN ?? "",
   corsOrigins: (process.env.CORS_ORIGINS ?? "http://localhost:3000,http://127.0.0.1:3000").split(","),

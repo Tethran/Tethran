@@ -23,6 +23,11 @@ export interface SavedProposal {
     actions: ({ amount_ppm: number } & Record<string, unknown>)[];
     flags: { code: string; detail: string }[];
     needs_human: boolean;
+    /**
+     * The delivery check of this saved plan, as a template: items[i] for the milestone's i-th acceptance criterion,
+     * else default. Expanded to the milestone's own criteria when replayed.
+     */
+    delivery_check?: { default: { status: "met" | "unmet" | "unclear"; reason: string }; items?: { status: "met" | "unmet" | "unclear"; reason: string }[] };
   };
 }
 
@@ -74,6 +79,13 @@ export function instantiate(saved: SavedProposal, input: AgentInput): Record<str
     evidence_used: saved.proposal.evidence_used,
     actions,
     flags: saved.proposal.flags,
+    ...(input.criteria && input.criteria.length > 0
+      ? { delivery_check: input.criteria.map((criterion, i) => {
+          const t = saved.proposal.delivery_check?.items?.[i] ?? saved.proposal.delivery_check?.default
+            ?? { status: "unclear" as const, reason: "The saved plan has no delivery check." };
+          return { criterion, status: t.status, reason: t.reason };
+        }) }
+      : {}),
     needs_human: saved.proposal.needs_human,
   };
 }

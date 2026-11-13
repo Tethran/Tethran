@@ -21,7 +21,13 @@
           "reason": "10 percent tax reserve",
           "amount_ppm": 100000
         }
-      ]
+      ],
+      "delivery_check": {
+        "default": {
+          "status": "met",
+          "reason": "The evidence says everything was delivered and the client confirmed receipt."
+        }
+      }
     }
   },
   {
@@ -40,7 +46,13 @@
         }
       ],
       "needs_human": true,
-      "actions": []
+      "actions": [],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        }
+      }
     }
   },
   {
@@ -70,7 +82,13 @@
           "reason": "10 percent tax reserve",
           "amount_ppm": 100000
         }
-      ]
+      ],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        }
+      }
     }
   },
   {
@@ -94,7 +112,13 @@
           "reason": "10 percent tax reserve",
           "amount_ppm": 100000
         }
-      ]
+      ],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        }
+      }
     }
   },
   {
@@ -118,7 +142,13 @@
         }
       ],
       "needs_human": true,
-      "actions": []
+      "actions": [],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        }
+      }
     }
   },
   {
@@ -142,7 +172,13 @@
           "reason": "10 percent tax reserve",
           "amount_ppm": 100000
         }
-      ]
+      ],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        }
+      }
     }
   },
   {
@@ -160,7 +196,13 @@
         }
       ],
       "needs_human": true,
-      "actions": []
+      "actions": [],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        }
+      }
     }
   },
   {
@@ -178,7 +220,13 @@
         }
       ],
       "needs_human": true,
-      "actions": []
+      "actions": [],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        }
+      }
     }
   },
   {
@@ -196,7 +244,136 @@
         }
       ],
       "needs_human": true,
-      "actions": []
+      "actions": [],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        }
+      }
+    }
+  },
+  {
+    "scenario": "criteria_met",
+    "source": "curated (delivery check: all met)",
+    "proposal": {
+      "confidence": 0.93,
+      "evidence_used": [
+        "ev-1"
+      ],
+      "flags": [],
+      "needs_human": false,
+      "actions": [
+        {
+          "type": "payout",
+          "payee_id": "payee_amara",
+          "asset": "USDT",
+          "amount_ppm": 900000
+        },
+        {
+          "type": "tax_reserve",
+          "reason": "10 percent tax reserve",
+          "amount_ppm": 100000
+        }
+      ],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        },
+        "items": [
+          {
+            "status": "met",
+            "reason": "The note lists all five page texts as delivered."
+          },
+          {
+            "status": "met",
+            "reason": "The note says an editor proofread them; an edit log is attached."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "scenario": "criteria_unmet",
+    "source": "curated (delivery check: one unmet)",
+    "proposal": {
+      "confidence": 0.93,
+      "evidence_used": [
+        "ev-1"
+      ],
+      "flags": [],
+      "needs_human": false,
+      "actions": [
+        {
+          "type": "payout",
+          "payee_id": "payee_amara",
+          "asset": "USDT",
+          "amount_ppm": 900000
+        },
+        {
+          "type": "tax_reserve",
+          "reason": "10 percent tax reserve",
+          "amount_ppm": 100000
+        }
+      ],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        },
+        "items": [
+          {
+            "status": "unmet",
+            "reason": "Twelve photos were delivered; twenty were agreed."
+          },
+          {
+            "status": "met",
+            "reason": "The photos were delivered as PNG files."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "scenario": "criteria_silent",
+    "source": "curated (delivery check: evidence silent)",
+    "proposal": {
+      "confidence": 0.93,
+      "evidence_used": [
+        "ev-1"
+      ],
+      "flags": [],
+      "needs_human": false,
+      "actions": [
+        {
+          "type": "payout",
+          "payee_id": "payee_amara",
+          "asset": "USDT",
+          "amount_ppm": 900000
+        },
+        {
+          "type": "tax_reserve",
+          "reason": "10 percent tax reserve",
+          "amount_ppm": 100000
+        }
+      ],
+      "delivery_check": {
+        "default": {
+          "status": "unclear",
+          "reason": "The saved plan does not settle this criterion from the evidence."
+        },
+        "items": [
+          {
+            "status": "unclear",
+            "reason": "The evidence does not mention a ten-page report."
+          },
+          {
+            "status": "unclear",
+            "reason": "The evidence does not mention a competitor table."
+          }
+        ]
+      }
     }
   }
 ]

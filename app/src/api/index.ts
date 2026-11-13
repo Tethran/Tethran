@@ -42,6 +42,14 @@ let providerCache: Promise<ProviderInfo> | undefined;
 const provider = () => (providerCache ??= get<ProviderInfo>(`/providers/${PROVIDER_ID}`).catch((e) => { providerCache = undefined; throw e; }));
 
 const isPayout = (a: any) => a?.type === "payout" || a?.type === "mobile_money_payout";
+
+/** Base64 of a File (for the JSON upload). */
+async function toBase64(f: File): Promise<string> {
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
 /** The reserved payee of Tethran's earnings account (the 5% platform fee line). */
 export const EARNINGS_ID = "tethran_earnings";
 
@@ -143,7 +151,11 @@ async function milestoneDetail(id: string) {
   }, prov.payees));
   const milestone: Milestone = {
     ...base, status: statusOf(m.state), escrowTx: m.escrow_tx, releaseTx: m.release_tx,
-    evidence: (t.evidence ?? []).map((e: any) => `Evidence #${e.id} · ${String(e.at).slice(0, 16).replace("T", " ")}`),
+    evidence: (t.evidence ?? []).map((e: any) => ({
+      id: e.id, note: e.text ?? "", link: e.link ?? null, at: e.at,
+      files: (e.files ?? []).map((f: any) => ({ id: f.id, name: f.name, size: f.size, mime: f.mime, sha256: f.sha256, url: `${API_BASE}${f.download}` })),
+    })),
+    deliveryCheck: t.delivery_check ? { checks: t.delivery_check.checks ?? [], agentMode: t.delivery_check.agent_mode ?? null, error: t.delivery_check.error ?? null, at: t.delivery_check.at ?? null } : null,
     ...(holdEnds ? { cardHoldEndsAt: holdEnds } : {}),
     payouts: (t.payouts ?? []).map((p: any) => ({
       to: p.payee_id === EARNINGS_ID ? "Tethran earnings account" : prov.payees.find((x) => x.payee_id === p.payee_id)?.name ?? p.payee_id, amount: dollars(p.amount), rail: String(p.rail ?? "usdt"),
@@ -191,7 +203,16 @@ export const api = {
     const role = await payerRole(id);
     return post<{ tx_hash: string }>(`/wallets/${role}/escrow/${id}/${status === "Approved" ? "approve" : "dispute"}`);
   },
-  addEvidence: (id: string, text: string) => post(`/milestones/${id}/evidence`, { text }),
+  /**
+   * Submits delivery: a note, a link and up to 5 files (10 MB each; txt, md, csv, json, pdf, png, jpg, webp, gif, zip).
+   * Files go as base64 in JSON. The backend runs the agent's advisory delivery check and returns it.
+   */
+  addEvidence: async (id: string, input: { note?: string; link?: string; files?: File[] }) => {
+    const files = await Promise.all((input.files ?? []).map(async (f) => ({ name: f.name, mime: f.type, content_base64: await toBase64(f) })));
+    return post<{ evidence_id: number; delivery_check: any }>(`/milestones/${id}/evidence`, {
+      ...(input.note ? { text: input.note } : {}), ...(input.link ? { link: input.link } : {}), ...(files.length ? { files } : {}),
+    });
+  },
   /** Advisory evidence summary (a live model call; it never decides). Returned as plain text. */
   evidenceSummary: async (id: string): Promise<string> => {
     const r = await post<any>(`/milestones/${id}/evidence/summary`);

@@ -1002,3 +1002,21 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   FX rates are still simulated in code and in the docs (flagged to the lead).
 - Names: the demo client "Demo Client Ltd" is now "Kofi Mensah Ltd" (the lead's side-by-side calls the client Kofi);
   the M-Pesa payee "Kofi Print Works" is now "Zuri Print Works" so there are not two Kofis. Payee ids are unchanged.
+
+### Feature 2: uploads and the agent's delivery check (branch delivery)
+- Uploads: POST /milestones/{id}/evidence takes a note, an http(s) link and up to 5 files (10 MB each, base64 in JSON;
+  no multipart parser, no new dependency). Allowlist txt, md, csv, json, pdf, png, jpg/jpeg, webp, gif, zip; the
+  extension, declared type and file signature must agree; text types must be text. Files are stored under their
+  sha256 in <BACKEND_DATA_DIR>/uploads (git-ignored), never under the user's name; name, size, type and sha256 in
+  evidence_files. Downloads (GET /evidence/files/{id}) are octet-stream attachments with nosniff and a sandbox CSP.
+  The body limit is raised for this route only. The milestone page shows the actual note, link and files.
+- The agent now gets the acceptance criteria (one per line or ";"), the note, the link, the text of txt/md/csv/json
+  files, and for other files only name, type, size and hash marked "not inspected" (prompt 2026-11-13.2).
+- Delivery check: delivery_check in the agent output (schema in Policy and LLM), completed by the backend so every
+  criterion has an entry (a skipped one is "unclear"). Advisory check at submission, stored and shown to the client next
+  to Approve, labelled Live model or Replay. Policy rules CRITERIA_UNMET and CRITERIA_UNCLEAR escalate (never reject).
+- Replay: saved plans carry check templates expanded to each milestone's criteria; three new saved plans and seed
+  scenarios: criteria_met (paid), criteria_unmet (escalated CRITERIA_UNMET), criteria_silent (escalated
+  CRITERIA_UNCLEAR); the seed now checks those outcomes. Live mode: AGENT_MODE=live npm run demo (or demo:serve).
+- Tests: Policy criteria rules (5); backend uploads, limits, downloads, agent text, criteria split, completion and
+  replay expansion (7).

@@ -125,14 +125,30 @@ Response: the milestone record (as above), with `state` brought in line with the
 `trace_id` is the Opik trace of the settlement run. `simulated: 1` on a payout means the on-chain transfer went to
 the rail's deposit wallet and the mobile-money or bank leg is simulated.
 
-#### `POST /milestones/{id}/evidence` — provider submits delivery evidence
+#### `POST /milestones/{id}/evidence` — provider submits delivery (note, link, files)
 
 ```json
-{ "text": "All brand files delivered on 12 Nov 2026. The client confirmed receipt." }
+{ "text": "All brand files delivered on 12 Nov 2026.", "link": "https://drive.example.com/brand",
+  "files": [{ "name": "brief.md", "mime": "text/markdown", "content_base64": "IyBCcmllZg==" }] }
 ```
 
-Response: `{ "evidence_id": 1, "milestone_state": "in_review" }`. Evidence is stored as untrusted data and reaches
-the agent only inside labelled delimiters. Max 20,000 characters.
+At least one of `text` (max 20,000 characters), `link` (http or https, max 2,000) or `files`. Files: at most 5, 10 MB
+each, as base64 in JSON (the body limit of this route is raised for it; every other route keeps 256 KB). Allowed: txt,
+md, csv, json, pdf, png, jpg/jpeg, webp, gif, zip; the extension, the declared type and the file's own signature must
+agree (`400 FILE_TYPE_NOT_ALLOWED`, `FILE_TYPE_MISMATCH`, `413 FILE_TOO_LARGE`, `400 TOO_MANY_FILES`, `BAD_LINK`,
+`EMPTY_SUBMISSION`). Files are stored on the backend's data disk under their sha256 (`<BACKEND_DATA_DIR>/uploads`,
+git-ignored); name, size, type and sha256 are in `evidence_files`. Then the agent's advisory delivery check runs.
+
+Response: `{ "evidence_id": 1, "milestone_state": "in_review", "delivery_check": { "checks": [{ "criterion": "…",
+"status": "met" | "unmet" | "unclear", "reason": "…" }], "agent_mode": "live" | "Replay", "error": null, "advisory": true } }`.
+Everything submitted is untrusted data and reaches the agent only inside labelled delimiters.
+
+- `GET /milestones/{id}/delivery-check` — the latest check (`{ checks, agent_mode, error, at }`).
+- `GET /evidence/files/{id}` — download: always `application/octet-stream` with `Content-Disposition: attachment`,
+  `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`. Nothing is rendered
+  or executed.
+- `GET /milestones/{id}/timeline` now has `evidence: [{ id, text, link, at, files: [{ id, name, size, mime, sha256,
+  download }] }]` and `delivery_check`.
 
 ### Funding (built)
 

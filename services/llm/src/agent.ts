@@ -24,6 +24,8 @@ export interface AgentInput {
    */
   platform_fee?: { payee_id: string; amount: string };
   contract_text: string; // untrusted
+  /** The milestone's acceptance criteria ("Done when…"), one item each. Written by the parties: untrusted, shown to the model inside the contract block. */
+  criteria?: string[];
   evidence: { id: string; text: string }[]; // untrusted
   /** Optional results of paid data tools (see tools.ts). Passed to the model as untrusted data. */
   paid_data?: { tool: string; simulated: boolean; data: unknown }[];
@@ -35,6 +37,8 @@ export interface SettlementProposal {
   evidence_used: string[];
   actions: Record<string, unknown>[];
   flags: { code: string; detail: string }[];
+  /** Per acceptance criterion: met / unmet / unclear with a short reason. */
+  delivery_check?: { criterion: string; status: "met" | "unmet" | "unclear"; reason: string }[];
   needs_human: boolean;
 }
 

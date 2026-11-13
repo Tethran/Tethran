@@ -16,6 +16,15 @@ Service **decides** and co-signs. The vault pays only with both signatures and o
 go out, a non-transferable receipt NFT is minted, and every step is joined in a reconciliation ledger with a CSV
 tax export.
 
+**Delivery and the AI's delivery check.** The freelancer submits a note, a link and up to 5 files (10 MB each;
+txt, md, csv, json, pdf, png, jpg, webp, gif, zip). The agent checks the delivery against the milestone's acceptance
+criteria ("Done when", one per line or ";"): met, unmet or unclear per criterion, with a reason. It reads the note, the
+link and the text of txt/md/csv/json files; other files only by name, type, size and hash ("not inspected"). The check
+is advisory and shown to the client next to **Approve work**; at settlement the Policy Service escalates any unmet or
+unclear criterion to a person (`CRITERIA_UNMET`, `CRITERIA_UNCLEAR`). The seed and demo use saved agent answers
+(**Replay**) by default; `AGENT_MODE=live npm run demo` (or `demo:serve`) calls the model (Groq first, Gemini fallback)
+and the app labels each answer **Live model** or **Replay**.
+
 **Business model.** Tethran takes a **5% platform fee** on each milestone, paid by the freelancer out of the settlement
 into the Tethran earnings account (in the demo a demo wallet, "Tethran earnings account"; in production a company
 treasury). The client pays exactly the milestone amount. The fee is computed by code, not by the AI, and the Policy

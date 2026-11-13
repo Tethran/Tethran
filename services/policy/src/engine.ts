@@ -184,6 +184,11 @@ export function evaluateProposal(proposal: unknown, ctx: EvaluationContext): Eva
   if (p.needs_human) escalated.push("NEEDS_HUMAN");
   if (!ctx.milestone.identityMatch) escalated.push("IDENTITY_MISMATCH");
   if (p.flags.some((f) => INJECTION_FLAG_CODES.has(f.code))) escalated.push("INJECTION_FLAGGED");
+  // The agent's delivery check: a person decides when any acceptance criterion is unmet or unclear. Never a rejection,
+  // and a clearly met check changes nothing.
+  const check = p.delivery_check ?? [];
+  if (check.some((c) => c.status === "unmet")) escalated.push("CRITERIA_UNMET");
+  if (check.some((c) => c.status === "unclear")) escalated.push("CRITERIA_UNCLEAR");
   // A plan that pays nobody is never approved automatically, even when nothing else is wrong.
   if (!movesMoney && escalated.length === 0) escalated.push("NO_PAYOUTS");
 

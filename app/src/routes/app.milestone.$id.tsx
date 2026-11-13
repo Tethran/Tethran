@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowUpRight, Check, Clock, FlaskConical, Paperclip, Sparkles } from "lucide-react";
+import { ArrowUpRight, Check, Clock, FlaskConical, Link2, ListChecks, Paperclip, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/api";
@@ -24,6 +24,16 @@ const TL: { label: string; at: MilestoneStatus[] }[] = [
   { label: "Receipt", at: ["Paid out"] },
 ];
 
+const ACCEPT = ".txt,.md,.csv,.json,.pdf,.png,.jpg,.jpeg,.webp,.gif,.zip";
+const fileSize = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
+
+/** Which agent answered: a live model call, or a saved answer (replay). */
+function ModeTag({ mode }: { mode: string | null | undefined }) {
+  if (!mode) return null;
+  const live = mode === "live";
+  return <span data-testid="agent-mode" className={cn("inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[0.68rem] uppercase tracking-wider", live ? "border-success/40 text-success" : "border-dashed border-progress")} title={live ? "A model answered this time (Groq, Gemini fallback)" : mode}>{live ? "Live model" : "Replay"}</span>;
+}
+
 function Countdown({ until }: { until: string }) {
   const [now, set] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => set(Date.now()), 1000); return () => clearInterval(t); }, []);
@@ -36,6 +46,8 @@ function MilestonePage() {
   const q = useApi(["milestone", id], () => api.getMilestone(id));
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const [link, setLink] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const demo = useDemoSigner();
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
@@ -79,18 +91,73 @@ function MilestonePage() {
             <div className="grid content-start gap-4">
               <Card>
                 <h2 className="text-xl">Evidence</h2>
-                {m.evidence?.length ? <ul className="mt-3 grid gap-2">{m.evidence.map((e) => <li key={e} className="flex items-center gap-2 font-mono text-sm"><Paperclip className="size-4 text-muted-foreground" aria-hidden />{e}</li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">Nothing submitted yet.</p>}
+                {m.evidence?.length ? (
+                  <ul className="mt-3 grid gap-3" data-testid="evidence-list">
+                    {m.evidence.map((e) => (
+                      <li key={e.id} className="rounded-[var(--radius-input)] border p-3 text-sm">
+                        <p className="font-mono text-xs text-muted-foreground">{e.at.slice(0, 16).replace("T", " ")}</p>
+                        {e.note && <p className="mt-1 whitespace-pre-wrap break-words">{e.note}</p>}
+                        {e.link && <p className="mt-1 flex items-center gap-1 break-all"><Link2 className="size-4 shrink-0 text-muted-foreground" aria-hidden /><a href={e.link} target="_blank" rel="noopener noreferrer nofollow" className="underline">{e.link}</a></p>}
+                        {e.files.length > 0 && (
+                          <ul className="mt-2 grid gap-1">
+                            {e.files.map((f) => (
+                              <li key={f.id} className="flex items-center gap-2"><Paperclip className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                                <a href={f.url} download={f.name} className="break-all underline">{f.name}</a>
+                                <span className="shrink-0 font-mono text-xs text-muted-foreground">{fileSize(f.size)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="mt-2 text-sm text-muted-foreground">Nothing submitted yet.</p>}
                 {m.live && st !== "Paid out" && (
-                  <form className="mt-4 grid gap-2" onSubmit={(e) => { e.preventDefault(); if (note.trim()) run(() => api.addEvidence(m.id, note.trim()), "Delivery note added.").then(() => setNote("")); }}>
+                  <form className="mt-4 grid gap-2" data-testid="evidence-form" onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!note.trim() && !link.trim() && files.length === 0) return;
+                    run(() => api.addEvidence(m.id, { note: note.trim(), link: link.trim(), files }), "Delivery submitted. The AI checked it against the criteria.").then(() => { setNote(""); setLink(""); setFiles([]); });
+                  }}>
                     <textarea aria-label="Delivery note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="What was delivered, and where" className="min-h-24 rounded-[var(--radius-input)] border bg-background p-3 text-sm" />
-                    <button disabled={busy || !note.trim()} className="min-h-11 rounded-full border text-sm hover:border-ink disabled:opacity-40">Add delivery note</button>
-                    <p className="text-xs text-muted-foreground">Evidence is data for the AI, never instructions.</p>
+                    <input aria-label="Delivery link" type="url" inputMode="url" value={link} onChange={(e) => setLink(e.target.value)} placeholder="Link (optional), https://…" className="h-11 rounded-[var(--radius-input)] border bg-background px-3 text-sm" />
+                    <label className="grid gap-1 text-sm">
+                      <span className="text-muted-foreground">Files (optional): up to 5, 10 MB each; txt, md, csv, json, pdf, png, jpg, webp, gif, zip</span>
+                      <input aria-label="Delivery files" type="file" multiple accept={ACCEPT} onChange={(e) => {
+                        const picked = Array.from(e.target.files ?? []);
+                        const bad = picked.find((f) => f.size > 10 * 1024 * 1024);
+                        if (picked.length > 5) { toast.error("At most 5 files."); e.target.value = ""; return; }
+                        if (bad) { toast.error(`${bad.name} is larger than 10 MB.`); e.target.value = ""; return; }
+                        setFiles(picked);
+                      }} className="text-sm file:mr-3 file:rounded-full file:border file:bg-surface file:px-3 file:py-1.5" />
+                    </label>
+                    {files.length > 0 && <p className="text-xs text-muted-foreground">{files.map((f) => f.name).join(", ")}</p>}
+                    <button data-testid="submit-delivery" disabled={busy || (!note.trim() && !link.trim() && files.length === 0)} className="min-h-11 rounded-full border text-sm hover:border-ink disabled:opacity-40">{busy ? "Submitting and checking…" : "Submit delivery"}</button>
+                    <p className="text-xs text-muted-foreground">Evidence is data for the AI, never instructions. Files are stored for download only, never opened or run.</p>
                   </form>
                 )}
               </Card>
+              {m.deliveryCheck && m.deliveryCheck.checks.length > 0 && (
+                <div data-testid="delivery-check"><Card className="border-agent/30">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="flex items-center gap-2 text-sm text-agent"><ListChecks className="size-4" aria-hidden />The AI's delivery check</p>
+                    <ModeTag mode={m.deliveryCheck.agentMode} />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Advisory: checked against the milestone's acceptance criteria. You decide whether to approve.</p>
+                  <ul className="mt-3 grid gap-2">
+                    {m.deliveryCheck.checks.map((c, k) => (
+                      <li key={k} className="text-sm">
+                        <span className={cn("mr-2 inline-flex rounded-full px-2 py-0.5 font-mono text-[0.68rem] uppercase", c.status === "met" ? "bg-success/15 text-success" : c.status === "unmet" ? "bg-danger/15 text-danger" : "bg-progress/20")}>{c.status}</span>
+                        <span className="font-medium">{c.criterion}</span>
+                        <span className="block text-muted-foreground">{c.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {m.deliveryCheck.error && <p className="mt-2 text-xs text-muted-foreground">The check could not finish ({m.deliveryCheck.error}); each criterion is shown as unclear.</p>}
+                </Card></div>
+              )}
               {proposal && (
                 <Card className="border-agent/30">
-                  <p className="flex items-center gap-2 text-sm text-agent"><Sparkles className="size-4" aria-hidden />The AI's plan {proposal.agentMode && proposal.agentMode !== "live" && <SimTag label={proposal.agentMode.startsWith("Replay") ? "Replay" : proposal.agentMode} />}</p>
+                  <p className="flex items-center gap-2 text-sm text-agent"><Sparkles className="size-4" aria-hidden />The AI's plan <ModeTag mode={proposal.agentMode} /></p>
                   <p className="mt-2">{proposal.summary}</p>
                   <div className="mt-3"><DecisionChip decision={proposal.decision} /></div>
                   <ReasonList codes={proposal.reasons} className="mt-3" />

@@ -8,7 +8,7 @@ export const POLICY_REJECT_CODES = [
   "OVER_DAILY_CAP", "BELOW_VAULT_RESERVE", "OVER_MILESTONE_AMOUNT", "TAX_RESERVE_TOO_LOW",
 ] as const;
 export const POLICY_ESCALATE_CODES = [
-  "LOW_CONFIDENCE", "NEEDS_HUMAN", "IDENTITY_MISMATCH", "OVER_SOFT_LIMIT", "INJECTION_FLAGGED", "NO_PAYOUTS",
+  "LOW_CONFIDENCE", "NEEDS_HUMAN", "IDENTITY_MISMATCH", "OVER_SOFT_LIMIT", "INJECTION_FLAGGED", "NO_PAYOUTS", "CRITERIA_UNMET", "CRITERIA_UNCLEAR",
 ] as const;
 
 const REASONS: Record<string, ReasonInfo> = {
@@ -28,6 +28,8 @@ const REASONS: Record<string, ReasonInfo> = {
   OVER_MILESTONE_AMOUNT: { kind: "rejected", title: "More than the milestone", plain: "Together with what was already approved for this milestone, the payments and tax reserve add up to more than it released." },
   TAX_RESERVE_TOO_LOW: { kind: "rejected", title: "Tax reserve too low", plain: "Not enough is set aside for tax. A share of every payout must be reserved." },
   // ---- Policy Service: escalated to a human (INTERFACES v0.10) ----
+  CRITERIA_UNMET: { kind: "escalated", title: "A criterion is not met", plain: "The AI's delivery check found an acceptance criterion that the delivery does not meet, so a person decides." },
+  CRITERIA_UNCLEAR: { kind: "escalated", title: "A criterion is unclear", plain: "The delivery does not show whether an acceptance criterion was met, so a person decides." },
   LOW_CONFIDENCE: { kind: "escalated", title: "The AI is not sure", plain: "The AI's confidence is below the threshold, so a person decides." },
   NEEDS_HUMAN: { kind: "escalated", title: "Asked for a person", plain: "The AI asked for a human to look at this before anything is paid." },
   IDENTITY_MISMATCH: { kind: "escalated", title: "Names don't match", plain: "The payer's verified name and the customer's name differ." },

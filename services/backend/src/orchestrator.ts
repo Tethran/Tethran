@@ -16,6 +16,27 @@ import type { Agent, AgentMode } from "./replay";
 import type { AgentSigner } from "./agentSigner";
 import type { TreasuryChain } from "./chainPort";
 import { milestones, payeesOf, type MilestoneRow } from "./db";
+import { createEvidenceStore, criteriaOf, type EvidenceStore } from "./evidence";
+
+type Check = { criterion: string; status: "met" | "unmet" | "unclear"; reason: string };
+/**
+ * Makes the plan's delivery check cover every acceptance criterion, in order: an entry the agent gave for a criterion
+ * is kept; a criterion it skipped becomes "unclear" (so the Policy Service escalates CRITERIA_UNCLEAR). Deterministic.
+ */
+export function withDeliveryCheck<T extends { delivery_check?: Check[] }>(proposal: T, criteria: string[]): T {
+  if (criteria.length === 0) return proposal;
+  const given = Array.isArray(proposal.delivery_check) ? proposal.delivery_check : [];
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const checks = criteria.map((c, i) => {
+    // By text first; by position only when that entry does not name another criterion.
+    const named = (g: Check | undefined) => g !== undefined && criteria.some((x) => norm(x) === norm(String(g?.criterion ?? "")));
+    const hit = given.find((g) => norm(String(g?.criterion ?? "")) === norm(c)) ?? (named(given[i]) ? undefined : given[i]);
+    return hit && (hit.status === "met" || hit.status === "unmet" || hit.status === "unclear")
+      ? { criterion: c, status: hit.status, reason: String(hit.reason ?? "").slice(0, 500) }
+      : { criterion: c, status: "unclear" as const, reason: "The agent gave no check for this criterion." };
+  });
+  return { ...proposal, delivery_check: checks };
+}
 import { EARNINGS_PAYEE_ID, platformFee } from "../../policy/src/fee";
 
 /**
@@ -47,6 +68,8 @@ export interface OrchestratorDeps {
   tracer: Tracer;
   chainName: string;
   now: () => Date;
+  /** Delivery evidence (notes, links, files) and delivery checks; created from db when not given. */
+  evidence?: EvidenceStore;
 }
 
 type PayoutRow = {
@@ -56,6 +79,7 @@ type PayoutRow = {
 };
 
 export function createOrchestrator(deps: OrchestratorDeps) {
+  const evidenceStore = deps.evidence ?? createEvidenceStore(deps.db);
   const { db, chain } = deps;
   const iso = () => deps.now().toISOString();
 
@@ -64,8 +88,9 @@ export function createOrchestrator(deps: OrchestratorDeps) {
     const payees = payeesOf(db, m.provider_id).filter((p) => p.payee_id !== EARNINGS_PAYEE_ID).map((p) => ({
       id: p.payee_id, name: p.name, rail: p.rail, network: deps.chainName, verified_name: p.verified_name ?? undefined,
     }));
-    const evidence = (db.prepare("SELECT id, text FROM evidence WHERE milestone_id = ? ORDER BY id").all(m.id) as { id: number; text: string }[])
-      .map((e) => ({ id: `ev-${e.id}`, text: e.text }));
+    // The note, the link, text-like files' content and the other files' metadata ("not inspected"): untrusted data.
+    const evidence = evidenceStore.forAgent(m.id);
+    const criteria = criteriaOf(db, m.id);
     return {
       milestone: {
         id: m.id, title: m.title, gross_amount: m.amount, asset: "USDT", status: "released", expected_network: deps.chainName,
@@ -77,7 +102,9 @@ export function createOrchestrator(deps: OrchestratorDeps) {
       },
       tax_profile: { min_tax_reserve_bps: Number(policy.min_tax_reserve_bps) },
       platform_fee: { payee_id: EARNINGS_PAYEE_ID, amount: platformFee(BigInt(m.amount)).toString() },
-      contract_text: `Milestone "${m.title}" for ${m.amount} base units of USDT, paid to the provider's listed payees.`,
+      contract_text: `Milestone "${m.title}" for ${m.amount} base units of USDT, paid to the provider's listed payees.` +
+        (criteria.length > 0 ? `\nAcceptance criteria (Done when):\n${criteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}` : "\nNo acceptance criteria were written for this milestone."),
+      criteria,
       evidence,
     };
   }
@@ -190,7 +217,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
             }
           }
           const proposed = await deps.agent.propose(input, mode, m.scenario ?? "clean_delivery");
-          if (proposed.ok) proposed.proposal = withPlatformFee(proposed.proposal, m.amount);
+          if (proposed.ok) proposed.proposal = withDeliveryCheck(withPlatformFee(proposed.proposal, m.amount), criteriaOf(db, m.id)) as never;
           const agent = { agent_mode: proposed.agent_mode, ...(proposed.replay_source ? { replay_source: proposed.replay_source } : {}) };
           if (proposed.agent_mode !== "live") run.span({ name: "agent.replay", type: "general", output: agent });
           if (!proposed.ok) {
@@ -215,6 +242,40 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         },
       );
       return { ...result, resumed: false, trace_id: traceId };
+    },
+
+    /**
+     * The agent's delivery check right after a submission: per acceptance criterion, met / unmet / unclear with a
+     * reason. Advisory: shown to the client at approval time; nothing is signed or paid. The same agent (live or replay)
+     * that settles; a failure is stored as "unclear" for every criterion with the error, never as "met".
+     */
+    async checkDelivery(milestoneId: string, evidenceId: number | null, mode?: AgentMode) {
+      const m = milestones.get(db, milestoneId);
+      if (!m) throw new ApiError(404, "milestone not found");
+      const criteria = criteriaOf(db, m.id);
+      const agentMode = mode ?? deps.defaultAgentMode;
+      let checks: Check[];
+      let label: string = agentMode === "replay" ? "Replay" : "live";
+      let error: string | null = null;
+      try {
+        const { result } = await deps.tracer.run(
+          { name: "delivery.check", input: { milestone_id: m.id, criteria: criteria.length }, metadata: { milestone_id: m.id }, tags: ["delivery-check"] },
+          async () => {
+            const { policy } = await traceTool("get_policy_summary", {}, () => deps.policy.getPolicy());
+            const input = agentInput(m, policy);
+            input.milestone.status = "in_review"; // not released yet: the check is advisory, nothing is paid
+            return deps.agent.propose(input, agentMode, m.scenario ?? "clean_delivery");
+          },
+        );
+        label = result.agent_mode;
+        checks = result.ok ? withDeliveryCheck(result.proposal as { delivery_check?: Check[] }, criteria).delivery_check ?? [] : withDeliveryCheck({} as { delivery_check?: Check[] }, criteria).delivery_check ?? [];
+        if (!result.ok) error = "the agent's answer did not pass the output check";
+      } catch (e) {
+        error = safeErrorMessage(e).slice(0, 200);
+        checks = withDeliveryCheck({} as { delivery_check?: Check[] }, criteria).delivery_check ?? [];
+      }
+      evidenceStore.saveCheck(m.id, evidenceId, checks, label, error, deps.now());
+      return { milestone_id: m.id, checks, agent_mode: label, error, advisory: true };
     },
 
     /** A short, structured summary of the delivery evidence for the client or arbiter. Advisory only. */

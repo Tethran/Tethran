@@ -64,7 +64,7 @@ function Builder() {
                   <input aria-label="Title" className={input} placeholder="Title" value={m.title} onChange={(e) => setMs(ms.map((x, j) => j === k ? { ...x, title: e.target.value } : x))} />
                   <input aria-label="Amount in dollars" className={input + " font-mono"} inputMode="decimal" placeholder="$" value={m.amount} onChange={(e) => setMs(ms.map((x, j) => j === k ? { ...x, amount: e.target.value.replace(/[^\d.]/g, "") } : x))} />
                 </div>
-                <input aria-label="Acceptance criteria" className={input} placeholder="Done when…" value={m.criteria} onChange={(e) => setMs(ms.map((x, j) => j === k ? { ...x, criteria: e.target.value } : x))} />
+                <input aria-label="Acceptance criteria" className={input} placeholder="Done when… (separate criteria with ;)" value={m.criteria} onChange={(e) => setMs(ms.map((x, j) => j === k ? { ...x, criteria: e.target.value } : x))} />
                 {ms.length > 1 && <button onClick={() => setMs(ms.filter((_, j) => j !== k))} className="inline-flex min-h-11 w-fit items-center gap-1 text-sm text-muted-foreground hover:text-danger"><Trash2 className="size-4" aria-hidden />Remove</button>}
               </fieldset>
             ))}

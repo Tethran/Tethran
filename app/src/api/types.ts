@@ -15,7 +15,10 @@ export interface Milestone {
   criteria: string;
   dueDate: string;
   cardHoldEndsAt?: string;
-  evidence?: string[];
+  /** Every delivery submission: the actual note, link and files (download links). */
+  evidence?: EvidenceItem[];
+  /** The agent's latest delivery check against the acceptance criteria (advisory; shown at approval time). */
+  deliveryCheck?: DeliveryCheck | null;
   /** The escrow milestone exists on-chain (the contract milestone was activated). */
   live: boolean;
   escrowTx?: string | null;
@@ -176,6 +179,22 @@ export interface WalletReview {
   blocked: string[];
   paymentReference: string;
   custody: string;
+}
+
+export interface EvidenceItem {
+  id: number;
+  note: string;
+  link: string | null;
+  at: string;
+  files: { id: number; name: string; size: number; mime: string; sha256: string; url: string }[];
+}
+
+export interface DeliveryCheck {
+  checks: { criterion: string; status: "met" | "unmet" | "unclear"; reason: string }[];
+  /** "live" (a model answered) or "Replay…" (a saved answer). */
+  agentMode: string | null;
+  error: string | null;
+  at: string | null;
 }
 
 /** One line of a demo wallet's recent activity. */

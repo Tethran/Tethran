@@ -57,7 +57,10 @@ the milestone page in demo mode; it runs in the same presenter process with the 
    the treasury funds the escrow on-chain. **Card** (and Apple Pay,
    Google Pay, PayPal, Cash App) is a simulated checkout: signed Stripe-format events through the real webhook
    handler. Card payments wait out a chargeback hold (10 minutes in the demo) before release.
-3. **Client: approves** on the milestone page (**Approve work**), signed by the client's WDK wallet on-chain.
+3. **Freelancer: submits delivery** on the milestone page: a note, a link and files (up to 5, 10 MB each). The AI's
+   **delivery check** appears: each acceptance criterion met, unmet or unclear, with a reason, labelled **Live model** or
+   **Replay**. It is advisory; the client sees it before approving.
+   **Client: approves** on the milestone page (**Approve work**), signed by the client's WDK wallet on-chain.
    (One person can be both: on a new contract, **Client pays from → My own Tethran wallet** makes the freelancer's
    wallet, where payouts arrive, the client that pays and approves.)
 4. **Platform: Release and settle.** The escrow releases to the provider's vault; the Settlement Agent proposes
@@ -82,7 +85,11 @@ the milestone page in demo mode; it runs in the same presenter process with the 
 The recorded versions: `cd app && npm run e2e:demo-short` (the short video, `app/e2e-artifacts/recordings/
 tethran-demo-short.webm`, waits sped up) and `npm run e2e:journey` (the whole journey, about 15 minutes on Sepolia).
 
-## 3. The nine seeded scenarios
+## 3. The seeded scenarios
+
+Twelve scenarios: the nine below and three for the delivery check (v0.12): `criteria_met` (every criterion met: paid),
+`criteria_unmet` (twelve photos delivered, twenty agreed: escalated `CRITERIA_UNMET`) and `criteria_silent` (the
+evidence does not mention the criteria: escalated `CRITERIA_UNCLEAR`). Live mode: `AGENT_MODE=live npm run demo`.
 
 What the seed produced on Sepolia in the last clean run (`0 problems`; agent mode replay):
 
