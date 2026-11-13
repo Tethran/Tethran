@@ -13,7 +13,8 @@
     "demo:serve": "tsx scripts/seed.ts --serve-only",
     "demo:act": "tsx scripts/demo-act.ts",
     "demo": "tsx scripts/seed.ts --serve --demo-mode",
-    "record": "tsx scripts/record.ts"
+    "record": "tsx scripts/record.ts",
+    "start:render": "tsx scripts/render-start.ts"
   },
   "dependencies": {
     "dotenv": "^18.0.10",

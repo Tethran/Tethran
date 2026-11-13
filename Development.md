@@ -1190,3 +1190,24 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   operator queue; approving one later is refused by the Policy Service (ALREADY_SETTLED).
 - Not changed (needs a decision): the agent input should say who the contract pays, for example the contract's
   provider payee as the single payee unless the contract names a split.
+
+### Render deployment prepared (one web service plus a cron job; not deployed, not pushed)
+- `render.yaml` (Blueprint): web service `tethran` (Standard plan, 1 GB disk mounted at `.demo-data`) and cron job
+  `tethran-jobs` (hourly). Secrets are `sync: false` names only; JOBS_TOKEN is generated and shared with the cron.
+- `services/backend/scripts/render-start.ts` (`npm run start:render`, or node + tsx directly as in render.yaml): a
+  gateway on $PORT started first (healthz at once), routing /api to the backend, /signer to the demo signer and the
+  rest to the built web app, with optional basic auth (SITE_PASSWORD; /healthz and the cron endpoint are exempt) and no
+  timeout of its own; then the services on 127.0.0.1 (the Policy Service is never reachable from outside). First
+  boot (no demo.json, or RESEED=1) seeds and serves; later boots serve. Sets the recording defaults, TRUST_PROXY=1,
+  CORS_ORIGINS and APP_BASE_URL from RENDER_EXTERNAL_URL.
+- Backend: POST /jobs/run (x-jobs-token = JOBS_TOKEN; 404 when unset) runs the exchange-rate refresh, the reminders
+  and the notification sync once; JOBS_IN_PROCESS=0 turns the hourly timers off (set automatically when JOBS_TOKEN
+  exists). Test added (175 backend tests pass).
+- Seed: APP_SERVE=built serves app/.output instead of the dev server; email, model and job settings are read from
+  the environment as well as .env (there is no .env on a host); a reseed empties the data directory instead of
+  removing it (a mounted disk cannot be removed).
+- Tested locally on spare ports with a copy of the data: healthz without a password, everything else 401 without it,
+  /api and /signer through the gateway, the Policy Service not reachable, the cron endpoint 401 without the token and
+  200 with it, the dashboard and operator screens fully loaded in a browser with no failed requests. Memory of the
+  whole stack idle: about 480 MB (430 MB without the npm wrapper), hence the Standard plan.
+- docs/DEPLOY-RENDER.md: the steps, cost notes, reseed, risks (the demo signer must stay behind SITE_PASSWORD).

@@ -1,0 +1,103 @@
+# Render Blueprint for Tethran (test networks only: Sepolia; every key is a TEST key).
+# One web service runs everything (gateway, web app, backend with the agent, Policy Service, demo signer) with one
+# persistent disk for the SQLite data; one cron job runs the hourly jobs. See docs/DEPLOY-RENDER.md.
+# Secrets are never in this file: every `sync: false` value is entered in the Render dashboard.
+services:
+  - type: web
+    name: tethran
+    runtime: node
+    plan: standard # 2 GB; the stack uses about 430-480 MB idle, more while settling with the live model
+    buildCommand: >-
+      npm ci --prefix services/chain &&
+      npm ci --prefix services/policy &&
+      npm ci --prefix services/llm &&
+      npm ci --prefix services/backend &&
+      npm ci --prefix app &&
+      npm run build --prefix app
+    # Node directly (no npm wrapper process): the gateway on $PORT, then the services on 127.0.0.1.
+    startCommand: node services/backend/node_modules/tsx/dist/cli.mjs services/backend/scripts/render-start.ts
+    healthCheckPath: /healthz
+    disk:
+      name: tethran-data
+      mountPath: /opt/render/project/src/.demo-data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: CHAIN
+        value: sepolia
+      # Build time (the web app talks to the same address through the gateway).
+      - key: VITE_TETHRAN_API_URL
+        value: /api
+      - key: VITE_TETHRAN_DEMO_SIGNER_URL
+        value: /signer
+      - key: VITE_REOWN_PROJECT_ID
+        sync: false
+      # Site password (basic auth) for everything except /healthz and the cron endpoint.
+      - key: SITE_USER
+        value: tethran
+      - key: SITE_PASSWORD
+        sync: false
+      # Shared with the cron job below.
+      - key: JOBS_TOKEN
+        generateValue: true
+      # Test keys and API keys (copy from your local .env; never commit them).
+      - key: TREASURY_PRIVATE_KEY
+        sync: false
+      - key: AGENT_SIGNER_PRIVATE_KEY
+        sync: false
+      - key: POLICY_SIGNER_PRIVATE_KEY
+        sync: false
+      - key: OPERATOR_PRIVATE_KEY
+        sync: false
+      - key: ARBITER_PRIVATE_KEY
+        sync: false
+      - key: PROVIDER_PRIVATE_KEY
+        sync: false
+      - key: DEMO_WALLET_SEED
+        sync: false
+      - key: RPC_URL_11155111
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        sync: false
+      - key: LLM_PROVIDER_ORDER
+        sync: false
+      - key: OPIK_API_KEY
+        sync: false
+      - key: OPIK_WORKSPACE
+        sync: false
+      - key: OPIK_PROJECT_NAME
+        sync: false
+      - key: EMAIL_PROVIDER
+        sync: false
+      - key: EMAIL_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+
+  - type: cron
+    name: tethran-jobs
+    runtime: node
+    schedule: "0 * * * *" # hourly: invoice reminders, exchange-rate refresh, notifications
+    buildCommand: echo "no build"
+    # Calls the web service over Render's private network; the gateway lets /api/jobs/run through without the
+    # site password, and the backend checks JOBS_TOKEN.
+    startCommand: >-
+      curl -fsS -X POST -H "x-jobs-token: $JOBS_TOKEN" "http://$TETHRAN_HOSTPORT/api/jobs/run"
+    envVars:
+      - key: JOBS_TOKEN
+        fromService:
+          type: web
+          name: tethran
+          envVarKey: JOBS_TOKEN
+      - key: TETHRAN_HOSTPORT
+        fromService:
+          type: web
+          name: tethran
+          property: hostport

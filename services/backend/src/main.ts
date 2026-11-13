@@ -45,7 +45,7 @@ loadEnvOnly(resolve(__dirname, "../../../.env"), [
   "STRIPE_WEBHOOK_SECRET", "STRIPE_SECRET_KEY", "DEMO_MODE", "PLATFORM_TOKEN", "MAX_MILESTONE_USD_CENTS", "LLM_*", "GROQ_*", "GEMINI_*", "NVIDIA_*", "OPIK_*",
   "BACKEND_DATA_DIR", "BACKEND_PORT", "HOST", "CARD_HOLD_SECONDS", "MILESTONE_TIMEOUT_SECONDS",
   "AGENT_MODE", "PUBLIC_BASE_URL", "APP_BASE_URL", "FEE_BPS", "FEE_FIXED_CENTS", "DEMO_WALLET_SEED", "PHONE_HASH_SALT", "X402_CAP_PER_RUN", "CORS_ORIGINS",
-  "EMAIL_*", "INVOICE_RATE_LIMIT_PER_MIN", "TRUST_PROXY",
+  "EMAIL_*", "INVOICE_RATE_LIMIT_PER_MIN", "TRUST_PROXY", "JOBS_TOKEN", "JOBS_IN_PROCESS",
 ]);
 
 function need(name: string): string {
@@ -167,11 +167,18 @@ const notifications = createNotifications(db, { now, appBaseUrl: publicBaseUrl }
 // programmatic endpoint (their terms forbid it): /x402/fx-quote keeps its own "Sample rates".
 const fx = createFxService({ db, now });
 usePayoutFx(fx);
+// The hourly jobs run in this process unless JOBS_IN_PROCESS=0 (a host's cron then calls POST /jobs/run instead).
+const jobsInProcess = process.env.JOBS_IN_PROCESS !== "0";
 void fx.refresh();
-setInterval(() => void fx.refresh(), 60 * 60 * 1000).unref();
-const reminderJob = () => { try { runReminders({ db, now, publicBaseUrl }, now()); notifications.sync(); } catch (e) { console.error("reminder job failed: " + safeMsg(e)); } };
+if (jobsInProcess) setInterval(() => void fx.refresh(), 60 * 60 * 1000).unref();
+const reminderJob = () => { try { runReminders({ db, now, publicBaseUrl }, now()); notifications.sync(); return true; } catch (e) { console.error("reminder job failed: " + safeMsg(e)); return false; } };
 reminderJob();
-setInterval(reminderJob, 60 * 60 * 1000).unref();
+if (jobsInProcess) setInterval(reminderJob, 60 * 60 * 1000).unref();
+/** The scheduled jobs, run once: the exchange-rate refresh (a fresh cache makes no call), invoice reminders, notifications. */
+const runJobs = async () => {
+  const fxRefreshed = await Promise.resolve(fx.refresh()).then(() => true, () => false);
+  return { ran_at: now().toISOString(), fx_refresh: fxRefreshed ? "ok" : "failed", reminders: reminderJob() ? "ok" : "failed" };
+};
 
 // Invoice email: Resend when EMAIL_PROVIDER, EMAIL_API_KEY and EMAIL_FROM are set, else the Emails outbox only.
 // The key is read here and handed to the mailer only; it is never logged.
@@ -183,6 +190,8 @@ listen(createHttpServer({
   // Get test USDT for a connected wallet: DEMO_MODE only (the treasury mints, as for card funding).
   ...(demoMode ? { externalMint: (to: string, amount: string, key: string) => chain.mintTestUsdt(to, amount, key), externalMintWait: (h: string) => chain.waitConfirmed(h) } : {}),
   mailer,
+  runJobs,
+  jobsToken: process.env.JOBS_TOKEN ?? "",
   invoiceRateLimitPerMin: Number(process.env.INVOICE_RATE_LIMIT_PER_MIN) > 0 ? Number(process.env.INVOICE_RATE_LIMIT_PER_MIN) : 30,
   trustProxy: process.env.TRUST_PROXY === "1",
   fx,

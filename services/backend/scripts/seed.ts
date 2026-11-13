@@ -27,7 +27,7 @@
 // DEMO_MODE only. TEST NETWORKS ONLY. Simulated parts (fiat, identity, mobile money) are labelled by the services.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { Wallet, id as keccakUtf8 } from "ethers";
 import { parse } from "dotenv";
@@ -69,7 +69,10 @@ function start(name: string, entry: string, allowed: Record<string, string>, qui
     if (process.env[k]) base[k] = process.env[k]!;
   }
   const tsx = join(ROOT, "services/backend/node_modules/tsx/dist/cli.mjs");
-  const child = entry.endsWith("vite.js")
+  const child = entry.endsWith("index.mjs")
+    // The built web app (APP_SERVE=built): its own Node server from app/.output, on a local port only.
+    ? spawn(process.execPath, [entry], { cwd: join(ROOT, "app"), env: { ...base, ...allowed }, stdio: ["ignore", "pipe", "pipe"] })
+    : entry.endsWith("vite.js")
     // The web app's dev server (no keys; it only gets the backend and demo signer URLs).
     ? spawn(process.execPath, [entry, "dev", "--port", allowed.APP_PORT, "--strictPort"], { cwd: join(ROOT, "app"), env: { ...base, ...allowed }, stdio: ["ignore", "pipe", "pipe"] })
     : spawn(process.execPath, [tsx, entry], { env: { ...base, ...allowed }, stdio: ["ignore", "pipe", "pipe"] });
@@ -171,7 +174,9 @@ async function ensureLocalDeployment(chainKey: string) {
 
 function serviceEnv(chainKey: string, internalToken: string) {
   const rpcEnv = Object.fromEntries(Object.entries({ ...fileEnv, ...process.env }).filter(([k]) => k.startsWith("RPC_URL_"))) as Record<string, string>;
-  const llmEnv = Object.fromEntries(Object.entries(fileEnv).filter(([k]) => /^(LLM_|GROQ_|GEMINI_|NVIDIA_|OPIK_|EMAIL_|APP_BASE_URL$|INVOICE_RATE_LIMIT_PER_MIN$)/.test(k)));
+  // From .env locally, or from the host's environment when there is no .env (for example on Render).
+  const llmEnv = Object.fromEntries(Object.entries({ ...fileEnv, ...process.env } as Record<string, string>)
+    .filter(([k]) => /^(LLM_|GROQ_|GEMINI_|NVIDIA_|OPIK_|EMAIL_|APP_BASE_URL$|INVOICE_RATE_LIMIT_PER_MIN$|JOBS_TOKEN$|JOBS_IN_PROCESS$|TRUST_PROXY$)/.test(k)));
   return {
     policy: {
       ...rpcEnv, CHAIN: chainKey, POLICY_SIGNER_PRIVATE_KEY: env("POLICY_SIGNER_PRIVATE_KEY"), OPERATOR_ADDRESS: wallet("OPERATOR").address,
@@ -204,6 +209,17 @@ function platformTokenFor(meta: Record<string, unknown>): string {
 async function startApp(children: ChildProcess[]) {
   const vite = join(ROOT, "app/node_modules/vite/bin/vite.js");
   if (env("DEMO_APP") === "0") return;
+  // APP_SERVE=built: the production build (cd app && npm run build) instead of the dev server, on 127.0.0.1 only.
+  // Its API and signer URLs were fixed at build time (VITE_TETHRAN_API_URL, VITE_TETHRAN_DEMO_SIGNER_URL).
+  if (env("APP_SERVE") === "built") {
+    const built = join(ROOT, "app/.output/server/index.mjs");
+    if (!existsSync(built)) throw new Error("APP_SERVE=built but app/.output is missing (cd app && npm run build)");
+    const port = env("DEMO_APP_PORT") || "3000";
+    children.push(start("app", built, { PORT: port, NITRO_PORT: port, HOST: "127.0.0.1", NITRO_HOST: "127.0.0.1", NODE_ENV: "production" }, true));
+    await waitHealthy(`http://127.0.0.1:${port}`, "web app", 480);
+    console.log(`Web app (built): http://127.0.0.1:${port}`);
+    return;
+  }
   if (!existsSync(vite)) { console.log("Web app: not installed (cd app && npm install), skipped"); return; }
   const port = env("DEMO_APP_PORT") || "3000";
   const url = `http://localhost:${port}`;
@@ -293,8 +309,9 @@ async function main() {
     PLATFORM_TOKEN = platformTokenFor(meta);
   } else {
     if (!/^\.demo-data[A-Za-z0-9_-]*$/.test(basename(DATA)) || resolve(DATA, "..") !== ROOT) throw new Error("refusing to wipe an unexpected directory");
-    rmSync(DATA, { recursive: true, force: true });
+    // Empty the directory rather than remove it: on a host it is a mounted disk (Render), which cannot be removed.
     mkdirSync(DATA, { recursive: true });
+    for (const entry of readdirSync(DATA)) rmSync(join(DATA, entry), { recursive: true, force: true });
     internalToken = randomBytes(24).toString("hex");
     PLATFORM_TOKEN = randomBytes(24).toString("hex");
     writeFileSync(join(DATA, "demo.json"), JSON.stringify({ chain: chain.key, internal_token: internalToken, platform_token: PLATFORM_TOKEN, seeded_at: new Date().toISOString() }, null, 2));

@@ -60,6 +60,10 @@ export interface HttpDeps {
   externalMintWait?: (h: string) => Promise<void>;
   /** Invoice email (Resend REST, or the outbox when not configured). */
   mailer?: Mailer;
+  /** The scheduled jobs (reminders, exchange rates, notifications), run once; POST /jobs/run with x-jobs-token. */
+  runJobs?: () => Promise<Record<string, unknown>>;
+  /** Secret for POST /jobs/run (a host's cron); empty = the route is disabled. */
+  jobsToken?: string;
   /** Invoice creations allowed per IP per minute (default 30). */
   invoiceRateLimitPerMin?: number;
   /** Trust X-Forwarded-For for the client IP (only behind our own proxy). */
@@ -241,6 +245,12 @@ export function createHttpServer(deps: HttpDeps): Server {
     // Platform actions: only the platform (x-platform-token) may release, refund or settle. Funding never has a public
     // route of its own: card funding comes only through the signature-verified webhook (or, in DEMO_MODE, the
     // simulated checkout), stablecoin funding only from a deposit proven on-chain.
+    // A host's cron (for example a Render Cron Job) runs the hourly jobs here; disabled unless JOBS_TOKEN is set.
+    ["POST", /^\/jobs\/run$/, async ({ req }) => {
+      if (!deps.jobsToken || !deps.runJobs) throw new ApiError(404, "not found", "NOT_FOUND");
+      if (!sameSecret(String(req.headers["x-jobs-token"] ?? ""), deps.jobsToken)) throw new ApiError(401, "x-jobs-token required", "JOBS_ONLY");
+      return deps.runJobs();
+    }],
     ["POST", /^\/milestones\/([^/]+)\/release$/, platform(async ({ params }) => treasury.release(params[1]))],
     ["POST", /^\/milestones\/([^/]+)\/refund$/, platform(async ({ params }) => treasury.refund(params[1]))],
     ["POST", /^\/milestones\/([^/]+)\/settle$/, platform(async ({ params, body }) => {
