@@ -61,6 +61,11 @@ export function startDemoSigner(opts: {
     return { signer: wallet.address, signature, demo: true, label: "Demo: signed with a test key" };
   }
 
+  // The soft limit may not exceed the cap, so lowering the cap lowers it too. The soft limit from before is kept here
+  // and put back (up to the new cap) when the cap is raised again; without that, restoring the cap would leave every
+  // payout above the lowered value escalating.
+  let softBeforeLowering: string | null = null;
+
   async function setLimits(body: any) {
     const amount = (v: unknown, name: string) => {
       if (typeof v !== "string" || !/^[0-9]+$/.test(v)) throw Object.assign(new Error(`${name} must be base units`), { status: 400 });
@@ -68,7 +73,19 @@ export function startDemoSigner(opts: {
     };
     const current = await (await fetch(`${opts.policyUrl}/v1/policy`)).json() as { policy: Record<string, any>; version: number };
     const perTx = amount(body?.per_tx_cap, "per_tx_cap");
-    const soft = body?.per_tx_soft_limit !== undefined ? amount(body.per_tx_soft_limit, "per_tx_soft_limit") : (BigInt(perTx) < BigInt(current.policy.per_tx_soft_limit) ? perTx : current.policy.per_tx_soft_limit);
+    let soft: string;
+    if (body?.per_tx_soft_limit !== undefined) {
+      soft = amount(body.per_tx_soft_limit, "per_tx_soft_limit");
+      softBeforeLowering = null;
+    } else if (BigInt(perTx) < BigInt(current.policy.per_tx_soft_limit)) {
+      softBeforeLowering ??= current.policy.per_tx_soft_limit;
+      soft = perTx;
+    } else if (softBeforeLowering !== null) {
+      soft = BigInt(softBeforeLowering) < BigInt(perTx) ? softBeforeLowering : perTx;
+      if (BigInt(perTx) >= BigInt(softBeforeLowering)) softBeforeLowering = null;
+    } else {
+      soft = current.policy.per_tx_soft_limit;
+    }
     const doc: Record<string, any> = {
       ...current.policy, version: current.version + 1, per_tx_cap: perTx,
       per_tx_soft_limit: BigInt(soft) > BigInt(perTx) ? perTx : soft,
@@ -121,6 +138,22 @@ export function startDemoSigner(opts: {
       req.on("error", (e) => reject(Object.assign(e, { status: 502 })));
       req.end("{}");
     });
+    // SIMULATED identity verification, as the seed does for its milestones: release needs a verified identity on
+    // file. When none exists, the payer is recorded as the contract's client (who paid from the client's own wallet
+    // or card). An existing record is never replaced, so a real mismatch (the identity_mismatch scenario) stays held.
+    const backend = opts.platform.backendUrl;
+    const ledger: any = await (await fetch(`${backend}/reconciliation/milestones/${id}`)).json().catch(() => ({}));
+    if (ledger && "identity" in ledger && ledger.identity === null) {
+      const list: any = await (await fetch(`${backend}/invoices`)).json().catch(() => ({}));
+      const inv = (list?.invoices ?? []).find((i: any) => i.escrow_milestone_id === id);
+      if (inv?.client_name) {
+        await fetch(`${backend}/milestones/${id}/identity`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ payer_verified_name: inv.client_name, customer_verified_name: inv.client_name }),
+        });
+        opts.log(`demo signer: SIMULATED identity verification recorded for ${id.slice(0, 8)}`);
+      }
+    }
     const release = await call("release"); // idempotent: an already released milestone answers { already: true }
     const settle = await call("settle");
     opts.log(`demo signer: platform released and settled ${id.slice(0, 8)} -> ${settle?.decision}`);

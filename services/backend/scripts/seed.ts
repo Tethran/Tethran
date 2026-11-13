@@ -380,8 +380,10 @@ async function main() {
   const terms = (await call(BACKEND, "GET", `/contracts/${cid}/milestones`)).milestones as { id: string; title: string }[];
   say("contract", `${cid} signed by the provider and the WDK client wallet; country profile KE; ${terms.length} milestones`);
 
-  // The test faucet: the client wallet gets test USDT for every deposit, the agent's x402 budget wallet 1 test USDT.
-  const totalDeposit = RUN.reduce((n, s) => n + BigInt(s.cents) * 10_000n, 0n);
+  // The test faucet: the client wallet gets test USDT for every deposit, plus 2,000 test USDT for payments made in the
+  // web app during the demo (each new contract's milestone); the agent's x402 budget wallet gets 1 test USDT.
+  const APP_PAYMENTS = usdt(2_000);
+  const totalDeposit = RUN.reduce((n, s) => n + BigInt(s.cents) * 10_000n, 0n) + BigInt(RETRY ? 0 : APP_PAYMENTS);
   await relay.waitConfirmed((await relay.mintTestUsdt(clientAddr, totalDeposit.toString(), `seed:faucet:client:${cid}`)).txHash);
   await relay.waitConfirmed((await relay.mintTestUsdt(budgetAddr, usdt(1), `seed:faucet:budget:${cid}`)).txHash);
   say("faucet", `client wallet ${Number(totalDeposit) / 1e6} test USDT; agent x402 budget wallet 1 test USDT`);

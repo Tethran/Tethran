@@ -62,10 +62,17 @@ export async function caption(page: Page, text: string) {
 
 /** Freelancer: the contract wizard with its defaults, signed with the provider's demo key. Returns the new ids. */
 export async function createContract(page: Page, beforeSign?: () => Promise<void>) {
-  await page.goto("/app/contracts/new");
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "Continue" }).click();
+  // DOM ready, not "load": a stalled web-font request (Google Fonts) can hold the load event for minutes while the
+  // page already works. settled() and the step check below decide when it is usable.
+  await page.goto("/app/contracts/new", { waitUntil: "domcontentloaded" });
+  await settled(page);
+  // A click that lands before the page is interactive is lost: click again until the step counter moves on.
+  for (const next of [2, 3, 4]) {
+    await expect(async () => {
+      await page.getByRole("button", { name: "Continue" }).click({ timeout: 5_000 });
+      await expect(page.getByText(`Step ${next} of 4`)).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 60_000 });
+  }
   await page.getByRole("checkbox").check();
   if (beforeSign) await beforeSign();
   await page.getByTestId("demo-Sign and send").click();
