@@ -2,11 +2,17 @@
 // Operator and arbiter decisions must be signed by those parties' keys. The backend never holds them, and neither
 // does this app: it only asks the wallet to sign typed data the backend prepared. Test networks and test keys only.
 import { ApiError } from "./http";
+import { externalWallet } from "@/wallet/external";
 
 interface Eip1193 { request(args: { method: string; params?: unknown[] }): Promise<unknown> }
 type Typed = { domain: Record<string, unknown>; types: Record<string, { name: string; type: string }[]>; primaryType?: string; message: Record<string, unknown> };
 
 function provider(): Eip1193 {
+  // The wallet connected through "Connect wallet" first; else an injected browser wallet.
+  if (externalWallet.state.connected) {
+    if (externalWallet.wrongNetwork()) throw new ApiError("WRONG_NETWORK", "Your wallet is on another network. Switch to Sepolia first.");
+    return externalWallet.provider();
+  }
   const eth = (globalThis as { ethereum?: Eip1193 }).ethereum;
   if (!eth) {
     throw new ApiError("WALLET_REQUIRED",

@@ -3,6 +3,7 @@
 import { ApiError, API_BASE, centsToDollars, dollars, get, post } from "./http";
 import { POLICY_ESCALATE_CODES, POLICY_REJECT_CODES } from "./reasons";
 import { demoSetLimits, demoSettle, demoSignerInfo, signAs, type Via } from "./wallet";
+import { externalWallet } from "@/wallet/external";
 export { DEMO_LABEL, type Via } from "./wallet";
 import type {
   ApprovalItem, AuditEntry, Contract, Country, Decision, Dispute, IdentityHold, Invoice, Limits, Milestone, MilestoneStatus,
@@ -95,11 +96,29 @@ export const WALLET_USERS = [
 ] as const;
 export type WalletUser = (typeof WALLET_USERS)[number]["role"];
 
-/** The demo wallet that is a milestone's client (it pays, approves and votes). Defaults to the demo client. */
-async function payerRole(milestoneId: string): Promise<string> {
+/** The wallet (role) that is a milestone's client (it pays, approves and votes); null when it is a connected wallet. */
+async function payerRole(milestoneId: string): Promise<string | null> {
   const [m, w] = await Promise.all([get<any>(`/milestones/${milestoneId}`), get<any>("/wallets")]);
   const hit = (w.wallets as any[]).find((x) => String(x.address).toLowerCase() === String(m.client_address).toLowerCase());
-  return hit?.role ?? "client";
+  return hit?.role ?? null;
+}
+const needRole = async (milestoneId: string): Promise<string> => {
+  const r = await payerRole(milestoneId);
+  if (!r) throw new ApiError("CONNECTED_WALLET_CLIENT", "This milestone's client is a connected wallet: use Connected wallet.");
+  return r;
+};
+
+/** Sends a backend-built call from the connected wallet and waits until it is mined. */
+async function sendFromConnectedWallet(call: { to: string; data: string; value: string }): Promise<string> {
+  const from = externalWallet.state.address;
+  if (!from) throw new ApiError("WALLET_NOT_CONNECTED", "Connect the wallet that is this contract's client.");
+  const hash = (await externalWallet.request("eth_sendTransaction", [{ from, to: call.to, data: call.data, value: call.value }])) as string;
+  for (let i = 0; i < 90; i++) {
+    const r = (await externalWallet.request("eth_getTransactionReceipt", [hash]).catch(() => null)) as { status?: string } | null;
+    if (r) { if (r.status !== "0x1") throw new ApiError("TX_FAILED", "The transaction failed on-chain."); return hash; }
+    await new Promise((res) => setTimeout(res, 3000));
+  }
+  return hash;
 }
 
 const payoutTotal = (raw: any) => (Array.isArray(raw?.actions) ? raw.actions : []).filter(isPayout)
@@ -202,6 +221,11 @@ export const api = {
   setMilestoneStatus: async (id: string, status: MilestoneStatus) => {
     if (status !== "Approved" && status !== "Disputed") throw new ApiError("UNSUPPORTED", "Only approve or dispute can be done here.");
     const role = await payerRole(id);
+    if (!role) {
+      // The client is a connected wallet: it sends the escrow approve itself.
+      if (status !== "Approved") throw new ApiError("NOT_AVAILABLE", "Opening a dispute from a connected wallet is not available yet.");
+      return { tx_hash: await sendFromConnectedWallet(await api.approveCall(id)) };
+    }
     return post<{ tx_hash: string }>(`/wallets/${role}/escrow/${id}/${status === "Approved" ? "approve" : "dispute"}`);
   },
   /**
@@ -236,7 +260,7 @@ ${label}: ${xs.join("; ")}` : "");
     const inv = await get<any>(`/invoices/${id}`);
     const milestoneId = inv.escrow_milestone_id;
     if ((CHECKOUT_METHOD[method] ?? "card") === "stablecoin") {
-      const role = await payerRole(milestoneId);
+      const role = await needRole(milestoneId);
       const dep = await get<any>(`/milestones/${milestoneId}/deposit`);
       const transfer = { to: dep.deposit_address, amount: dep.amount, chain_id: dep.chain_id, payment_reference: `deposit:${milestoneId}` };
       const review = await post<any>(`/wallets/${role}/transfers/review`, transfer);
@@ -291,6 +315,12 @@ ${label}: ${xs.join("; ")}` : "");
       };
     }));
   },
+  /** Get test USDT: 100 test USDT minted to a connected wallet (DEMO_MODE only; gas needs Sepolia ETH). */
+  getTestUsdt: (address: string) => post<{ tx_hash: string; note: string }>("/wallets/external/mint", { address }),
+  /** The deposit and approve transactions a connected wallet sends itself. */
+  depositCall: (milestoneId: string) => get<any>(`/milestones/${milestoneId}/calls/deposit`),
+  approveCall: (milestoneId: string) => get<{ to: string; data: string; value: string; chain_id: number }>(`/milestones/${milestoneId}/calls/approve`),
+  confirmDeposit: (milestoneId: string, txHash: string) => post(`/milestones/${milestoneId}/deposit/confirm`, { tx_hash: txHash }),
   /** The Emails view: every invoice email (status, provider message id, time). */
   emails: async () => {
     const e = await get<any>("/emails");
@@ -382,10 +412,11 @@ ${label}: ${xs.join("; ")}` : "");
    * clientWallet: which demo wallet is the contract's client and pays it. "client" is Kofi Mensah Ltd; "payee_amara"
    * is the freelancer's own Tethran wallet (one person can be a freelancer and a client).
    */
-  createContract: async (input: { clientName: string; clientEmail: string; country: Country; milestones: { title: string; amountUsd: number; criteria: string }[]; clientWallet?: WalletUser }, via: Via = "wallet") => {
+  createContract: async (input: { clientName: string; clientEmail: string; country: Country; milestones: { title: string; amountUsd: number; criteria: string }[]; clientWallet?: WalletUser | "external" }, via: Via = "wallet") => {
     const clientRole = input.clientWallet ?? "client";
     const [prov, wallets] = await Promise.all([provider(), get<any>("/wallets")]);
-    const client = wallets.wallets.find((w: any) => w.role === clientRole)?.address;
+    // "external": the connected wallet is the client; it signs the contract itself.
+    const client = clientRole === "external" ? externalWallet.state.address : wallets.wallets.find((w: any) => w.role === clientRole)?.address;
     if (!client) throw new ApiError("NO_CLIENT_WALLET", "The demo client wallet is not configured.");
     const due = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10);
     const c = await post<any>("/contracts", {
@@ -396,7 +427,13 @@ ${label}: ${xs.join("; ")}` : "");
     const typed = await get<any>(`/contracts/${c.id}/typed-data?party=provider`);
     const { signer, signature } = await signAs("provider", typed, via);
     await post(`/contracts/${c.id}/sign`, { party: "provider", signer, signature });
-    await post(`/wallets/${clientRole}/contracts/${c.id}/sign`);
+    if (clientRole === "external") {
+      const ct = await get<any>(`/contracts/${c.id}/typed-data?party=client`);
+      const s = await signAs("provider", ct, "wallet"); // the connected wallet signs as the client (signTyped prefers it)
+      await post(`/contracts/${c.id}/sign`, { party: "client", signer: s.signer, signature: s.signature });
+    } else {
+      await post(`/wallets/${clientRole}/contracts/${c.id}/sign`);
+    }
     let firstInvoice: string | null = null;
     for (const m of (await get<any>(`/contracts/${c.id}/milestones`)).milestones) {
       const body = await post<any>(`/contracts/${c.id}/milestones/${m.id}/activate`);
@@ -408,7 +445,7 @@ ${label}: ${xs.join("; ")}` : "");
 
   /** The client's own dispute vote (2-of-3), signed by the WDK wallet that is this milestone's client (demo custody). */
   clientVote: async (milestoneId: string, release: boolean) => {
-    const a = await post<any>(`/wallets/${await payerRole(milestoneId)}/attestations/${milestoneId}`, { kind: "client", release_to_provider: release });
+    const a = await post<any>(`/wallets/${await needRole(milestoneId)}/attestations/${milestoneId}`, { kind: "client", release_to_provider: release });
     return post<any>(`/arbiter/disputes/${milestoneId}/attestations`, { signer: a.signer, signature: a.signature, release_to_provider: release });
   },
 
@@ -459,6 +496,7 @@ ${label}: ${xs.join("; ")}` : "");
   payerWallet: async (invoiceId: string): Promise<{ name: string; balance: number | null }> => {
     const inv = await get<any>(`/invoices/${invoiceId}`);
     const role = await payerRole(inv.escrow_milestone_id);
+    if (!role) return { name: "a connected wallet", balance: null };
     const name = WALLET_USERS.find((u) => u.role === role)?.name ?? role;
     let balance: number | null = null;
     try { balance = dollars((await get<any>(`/wallets/${role}/balance`)).usdt?.base_units); } catch { /* shown as unavailable */ }

@@ -1018,6 +1018,16 @@ Failed, disputed and suspicious items, each with a reason and the record it poin
 { "count": 1, "items": [ { "kind": "offchain_failed", "reason": "off-chain leg failed after the on-chain payout confirmed: provider timeout (simulated)", "milestone_id": "…", "record": { "table": "offchain_payouts", "id": 2 }, "at": "…", "simulated": true } ] }
 ```
 
+#### Connected wallets (v0.12)
+
+- `GET /milestones/{id}/calls/deposit` → `{ chain_id, to, data, value, amount, from, recipient: { address, name }, token_symbol }`:
+  the test-USDT transfer to the treasury that a connected wallet sends itself (only the milestone's client address can
+  fund it; `POST /milestones/{id}/deposit/confirm` then reads it on-chain).
+- `GET /milestones/{id}/calls/approve` → `{ chain_id, to: escrow, data: approve(milestoneId), value }`.
+- `POST /wallets/external/mint` `{ address }` → 100 test USDT minted by the treasury. DEMO_MODE only (`403 DEMO_ONLY`),
+  at most 3 per 10 minutes per IP (`429 RATE_LIMITED`). Wallet top-ups (`POST /wallets/{role}/fund`) are limited to 5 per
+  10 minutes per IP.
+
 #### Invoice email (v0.12)
 
 When an invoice is created (`POST /contracts/{id}/milestones/{mid}/activate` or `POST /milestones/{id}/invoice`) for a

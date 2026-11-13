@@ -1,5 +1,6 @@
 // Backend HTTP API (node:http, JSON). Routes are documented in docs/API.md.
 // Errors are { error, code? } with a safe message: no stack traces, URLs or key material.
+import { approveCall, createExternalMint, createIpLimiter, depositCall } from "./externalWallet";
 import type { Mailer } from "./email";
 import type { FxService } from "./fx";
 import { createNotifications, type Notifications } from "./notifications";
@@ -52,6 +53,11 @@ export interface HttpDeps {
   operator?: Operator;
   /** Indicative exchange rates (fx.ts) for the app's own screens and payout quotes only; never for a paid endpoint. */
   fx?: FxService;
+  /** The escrow contract address, for calls a connected wallet sends itself. */
+  escrowAddress?: string;
+  /** DEMO_MODE only: mint test USDT to a connected address (Get test USDT). */
+  externalMint?: (to: string, amount: string, key: string) => Promise<{ txHash: string }>;
+  externalMintWait?: (h: string) => Promise<void>;
   /** Invoice email (Resend REST, or the outbox when not configured). */
   mailer?: Mailer;
   /** Invoice creations allowed per IP per minute (default 30). */
@@ -129,6 +135,9 @@ export function createHttpServer(deps: HttpDeps): Server {
       console.error("invoice email failed: " + safeErrorMessage(e));
     }
   };
+  // Wallet top-ups (simulated card, a treasury mint each): at most 5 per 10 minutes per IP.
+  const limitTopUps = createIpLimiter({ max: 5, windowMs: 10 * 60 * 1000, now: deps.now, trustProxy: deps.trustProxy, what: "wallet top-ups" });
+  const externalMint = createExternalMint({ mint: deps.externalMint, waitConfirmed: deps.externalMintWait, now: deps.now, trustProxy: deps.trustProxy });
   let nt: Notifications | undefined;
   const notes = () => (nt ??= deps.notifications ?? createNotifications(db, { now: deps.now, appBaseUrl: deps.publicBaseUrl }));
 
@@ -178,6 +187,15 @@ export function createHttpServer(deps: HttpDeps): Server {
 
   const routes: [string, RegExp, Handler][] = [
     ["GET", /^\/health$/, async () => ({ ok: true })],
+    // Connected (external) wallets: the deposit and approve transactions they send themselves; Get test USDT.
+    ["GET", /^\/milestones\/([^/]+)\/calls\/deposit$/, async ({ params }) => depositCall(treasury.depositInstructions(params[1]) as never)],
+    ["GET", /^\/milestones\/([^/]+)\/calls\/approve$/, async ({ params }) => {
+      const m = milestones.get(db, params[1]);
+      if (!m) throw new ApiError(404, "milestone not found");
+      if (!deps.escrowAddress) throw new ApiError(503, "escrow address not configured");
+      return approveCall(m.chain_id, deps.escrowAddress, m.id);
+    }],
+    ["POST", /^\/wallets\/external\/mint$/, async ({ req, body }) => externalMint(req, body ?? {})],
     // Notifications for one role (client, freelancer, operator, arbiter): newest first, with the unread count.
     ["GET", /^\/notifications$/, async ({ url }) => notes().list(url.searchParams.get("recipient"), Number(url.searchParams.get("limit") ?? 50))],
     ["POST", /^\/notifications\/read-all$/, async ({ body }) => notes().markAllRead(body?.recipient)],
@@ -277,7 +295,7 @@ export function createHttpServer(deps: HttpDeps): Server {
     ["GET", /^\/wallets\/([^/]+)\/recipients$/, async ({ params }) => needWallets().recipients(params[1])],
     ["POST", /^\/wallets\/([^/]+)\/recipients$/, async ({ params, body }) => needWallets().saveRecipient(params[1], body ?? {})],
     // Demo wallet: add funds by SIMULATED card (DEMO_MODE only) and the wallet's recent activity.
-    ["POST", /^\/wallets\/([^/]+)\/fund$/, async ({ params, body }) => needWallets().fund(params[1], body ?? {})],
+    ["POST", /^\/wallets\/([^/]+)\/fund$/, async ({ params, body, req }) => { limitTopUps(req); return needWallets().fund(params[1], body ?? {}); }],
     ["GET", /^\/wallets\/([^/]+)\/activity$/, async ({ params }) => needWallets().activity(params[1])],
     ["POST", /^\/wallets\/([^/]+)\/transfers\/review$/, async ({ params, body }) => needWallets().review(params[1], body ?? {})],
     ["POST", /^\/wallets\/([^/]+)\/transfers$/, async ({ params, body }) => needWallets().send(params[1], body ?? {})],

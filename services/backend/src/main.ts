@@ -179,6 +179,9 @@ const mailer = createMailer({ db, config: emailConfigFromEnv(), now, notificatio
 console.log(`invoice email: ${mailer.configured() ? "Resend" : "not configured (Emails outbox only)"}`);
 
 listen(createHttpServer({
+  escrowAddress: chainCfg.escrow,
+  // Get test USDT for a connected wallet: DEMO_MODE only (the treasury mints, as for card funding).
+  ...(demoMode ? { externalMint: (to: string, amount: string, key: string) => chain.mintTestUsdt(to, amount, key), externalMintWait: (h: string) => chain.waitConfirmed(h) } : {}),
   mailer,
   invoiceRateLimitPerMin: Number(process.env.INVOICE_RATE_LIMIT_PER_MIN) > 0 ? Number(process.env.INVOICE_RATE_LIMIT_PER_MIN) : 30,
   trustProxy: process.env.TRUST_PROXY === "1",

@@ -3,6 +3,8 @@ import { Check, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, type WalletUser } from "@/api";
+import { useExternalWallet } from "@/components/app/ConnectWallet";
+import { shortAddress } from "@/wallet/external";
 import type { Country } from "@/api/types";
 import { SignChoice } from "@/components/app/SignChoice";
 import { PageHead } from "@/components/app/AppShell";
@@ -27,7 +29,8 @@ function Builder() {
   const [busy, setBusy] = useState(false);
   const [country, setCountry] = useState("NG");
   // Which demo wallet is the client: Kofi Mensah Ltd, or the freelancer's own Tethran wallet (hiring someone else).
-  const [payer, setPayer] = useState<WalletUser>("client");
+  const [payer, setPayer] = useState<WalletUser | "external">("client");
+  const extW = useExternalWallet();
   const [ms, setMs] = useState<M[]>([{ title: "Logo design", amount: "400", criteria: "Three concepts, one refined" }]);
   const [signed, setSigned] = useState(false);
   const total = ms.reduce((a, m) => a + (Number(m.amount) || 0), 0);
@@ -47,6 +50,7 @@ function Builder() {
               <select aria-label="Client pays from" className={input} value={payer} onChange={(e) => { const v = e.target.value as WalletUser; setPayer(v); if (v === "payee_amara") setClient("Amara Studio"); else if (client === "Amara Studio") setClient("Kofi Mensah Ltd"); }}>
                 <option value="client">Kofi Mensah Ltd's wallet</option>
                 <option value="payee_amara">My own wallet (I am the client here)</option>
+                {extW.connected && <option value="external">Connected wallet ({shortAddress(extW.address)})</option>}
               </select>
               <span className="text-xs font-normal text-muted-foreground">Wallets on a test network (test USDT). The client's wallet signs the contract, pays, and approves the work.</span>
             </label>

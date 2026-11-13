@@ -25,6 +25,15 @@ unclear criterion to a person (`CRITERIA_UNMET`, `CRITERIA_UNCLEAR`). The seed a
 (**Replay**) by default; `AGENT_MODE=live npm run demo` (or `demo:serve`) calls the model (Groq first, Gemini fallback)
 and the app labels each answer **Live model** or **Replay**.
 
+**Connect a wallet (MetaMask, Rabby, Coinbase Wallet, mobile wallets via WalletConnect).** Reown AppKit with the
+ethers adapter (pinned 1.8.24), Sepolia only, loaded on the first click so the landing page does not grow. Not a
+login. A connected wallet signs what the app asks a person's wallet to sign (the test-key buttons stay for the
+one-click recording), can be a contract's client and pay its milestone from the wallet (the same review: recipient
+by name, network, amount, fee separate, duplicate-send block, wrong-network warning, same-hash recheck; then the
+backend confirms the deposit on-chain) and approve the work, and has **Get test USDT** (100 per click, DEMO_MODE only;
+Sepolia ETH is needed for gas). Setting a freelancer's payout address to a connected wallet is not built (it needs a
+vault payee change). Needs `VITE_REOWN_PROJECT_ID` (a public id); without it the app says so.
+
 **Role dashboards, live.** Home follows the role (Switch role): the freelancer sees balance, active milestones, unpaid
 invoices, receipts and what was paid to them; the client sees invoices to pay, work awaiting approval and funded
 milestones with their wallet balance. Home, the milestone page, the operator and arbiter queues, the Emails view and

@@ -5,6 +5,7 @@ import { Logo, SimTag } from "@/components/tethran/ui";
 import { cn } from "@/lib/utils";
 import { useRole } from "@/lib/role";
 import { Bell } from "@/components/app/Bell";
+import { ConnectWallet } from "@/components/app/ConnectWallet";
 
 const NAV = [
   { to: "/app/dashboard", label: "Home", icon: LayoutGrid },
@@ -32,6 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="flex items-center gap-2">
+            <ConnectWallet />
             <Bell />
             <Link to="/app" className="inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm hover:border-ink" data-testid="switch-role"><Users className="size-4" aria-hidden /><span className="hidden sm:inline capitalize">{role}</span><span className="sr-only">: switch role</span></Link>
           </div>

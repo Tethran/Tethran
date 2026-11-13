@@ -3,6 +3,7 @@ import { CheckCircle2, Coins, CreditCard, Lock, Smartphone, Wallet } from "lucid
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api";
+import { ExternalPay } from "@/components/app/ExternalPay";
 import { Object3D } from "@/components/tethran/Object3D";
 import { Logo, PillButton, SimTag, usd } from "@/components/tethran/ui";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/pay/$id")({
 const METHODS = [
   { id: "card", label: "Card", icon: CreditCard }, { id: "apple", label: "Apple Pay", icon: Smartphone }, { id: "google", label: "Google Pay", icon: Smartphone },
   { id: "paypal", label: "PayPal", icon: Wallet }, { id: "cashapp", label: "Cash App Pay", icon: Wallet }, { id: "coin", label: "Tethran wallet", icon: Coins },
+  { id: "connected", label: "Connected wallet", icon: Wallet },
 ];
 
 function PayPage() {
@@ -71,9 +73,11 @@ function PayPage() {
               </div>
             )}
             <p className="mt-6 flex items-center gap-2 text-sm text-muted-foreground"><Lock className="size-4" aria-hidden />Money waits in escrow. Released only when you approve.</p>
+            {method === "connected" ? <ExternalPay milestoneId={inv.milestoneId} onPaid={() => { setSimulated(false); setPhase("done"); }} /> : (
             <PillButton variant="ink" size="lg" className="mt-6 w-full justify-between" disabled={phase === "paying"} onClick={async () => { setPhase("paying"); try { const r = await api.payInvoice(inv.id, method); setSimulated(r.simulated); setPhase("done"); } catch (e) { setPhase("idle"); toast.error((e as Error).message); } }}>
               {phase === "paying" ? "Confirming…" : `Confirm and pay ${usd(inv.amount)}`}
             </PillButton>
+            )}
           </>
         )}
       </div>

@@ -84,6 +84,9 @@ the milestone page in demo mode; it runs in the same presenter process with the 
    every send (status, provider message id). The contract form's default client@example.com is never emailed.
    **Two sides at once:** open the app twice with `?as=client` and `?as=freelancer`; each Home and the bell update
    within 2 seconds of the other side's action.
+   **Connect wallet (by hand, not in the recording):** top right, connect MetaMask/Rabby/Coinbase/WalletConnect on
+   Sepolia; **Get test USDT**; on a new contract choose **Client pays from → Connected wallet**, then pay the invoice
+   with **Connected wallet** and approve from the milestone page.
 9. **Notifications.** The bell (top right) shows the current role's unread count; switch role to see each side's
    notifications (client: invoice, work submitted with the delivery check; freelancer: funded, approved, paid; operator:
    fee collected, escalations).

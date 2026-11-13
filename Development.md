@@ -1076,3 +1076,28 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   arbiter link to their screens.
 - Live: Home, the milestone page, the operator queues and audit log, the arbiter queue, the Emails view and the bell
   refresh every 2 seconds (polling; there is no SSE), so one side's action shows on the other side without a reload.
+
+### Feature 6: external wallets (branch wallet-connect)
+- Reown AppKit with the ethers adapter: @reown/appkit 1.8.24 and @reown/appkit-adapter-ethers 1.8.24 (latest stable,
+  released 16 Sep 2026; pinned exact) and ethers 6.17.0 (the adapter's peer; same version as the backend). Sepolia
+  only, the app's design tokens for the modal, no analytics, email, social, swap or on-ramp features.
+- Loaded on the first "Connect wallet" click (dynamic import): the entry bundle grew by about 19 KB (our control and
+  loader); total client assets grew from about 1.6 MB to 6.2 MB, all in chunks fetched only on connect. The library is
+  kept out of the server bundles (ssr.external and nitro externals): its optional @coinbase/cdp-sdk peer otherwise
+  broke the server build. npm audit: 19 findings (12 high, 7 moderate); the AppKit tree adds high findings through
+  zod (memory exhaustion validating oversized collections; no fix available), abitype and @coinbase/cdp-sdk; vite and
+  typescript-eslint findings were there before (dev only).
+- VITE_REOWN_PROJECT_ID (a public id) is read from the repo-root .env (vite envDir); the app says so when it is
+  missing. Connecting is not a login; no auth was added.
+- Nav control: connect, short address, Switch to Sepolia, disconnect; wrong network, declined requests and account
+  changes handled. (a) The connected wallet signs what the app asks a person's wallet to sign (the test-key buttons
+  stay for the recording). (b) A connected wallet can be a contract's client (it signs the contract), pays the
+  milestone from the wallet through the same review (recipient by name, network, amount, fee separate, duplicate-send
+  block, wrong-network warning, same-hash recheck) with backend-built calls, then the backend confirms the deposit;
+  it approves the work with the escrow call. Disputes from a connected wallet are not built. (c) Get test USDT: 100
+  test USDT minted by the treasury to the connected address, DEMO_MODE only, 3 per 10 minutes per IP; Sepolia ETH is
+  needed for gas. (d) Payout address to a connected wallet: not built (it needs a vault payee allowlist change).
+- Wallet top-ups (simulated card) are now limited to 5 per 10 minutes per IP.
+- Tests: wallet core with a mocked AppKit (connect, account change, wrong network, declined request, missing id), the
+  review and send with a mocked provider (review fields, wrong network and wrong account blocked, duplicate pending
+  and already sent, declined and failed sends), backend call encoding, the mint limits, the top-up limit.
