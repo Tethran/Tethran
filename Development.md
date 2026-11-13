@@ -1211,3 +1211,14 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   200 with it, the dashboard and operator screens fully loaded in a browser with no failed requests. Memory of the
   whole stack idle: about 480 MB (430 MB without the npm wrapper), hence the Standard plan.
 - docs/DEPLOY-RENDER.md: the steps, cost notes, reseed, risks (the demo signer must stay behind SITE_PASSWORD).
+
+### Public site; test-key signing only behind the presenter's unlock link (Render gateway)
+- The lead asked that visitors never have to sign in. The gateway no longer asks for a password anywhere. Only the
+  demo signer (/signer: operator, arbiter and platform-settle test keys) is closed: it answers 404 unless the browser
+  holds the unlock cookie, and the app reads 404 as "no demo signer", so visitors see no test-key buttons (limits are
+  read-only, decisions offer "Sign with your wallet"). /unlock?key=<SITE_PASSWORD> sets the cookie for 30 days
+  (HttpOnly, SameSite=Strict, Secure behind HTTPS; its value is an HMAC of the password, never the password); /lock
+  removes it. No SITE_PASSWORD: /signer stays closed to everyone. Tested locally: visitor app and API 200, signer 404,
+  wrong key 403, forged cookie 404, unlocked 200, after /lock 404; in a browser the visitor's operator page shows 0
+  test-key buttons and the unlocked one 24. render.yaml and docs/DEPLOY-RENDER.md updated (SITE_USER removed).
+- Still open to visitors: the demo wallets (keys on the server; per-IP limits; test funds only).

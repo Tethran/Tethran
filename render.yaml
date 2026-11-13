@@ -33,9 +33,8 @@ services:
         value: /signer
       - key: VITE_REOWN_PROJECT_ID
         sync: false
-      # Site password (basic auth) for everything except /healthz and the cron endpoint.
-      - key: SITE_USER
-        value: tethran
+      # The site is public. SITE_PASSWORD is the key of the presenter's unlock link (/unlock?key=...), which opens
+      # the test-key signing (operator, arbiter, platform settle) in that browser only.
       - key: SITE_PASSWORD
         sync: false
       # Shared with the cron job below.
@@ -86,8 +85,7 @@ services:
     runtime: node
     schedule: "0 * * * *" # hourly: invoice reminders, exchange-rate refresh, notifications
     buildCommand: echo "no build"
-    # Calls the web service over Render's private network; the gateway lets /api/jobs/run through without the
-    # site password, and the backend checks JOBS_TOKEN.
+    # Calls the web service over Render's private network; the backend checks JOBS_TOKEN.
     startCommand: >-
       curl -fsS -X POST -H "x-jobs-token: $JOBS_TOKEN" "http://$TETHRAN_HOSTPORT/api/jobs/run"
     envVars:
