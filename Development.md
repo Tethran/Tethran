@@ -1222,3 +1222,11 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   wrong key 403, forged cookie 404, unlocked 200, after /lock 404; in a browser the visitor's operator page shows 0
   test-key buttons and the unlocked one 24. render.yaml and docs/DEPLOY-RENDER.md updated (SITE_USER removed).
 - Still open to visitors: the demo wallets (keys on the server; per-IP limits; test funds only).
+
+### 2026-11-13 — README submission rewrite
+- Rewrote `README.md` for the W3Node Node Engine Hackathon judges in the Mobile Money & Peer-to-Peer track:
+  the flow, security model, WDK integration, verified commands, tests, architecture, Sepolia addresses, team and
+  documentation are now presented in the requested order.
+- Moved the removed simulated-versus-real scope table and detail to `docs/SCOPE.md`, and linked it once from the
+  README footer. This keeps the README focused on the product while preserving the original scope information.
+- Added the existing contract-flow screenshot and a video URL placeholder; no product code or in-app labels changed.

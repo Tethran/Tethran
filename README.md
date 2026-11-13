@@ -1,218 +1,233 @@
 # Tethran
 
-Enforceable, traceable, deliverable payments for Africa's freelancers and agencies.
-Built for the W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer track (Tether).
+**Enforceable, traceable, deliverable payments for Africa's freelancers and agencies**
 
-> **Test networks only.** Nothing here moves real money. The token is `TestUSDT` (tUSDT), a test token
-> we deploy ourselves; it is not Tether USDT. Fiat conversion, identity checks, card checkout and mobile-money
-> and bank payouts are **simulated** and labelled as such in the API responses and in the code.
+[![Sepolia](https://img.shields.io/badge/network-Sepolia-627eea)](https://sepolia.etherscan.io/)
+[![Tether WDK](https://img.shields.io/badge/wallet-Tether%20WDK-26a17b)](https://github.com/tetherto/wdk)
+[![Solidity](https://img.shields.io/badge/contracts-Solidity-363636)](contracts/)
+[![TypeScript](https://img.shields.io/badge/services-TypeScript-3178c6)](services/)
+[![Tests](https://img.shields.io/badge/tests-passing-2ea44f)](#tests)
 
-## What it is
+Built for the **W3Node Node Engine Hackathon 2026, Mobile Money & Peer-to-Peer track (Tether)**.
 
-A client and a provider sign a contract. Each milestone is funded into an on-chain escrow in test USDT. When the
-client approves (or two of three parties decide a dispute), the escrow releases to the provider's own vault. An AI
-Settlement Agent **proposes** how to split the money (payees, tax reserve). A separate, deterministic Policy
-Service **decides** and co-signs. The vault pays only with both signatures and only inside on-chain limits. Payouts
-go out, a non-transferable receipt NFT is minted, and every step is joined in a reconciliation ledger with a CSV
-tax export.
+Runs on Sepolia with our own test token, `TestUSDT`.
 
-**Delivery and the AI's delivery check.** The freelancer submits a note, a link and up to 5 files (10 MB each;
-txt, md, csv, json, pdf, png, jpg, webp, gif, zip). The agent checks the delivery against the milestone's acceptance
-criteria ("Done when", one per line or ";"): met, unmet or unclear per criterion, with a reason. It reads the note, the
-link and the text of txt/md/csv/json files; other files only by name, type, size and hash ("not inspected"). The check
-is advisory and shown to the client next to **Approve work**; at settlement the Policy Service escalates any unmet or
-unclear criterion to a person (`CRITERIA_UNMET`, `CRITERIA_UNCLEAR`). The seed and demo use saved agent answers
-(**Replay**) by default; `AGENT_MODE=live npm run demo` (or `demo:serve`) calls the model (Groq first, Gemini fallback)
-and the app labels each answer **Live model** or **Replay**.
+## Demo
 
-**Connect a wallet (MetaMask, Rabby, Coinbase Wallet, mobile wallets via WalletConnect).** Reown AppKit with the
-ethers adapter (pinned 1.8.24), Sepolia only, loaded on the first click so the landing page does not grow. Not a
-login. A connected wallet signs what the app asks a person's wallet to sign (the test-key buttons stay for the
-one-click recording), can be a contract's client and pay its milestone from the wallet (the same review: recipient
-by name, network, amount, fee separate, duplicate-send block, wrong-network warning, same-hash recheck; then the
-backend confirms the deposit on-chain) and approve the work, and has **Get test USDT** (100 per click, DEMO_MODE only;
-Sepolia ETH is needed for gas). Setting a freelancer's payout address to a connected wallet is not built (it needs a
-vault payee change). Needs `VITE_REOWN_PROJECT_ID` (a public id); without it the app says so.
+▶ Watch the 3-minute demo: `<VIDEO_URL>`
 
-**Role dashboards, live.** Home follows the role (Switch role): the freelancer sees balance, active milestones, unpaid
-invoices, receipts and what was paid to them; the client sees invoices to pay, work awaiting approval and funded
-milestones with their wallet balance. Home, the milestone page, the operator and arbiter queues, the Emails view and
-the bell refresh every 2 seconds, so one side's action appears on the other side without a reload.
+![Tethran milestone and escrow flow](app/public/objects/02_contract_milestones.png)
 
-**Invoice email.** A new invoice is emailed to the client's address (Resend REST API) with the pay link
-(`<APP_BASE_URL>/pay/<invoiceId>`); `EMAIL_PROVIDER`, `EMAIL_API_KEY` and `EMAIL_FROM` configure it, and without them the
-message stays in the **Emails** view ("Outbox only"). Daily send cap, per-IP limit on invoice creation, one email per
-invoice; the footer reads "Sent from Tethran, a hackathon prototype. Test tokens only."
+## The problem
 
-**Notifications.** A bell in the app shows the current role's unread notifications (refreshed every 2 seconds): invoice
-sent, milestone funded, work submitted (with the AI's delivery check and a request to approve), approved or disputed,
-settlement proposed, escalated, rejected or paid, fee collected (operator), receipt minted, dispute decided, wallet
-funded, refund, and invoice reminders (an hourly job). Each role sees its own; nothing is ever notified twice.
+Freelancers and agencies can be paid late.
+They can be paid without protection while work is reviewed.
+They need proof of delivery, approval and payment.
+Cross-border payout decisions also need clear rules and an audit trail.
 
-**Business model.** Tethran takes a **5% platform fee** on each milestone, paid by the freelancer out of the settlement
-into the Tethran earnings account (in the demo a demo wallet, "Tethran earnings account"; in production a company
-treasury). The client pays exactly the milestone amount. The fee is computed by code, not by the AI, and the Policy
-Service rejects any plan whose fee line is missing, wrong or sent elsewhere (`FEE_MISMATCH`). The freelancer receives
-the gross minus the fee minus the tax reserve (10% of the gross in the demo policy). Refunds and disputes decided for
-the client pay no fee. The operator sees it all on the **Earnings** screen; the fee also appears in the payout step,
-on the receipt and in reconciliation.
+## The solution
 
-## Run the demo (one command)
+Tethran turns a deliverable into an enforceable milestone contract.
+Funds move through escrow, while an untrusted AI proposes a settlement and deterministic policy decides it.
+The result is a two-signature payout, a soulbound receipt and a reconciliation record.
 
-Requires Node.js 22.13 or newer. Once:
+### How it works
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant E as MilestoneEscrow
+    participant F as Freelancer
+    participant A as AI Settlement Agent
+    participant P as Policy Service
+    participant V as ProviderVault
+    participant R as ReceiptNFT
+    participant L as Reconciliation
+
+    C->>E: Fund milestone
+    F->>E: Deliver work
+    F->>A: Delivery evidence
+    A-->>C: Delivery check
+    C->>E: Approve work
+    A->>P: Propose payee split
+    P-->>V: Decide and co-sign
+    A-->>V: Agent signature
+    V->>V: Enforce payee, caps and reserve
+    V->>F: Pay
+    V->>R: Mint receipt
+    V->>L: Record and export CSV
+```
+
+## Key features
+
+| Feature | Benefit |
+|---|---|
+| Milestone escrow | Holds each funded milestone until approval or dispute resolution. |
+| AI Settlement Agent | Proposes payees and reserves; it is untrusted and proposes only. |
+| Deterministic Policy Service | Applies reason-coded rules and co-signs an allowed plan. |
+| ProviderVault | Requires two signatures, a payee allowlist, caps and a reserve. |
+| Soulbound ReceiptNFT | Leaves a non-transferable receipt for the settled milestone. |
+| Delivery check | Compares delivery evidence with milestone acceptance criteria. |
+| Wallet connect | Reown AppKit supports a user's wallet for the real signing path. |
+| Role dashboards | Client, freelancer, operator and arbiter work from focused queues. |
+| Invoice email and notifications | Sends invoice links and keeps each role's activity visible. |
+| 5% platform fee | Code computes it; policy enforces the fee line and destination. |
+| Tax reserve and CSV export | Keeps the reserve in the payout plan and exports reconciliation data. |
+| x402 endpoints | Supports on-chain TestUSDT payments for the data endpoints. |
+
+## Why it is different
+
+- The AI never holds keys and cannot approve its own proposal.
+- Rules are enforced twice: by the deterministic Policy Service and on-chain vault guards.
+- Two signatures are required before the vault pays.
+- Every step is traceable from milestone funding to receipt and reconciliation.
+
+## Built with Tether WDK
+
+Tethran uses `@tetherto/wdk` for wallet registration and transaction policies,
+`@tetherto/wdk-wallet-evm` for EVM accounts, balances, transfers and `signTypedData`,
+and `@tetherto/wdk-failover-provider` for RPC failover. WDK accounts sign user-side
+deposits, approvals, disputes, contract attestations and x402 authorizations.
+
+We built the milestone escrow, two-signature ProviderVault, ReceiptNFT, Policy Service,
+Settlement Agent boundary, reconciliation ledger, role dashboards and delivery workflow
+around those primitives. The contracts and services keep chain access, policy decisions
+and signing responsibilities explicit.
+
+## Tech stack
+
+| Layer | Stack |
+|---|---|
+| Contracts | Solidity, Hardhat, EIP-3009, EIP-712 |
+| Wallets | Tether WDK, EVM wallet manager, failover provider |
+| Services | Node.js, TypeScript, ethers |
+| Policy and AI | TypeScript Policy Service, Groq/Gemini provider boundary, Opik tracing |
+| Web app | Vite, React, TanStack Start, Tailwind, shadcn/ui |
+| Data and delivery | SQLite demo data, Resend email, Reown AppKit, x402 endpoints |
+
+## Quick start
+
+### Prerequisites
+
+- Node.js 22.13 or newer
+- Sepolia RPC access and test ETH for the Sepolia path
+
+Install dependencies and generate throwaway test keys:
 
 ```bash
-cd contracts && npm install && npm run wallets   # throwaway TEST keys into ../.env (git-ignored)
+cd contracts && npm install && npm run wallets
 for d in services/chain services/policy services/llm services/backend app; do (cd $d && npm install); done
 ```
 
-Then one command seeds the nine scenarios and serves everything:
+Start the complete demo with one command:
 
 ```bash
-cd services/backend && CHAIN=sepolia npm run demo     # Sepolia: the contracts in config/chains.json
-cd services/backend && CHAIN=localhost npm run demo   # local chain: starts `hardhat node` and deploys if needed
+cd services/backend && CHAIN=localhost npm run demo   # local chain; deploys if needed
+cd services/backend && CHAIN=sepolia npm run demo     # Sepolia; uses deployed contracts below
 ```
+
+The demo serves:
 
 | Service | Address |
 |---|---|
 | Web app | http://localhost:3000 |
 | Backend API | http://127.0.0.1:18788 |
 | Policy Service | http://127.0.0.1:18787 |
-| Demo signer (DEMO_MODE only, test keys) | http://127.0.0.1:18789 |
+| Demo signer | http://127.0.0.1:18789 |
 
-The seed wipes `.demo-data/` (that directory only; logs in `.demo-data/logs/`), starts the Policy Service and the
-backend as separate processes with separate keys, signs a contract and drives one milestone per scenario through the
-real API, then keeps serving. On Sepolia it takes about 40 minutes. `npm run demo:serve` restarts on the last seeded
-state; `npm run seed -- --retry-failed` (with `DEMO_MODE=1`) reruns only failed scenarios. Ports:
-`DEMO_BACKEND_PORT`, `DEMO_POLICY_PORT`, `DEMO_SIGNER_PORT`, `DEMO_APP_PORT`; `DEMO_APP=0` skips the app. The agent
-mode defaults to `replay` (saved proposals, labelled "Replay"); `AGENT_MODE=live+replay` calls the model and falls
-back to replay. The demo, step by step, is in [docs/DEMO.md](docs/DEMO.md).
-
-**Tethran wallet (demo wallet).** Each user, the client (Kofi Mensah Ltd) and the freelancer (Amara Studio), has one
-Tethran wallet showing a test USDT balance (the Wallet screen). **Add funds** is a simulated card top-up: the treasury
-mints the same amount of test USDT (1 USD = 1 test USDT; DEMO_MODE only). At checkout the payer chooses **Tethran
-wallet** (pay from the balance) or card. Payouts arrive in the freelancer's wallet, and a contract can name the
-freelancer's own wallet as its client, so one person can be both. Labelled "Wallet" (balances in test USDT): one demo
-seed holds the keys; not real custody, not real money.
-
-**Demo-key buttons.** In the app, each operator, arbiter and provider action offers **Sign with demo key** (DEMO_MODE
-only: one click, signed with that role's test key by the demo signer in the presenter's process, labelled "Demo:
-signed with a test key") next to **Sign with your wallet** (the real path, the person's own wallet extension). The
-milestone page adds the platform's own step, **Release and settle**, in demo mode. The backend and the Policy Service
-never hold the operator, arbiter or provider keys.
-
-## Architecture in a few lines
-
-```
-client wallet (WDK) ──deposit──> treasury ──createAndFund──> MilestoneEscrow ──release──> ProviderVault ──> payees
-                                                                                          ▲    ▲
-     Settlement Agent (LLM, no keys) ──proposal──> Policy Service ──co-signature──────────┘    │
-                                                  (rules, audit)    agent signer module ───────┘ (second signature)
-```
-
-- `contracts/`: `TestUSDT` (EIP-3009), `MilestoneEscrow` (2-of-3 EIP-712 disputes), `ProviderVault` (two
-  signatures, payee allowlist, per-transaction and daily caps, reserve), `ReceiptNFT` (soulbound, hashes only).
-- `services/chain/`: `ChainClient`, the only code that talks to a chain (idempotency keys, chain-id check,
-  mainnet deny-list), and the WDK wallet layer.
-- `services/policy/`: the Policy Service. Its own process and its own key; reason codes; audit log.
-- `services/llm/`: `LlmProvider` (Groq first, Gemini fallback), agent prompt, input guards, Opik tracing, evals.
-- `app/`: the web app (Vite, React, TanStack Start, Tailwind, shadcn/ui). An interface only: it reads and writes
-  through `app/src/api` and holds no keys; operator, arbiter and provider signatures come from the user's own wallet
-  or, in demo mode, the labelled demo signer.
-- `services/backend/`: treasury, settlement orchestrator, agent signer, contracts and invoices, checkout,
-  payouts, reconciliation, operator and arbiter queues, x402 endpoints. See [docs/API.md](docs/API.md).
-- Config: `config/chains.json` holds chain id, RPC and contract addresses per chain. Nothing is hard-coded.
-
-## What is simulated
-
-| Part | What is real | What is simulated |
-|---|---|---|
-| Escrow, vault, limits, receipts | On-chain on a test network | Nothing |
-| Token | Our own `TestUSDT` (open minting: it is its own faucet) | It is not Tether USDT |
-| Card, Apple Pay, Google Pay, PayPal, Cash App | Signed Stripe-format events through the real webhook handler | The checkout itself (real Stripe path built, off until keys are set) |
-| Exchange rates (local-currency amounts of mobile-money and bank payouts) | Indicative market rates from ExchangeRate-API's open endpoint, cached 6 hours, locked to each milestone at creation, shown with "Indicative rate, last updated <date>" and "Rates By Exchange Rate API" | The conversion and the payout leg themselves; without the API, the last cached rates, then a sample table (labelled) |
-| x402 `/x402/fx-quote` | The x402 payment | "Sample rates": fixed placeholders. The provider's terms allow its rates only for our own end use, not through a paid or programmatic endpoint, so this endpoint never serves them |
-| Identity check (payer vs customer name) | The backend enforces it before release: a mismatch holds the release for the operator | The verification provider |
-| Mobile money (M-Pesa, MTN MoMo, Airtel) and bank payouts | The vault pays the rail's wallet on-chain | The off-chain leg to the phone or bank |
-| x402 data purchases | EIP-3009 payment settled on-chain in TestUSDT | The data served (corridor rules from country profiles, demo FX rates) |
-| Tax rates in country profiles | | Unverified placeholders, labelled |
-| Wallet custody | WDK wallets sign every user transaction | One demo test seed holds all user wallets |
-| Tethran wallet top-ups | Test USDT minted on-chain to the wallet; paying from the wallet is the on-chain deposit path | The card (no card is charged); 1 USD = 1 test USDT |
-| Demo-key signing | The same signatures and checks as the wallet path | The keys are test keys in the presenter's process (DEMO_MODE only) |
-| Agent (seed default) | Live model calls with `AGENT_MODE=live` or `live+replay` | `replay`: saved proposals, labelled |
-
-## Trust assumptions
-
-- **The agent is untrusted.** It returns a schema-valid proposal and nothing else. It holds no key and cannot
-  change policy. Contract text, evidence and purchased data are untrusted data, never instructions.
-- **The Policy Service is authoritative** for off-chain rules; the **vault is final** for limits. A payout needs
-  the Policy Service signature and the agent signer signature, and the vault checks payee, caps and reserve again.
-  The Policy Service decides only for the milestone the backend names in its authenticated request
-  (`x-internal-token`); a proposal for any other milestone is rejected (`MILESTONE_ID_MISMATCH`). Each milestone is
-  settled at most once (`ALREADY_SETTLED`), within what its escrow released, and only after it was released on-chain.
-- **The platform releases.** The treasury funds each escrow and is the only account that can release an approved
-  milestone. Release, refund and settle need the platform token (`x-platform-token`). If the platform never
-  releases, it can take the funds back three days after the hold ends.
-- **The vault operator is effectively the owner of the vault.** The operator key (provider or agency admin) can
-  replace both co-signers, allow any payee and raise the caps. The two-signature rule protects against a
-  compromised agent or Policy Service, not against the operator. The operator address cannot be changed.
-- **Policy changes take effect at once** and operator policy signatures do not expire (a newer version retires an
-  older one). The daily cap resets at 00:00 UTC. To pause payouts, sign zero caps.
-- **Stablecoin funding is a demo simplification:** the client pays a treasury deposit address and the treasury
-  funds the escrow.
-- **Identity checks are simulated** and enforced by the backend, not on-chain.
-- **The demo signer holds test keys** for the operator, arbiter and provider, and the platform token, in the
-  presenter's process (DEMO_MODE only), so the demo needs no wallet switching. In real use each person signs with
-  their own wallet.
-- **Other backend routes have no user authentication** in this build. This is a demo server on localhost.
+The first Sepolia seed takes about 40 minutes. To serve an existing seed without reseeding:
+`cd services/backend && npm run demo:serve`. The step-by-step journey is in
+[docs/DEMO.md](docs/DEMO.md).
 
 ## Tests
 
-```bash
-cd contracts && npm test                  # 122 contract tests
-cd services/chain && npm test             # 40: ChainClient, WDK signing policy, RPC and WDK failover
-cd services/policy && npm test            # 159: Policy Service rules, co-signing, HTTP API
-cd services/llm && npm test               # 61: providers, agent, guards (offline)
-cd services/backend && npm test           # 139: treasury, settlement, wallets (incl. demo wallet), x402, reconciliation, ...
-cd app && npm test                        # 13: app API mapping, demo wallet, reason-code parity
-cd app && npm run e2e:demo-short          # Playwright against the live demo (also e2e:tour, e2e:journey)
-cd services/backend && CHAIN=sepolia npm run slice   # one milestone through the real services on Sepolia
-cd services/llm && npm run eval:agent     # the nine scenarios against the live model, traced in Opik
+| Command | Existing coverage |
+|---|---|
+| `cd contracts && npm test` | 122 contract tests |
+| `cd services/chain && npm test` | 40 ChainClient, WDK policy, RPC and failover tests |
+| `cd services/policy && npm test` | 171 Policy Service, co-signing and HTTP API tests |
+| `cd services/llm && npm test` | 61 provider, agent and guard tests |
+| `cd services/backend && npm test` | 175 treasury, settlement, wallet, x402 and reconciliation tests |
+| `cd app && npm test` | 21 app API, demo wallet and reason-code tests |
+| `cd app && npm run e2e:demo-short` | Playwright live-demo smoke test |
+
+The Sepolia integration command is `cd services/backend && CHAIN=sepolia npm run slice`.
+The model evaluation command is `cd services/llm && npm run eval:agent`.
+
+## Architecture
+
+The app is an interface. Chain access is isolated in `services/chain`; policy and signing
+are separate boundaries; the backend orchestrates the flow.
+
+```mermaid
+flowchart LR
+    U[Client and freelancer wallets] --> E[MilestoneEscrow]
+    E --> V[ProviderVault]
+    D[Delivery evidence] --> A[AI Settlement Agent]
+    A --> P[Deterministic Policy Service]
+    P --> V
+    V --> N[ReceiptNFT]
+    V --> X[Reconciliation and CSV]
+    B[Web app] --> API[Backend API]
+    API --> E
+    API --> A
+    API --> P
 ```
 
-## WDK: what we use, and what it could not do
+| Folder | Responsibility |
+|---|---|
+| `contracts/` | TestUSDT, MilestoneEscrow, ProviderVault and ReceiptNFT. |
+| `services/chain/` | ChainClient and the WDK wallet layer. |
+| `services/policy/` | Deterministic rules, reason codes and policy audit log. |
+| `services/llm/` | Agent prompt, provider fallback, guards, tracing and evals. |
+| `services/backend/` | Treasury, settlement, invoices, payouts, reconciliation and x402. |
+| `app/` | Vite/React role dashboards and wallet-facing interface. |
 
-Packages imported by our code (in `services/chain/src/wdk.ts`, used by `services/backend/src/wallets.ts` and the
-seed and slice scripts):
+## Security model
 
-- **`@tetherto/wdk` 1.0.0-beta.22**: the `WDK` core with one BIP-39 test seed; `registerWallet`;
-  `registerPolicy` (WDK transaction policies); `getAccount(walletId, index)`; `PolicyViolationError`; `dispose`.
-- **`@tetherto/wdk-wallet-evm` 1.0.0-beta.26**: `WalletManagerEvm` (BIP-44 EVM accounts). Account calls we use:
-  `getAddress`, `getBalance`, `getTokenBalance`, `quoteTransfer`, `transfer`, `sendTransaction`, `signTypedData`.
-- **`@tetherto/wdk-failover-provider` 1.0.0-beta.2**: the wallets' RPC. The API-key RPC (`RPC_URL_<chainId>`) is
-  first and the chain file's public RPC second, each with a 20-second request timeout; a timeout, network or server
-  error moves the call to the next one. Contract errors are not retried.
+- **Untrusted agent:** the AI returns a proposal only. It has no key and cannot change policy.
+- **Deterministic policy:** the Policy Service checks the named milestone, fee, reserve and limits before co-signing.
+- **Two-signature vault:** ProviderVault requires the Policy Service signature and agent signer signature, then checks
+  the payee allowlist, per-transaction cap, daily cap and reserve on-chain.
+- **On-chain caps:** the vault is the final guard on where and how much a payout can send.
+- **Soulbound receipts:** ReceiptNFT records a non-transferable receipt for the settled work.
 
-`@tetherto/wdk-wallet` is installed only as a dependency; we do not import it.
+The vault operator is effectively its owner and can replace co-signers, allow payees and raise caps.
+The demo signer is a localhost/DEMO_MODE service holding test keys for the operator, arbiter, provider and platform.
+Other backend routes are not user-authenticated in this demo server.
 
-What WDK does for us: every user-side signature (client deposits, the client's on-chain approve and dispute,
-contract signing, the agent's x402 payment authorizations) is made by a WDK account. WDK policies limit each
-wallet: test-USDT transfers only, under a cap; contract calls only to the escrow; typed-data signing only for
-escrow attestations, contract signatures and small test-USDT EIP-3009 authorizations.
+## Deployed contracts on Sepolia
 
-What WDK could not do here, so we built it ourselves:
-- **Two-signature payouts.** We found no EVM multisig implementation in these packages, so the provider vault
-  is our own contract and its two signers are server keys, not WDK accounts.
-- **Gasless or sponsored transactions.** Not used. Payers sign EIP-3009 authorizations through WDK and the
-  backend submits them and pays gas.
-- **Fee quotes right after a mint.** On Sepolia, `quoteTransfer` sometimes fails until the RPC node sees the new
-  balance; the review screen then shows the fee as unavailable rather than guessing.
-- **Custody.** Real users would hold their own seed; the demo keeps one test seed on the server.
+Addresses come from [`config/chains.json`](config/chains.json):
 
-## Documents
+| Contract | Address |
+|---|---|
+| TestUSDT | [`0xE2D587DD9ad01C91DFf0baABc120192C516b9879`](https://sepolia.etherscan.io/address/0xE2D587DD9ad01C91DFf0baABc120192C516b9879) |
+| MilestoneEscrow | [`0x172AE76568ba8F83dc7584D2a161713200d9b278`](https://sepolia.etherscan.io/address/0x172AE76568ba8F83dc7584D2a161713200d9b278) |
+| ReceiptNFT | [`0x596B49052701d5B83F2098b055C10c08f314d209`](https://sepolia.etherscan.io/address/0x596B49052701d5B83F2098b055C10c08f314d209) |
+| ProviderVault | [`0xeE59D8994620A9125641b36848A636E04e24feA8`](https://sepolia.etherscan.io/address/0xeE59D8994620A9125641b36848A636E04e24feA8) |
 
-- [docs/DEMO.md](docs/DEMO.md): demo journey, reset commands, fallback plan
-- [docs/API.md](docs/API.md): every endpoint
-- [docs/INTERFACES.md](docs/INTERFACES.md): the contract between the workstreams
-- `docs/`: whitepaper, PRD, architecture, development plan
-- `Development.md`: log of every change and why
+## Roadmap
+
+- Add a second EVM test network after redeploying the same contracts and configuration.
+- Complete x402 facilitator support on an EVM test network.
+- Add the planned verification-provider integration.
+- Continue the delivery and settlement evaluation work described in the development plan.
+
+## Team
+
+- **Benedict Isaac** — Engineering
+- **Sarah Terwase** — Product Manager
+- **Gideon Wada** — Design and Motion
+
+## Docs
+
+- [Demo journey](docs/DEMO.md)
+- [API reference](docs/API.md)
+- [Interfaces](docs/INTERFACES.md)
+- [System architecture](docs/03-system-design-architecture.md)
+- [Development log](Development.md)
+
+---
+
+[Scope and limitations](docs/SCOPE.md)
