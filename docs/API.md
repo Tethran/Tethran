@@ -1018,6 +1018,19 @@ Failed, disputed and suspicious items, each with a reason and the record it poin
 { "count": 1, "items": [ { "kind": "offchain_failed", "reason": "off-chain leg failed after the on-chain payout confirmed: provider timeout (simulated)", "milestone_id": "…", "record": { "table": "offchain_payouts", "id": 2 }, "at": "…", "simulated": true } ] }
 ```
 
+#### Exchange rates (v0.12)
+
+The app's local-currency amounts (simulated mobile-money and bank legs) use indicative rates from ExchangeRate-API's
+open endpoint (`https://open.er-api.com/v6/latest/USD`, no key), cached 6 hours in the backend (`fx_cache`; the
+provider updates once a day), with the provider's "last updated" time. A milestone's rates are locked when it is created
+(`milestone_fx_locks`), so a later change never alters amounts already shown. When the API is down or slow (4 s), the
+last cached rates are used, else the previous sample table, labelled "Sample rate". Labels: "Indicative rate, last
+updated <date>" with the attribution the provider requires, "Rates By Exchange Rate API" (https://www.exchangerate-api.com).
+The timeline's `payouts[].offchain` carries `local_amount`, `currency`, `fx_rate`, `fx_label`, `fx_attribution`.
+**Not served by any paid or programmatic endpoint:** the provider's terms allow the rates only for our own end use
+("not in any product or service that offers programmatic or automatic access to exchange rate data"), so
+`/x402/fx-quote` keeps its own "Sample rates".
+
 #### Notifications (v0.12)
 
 Stored per role (`client`, `freelancer`, `operator`, `arbiter`; the app's "Switch role"). Derived from the records the
@@ -1067,7 +1080,7 @@ token, so none is used. The payment is real on the test network; **the data serv
 | Resource | Price (base units) |
 |---|---|
 | `GET /x402/corridor-rules?corridor=US-KE` | 20000 (0.02 tUSDT) |
-| `GET /x402/fx-quote?to=KES` (NGN, KES, ZAR, GHS) | 10000 |
+| `GET /x402/fx-quote?to=KES` (NGN, KES, ZAR, GHS): "Sample rates" (`label`), fixed placeholders | 10000 |
 | `GET /x402/invoices/{id}/status` | 10000 |
 | `GET /x402/milestones/{id}/settlement-proof` | 10000 |
 

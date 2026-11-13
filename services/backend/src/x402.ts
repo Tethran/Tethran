@@ -67,7 +67,11 @@ const unb64 = (s: string) => JSON.parse(Buffer.from(s, "base64").toString("utf8"
 /** Prices in test-USDT base units. */
 export const X402_PRICES = { corridor_rules: 20_000n, fx_quote: 10_000n, invoice_status: 10_000n, settlement_proof: 10_000n };
 
-/** SIMULATED demo rates: placeholders, not market data. */
+/**
+ * "Sample rates": fixed placeholders, not market data. This paid, programmatic endpoint must NOT serve the indicative
+ * rates of fx.ts: ExchangeRate-API's terms allow those only for our own end use, "not in any product or service that
+ * offers programmatic or automatic access to exchange rate data", and forbid re-distribution. So it keeps its own table.
+ */
 const DEMO_RATES: Record<string, string> = { NGN: "1500.00", KES: "129.00", ZAR: "18.20", GHS: "15.50" };
 
 export function createX402Server(deps: { db: DatabaseSync; chain: X402Chain; payTo: string; now: () => Date }) {
@@ -149,7 +153,7 @@ export function createX402Server(deps: { db: DatabaseSync; chain: X402Chain; pay
           const to = String(url.searchParams.get("to") ?? "").toUpperCase();
           if (!DEMO_RATES[to]) throw new ApiError(400, `to must be one of ${Object.keys(DEMO_RATES).join(", ")}`);
           return paid(header(req), requirement(url.pathname + url.search, X402_PRICES.fx_quote, `USD to ${to} quote`), () => ({
-            from: "USD", to, rate: DEMO_RATES[to], valid_seconds: 300, simulated_data: true, note: "SIMULATED rate, not market data",
+            from: "USD", to, rate: DEMO_RATES[to], valid_seconds: 300, simulated_data: true, label: "Sample rates", note: "Sample rates: fixed placeholders, not market data",
           }));
         }],
         ["GET", /^\/x402\/invoices\/([^/]+)\/status$/, async ({ params, url, req }) => {

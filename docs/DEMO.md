@@ -121,7 +121,7 @@ From `services/backend`, with `B=http://127.0.0.1:18788`:
 - `npm run demo:act -- arbitrate disputed_delivery release` (client WDK wallet and arbiter sign; the escrow decides).
 - `CHAIN=sepolia npm run slice`: one milestone through the real services, ending with the operator's limit change
   and the vault refusing a payout above it.
-- x402: `curl -s $B/x402`; `curl -i "$B/x402/fx-quote?to=KES"` answers `402 Payment Required` (exact scheme,
+- x402: `curl -s $B/x402`; `curl -i "$B/x402/fx-quote?to=KES"` answers `402 Payment Required` (Sample rates; exact scheme,
   TestUSDT).
 
 ## 5. Real and simulated

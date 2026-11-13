@@ -81,6 +81,12 @@ function MilestonePage() {
                       <li key={k} className="flex flex-wrap items-center justify-between gap-2 text-sm">
                         <span data-testid={p.platformFee ? "fee-line" : undefined}>{p.platformFee ? <>Platform fee 5%: {usd(p.amount)} to {p.to}</> : <>{usd(p.amount)} to {p.to}</>}{p.simulated && <SimTag label="Simulated rail" className="ml-2" />}</span>
                         <span className="font-mono text-xs text-muted-foreground">{p.tx ? <>{p.tx.slice(0, 14)}…</> : p.status}</span>
+                        {p.local && (
+                          <span className="basis-full text-xs text-muted-foreground" data-testid="payout-local">
+                            ≈ {Number(p.local.amount).toLocaleString("en-US", { maximumFractionDigits: 2 })} {p.local.currency} on the simulated payout · {p.local.rateLabel}
+                            {p.local.attribution && <> · <a href={p.local.attribution.url} target="_blank" rel="noopener noreferrer" className="underline">{p.local.attribution.text}</a></>}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>

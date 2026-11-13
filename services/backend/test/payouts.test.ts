@@ -23,7 +23,8 @@ test("quotes: exact fee, net and simulated local amount per rail", async () => {
   const mp = await a.mpesa.quote({ rail: "mpesa", amount: "100000000" });
   assert.deepEqual([mp.fee, mp.net_amount, mp.local_amount, mp.currency, mp.country, mp.expected_seconds], ["1500000", "98500000", "12706.50", "KES", "KE", 30]);
   assert.equal(mp.simulated, true);
-  assert.match(mp.fx.label, /Simulated FX rate/);
+  assert.match(mp.fx.label, /^Sample rate/); // no rate service: the sample table, labelled
+  assert.equal(mp.fx.simulated, false); // the rate is never "simulated"; the payout leg is (mp.simulated)
   const mtn = await a.mtn_momo.quote({ rail: "mtn_momo", amount: "50000000" });
   assert.deepEqual([mtn.fee, mtn.net_amount, mtn.local_amount, mtn.currency], ["500000", "49500000", "767.25", "GHS"]);
   const air = await a.airtel.quote({ rail: "airtel", amount: "10000000", country: "KE" });

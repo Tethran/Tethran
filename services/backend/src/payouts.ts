@@ -8,6 +8,7 @@
 // Determinism: the status is a pure function of the injected clock and the reference (plus a demo "advance" bonus),
 // so the demo and the tests repeat exactly. A failure can be forced with `fail: "timeout" | "rejected"` or with a
 // magic amount (MAGIC_FAIL_TIMEOUT / MAGIC_FAIL_REJECTED).
+import { fxLabel, SAMPLE_RATES_MICRO, type FxService } from "./fx";
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { ApiError, bad } from "./errors";
@@ -32,6 +33,8 @@ export interface PayoutRequest {
   /** Free text label of the destination (never a secret); simulated rails do not use it. */
   destination?: string;
   fail?: FailMode;
+  /** The milestone this payout settles: its exchange rate is the one locked when the milestone was created (fx.ts). */
+  milestone_id?: string;
 }
 
 export interface Quote {
@@ -42,7 +45,11 @@ export interface Quote {
   /** Simulated fee, shown separately and deducted from the amount. Base units. */
   fee: string;
   net_amount: string;
-  fx: { simulated: true; label: string; base: "USDT"; quote: string; rate: string };
+  /**
+   * The rate is an indicative market rate (fx.ts: ExchangeRate-API, cached, locked per milestone), not simulated; the
+   * conversion and the payout leg remain SIMULATED. source "sample" means no real rate was available.
+   */
+  fx: { simulated: false; indicative: boolean; label: string; source: string; last_updated: string | null; attribution: { text: string; url: string } | null; base: "USDT"; quote: string; rate: string };
   /** What the recipient receives in local currency, 2 decimals (simulated FX on net_amount). */
   local_amount: string;
   currency: string;
@@ -84,15 +91,8 @@ export interface PayoutAdapter {
 
 // ---- simulated price list ----
 
-interface Fx { currency: string; /** 1 USDT in local currency, 6 decimals */ rateMicro: bigint }
-const FX: Record<string, Fx> = {
-  KE: { currency: "KES", rateMicro: 129_000_000n },
-  GH: { currency: "GHS", rateMicro: 15_500_000n },
-  UG: { currency: "UGX", rateMicro: 3_700_000_000n },
-  NG: { currency: "NGN", rateMicro: 1_500_000_000n },
-  TZ: { currency: "TZS", rateMicro: 2_600_000_000n },
-  ZA: { currency: "ZAR", rateMicro: 18_000_000n },
-};
+/** The local currency of each corridor. The rate comes from fx.ts (indicative rates, or the sample table without it). */
+const CURRENCY: Record<string, string> = { KE: "KES", GH: "GHS", UG: "UGX", NG: "NGN", TZ: "TZS", ZA: "ZAR" };
 
 interface RailSpec {
   adapter: string;
@@ -128,13 +128,13 @@ function secondsText(s: number): string {
   return `about ${Math.round(s / 60)} minutes (simulated)`;
 }
 
-function quoteFor(req: PayoutRequest): Quote {
+function quoteFor(req: PayoutRequest, fx?: FxService): Quote {
   const amount = validAmount(req.amount);
   const a = BigInt(amount);
   if (req.rail === "usdt") {
     return {
       simulated: true, rail: "usdt", country: (req.country ?? "").toUpperCase() || "ANY", amount, fee: "0", net_amount: amount,
-      fx: { simulated: true, label: "USDT is delivered as USDT; no conversion", base: "USDT", quote: "USDT", rate: "1.000000" },
+      fx: { simulated: false, indicative: false, label: "USDT is delivered as USDT; no conversion", source: "none", last_updated: null, attribution: null, base: "USDT", quote: "USDT", rate: "1.000000" },
       local_amount: formatMicro(a), currency: "USDT", expected_seconds: 0, expected: secondsText(0),
     };
   }
@@ -142,16 +142,17 @@ function quoteFor(req: PayoutRequest): Quote {
   if (!spec) return bad(`unknown rail "${String(req.rail)}"`);
   const country = (req.country ?? spec.countries[0]).toUpperCase();
   if (!spec.countries.includes(country)) return bad(`${req.rail} is not available in ${country} (simulated: ${spec.countries.join(", ")})`);
-  const fx = FX[country];
+  const currency = CURRENCY[country];
+  const r = fx ? fx.rateFor(currency, req.milestone_id) : { rateMicro: SAMPLE_RATES_MICRO[currency], label: fxLabel("sample", null), source: "sample", lastUpdated: null, attribution: null };
   let fee = (a * spec.feeBps) / 10_000n;
   if (fee < spec.minFee) fee = spec.minFee;
   if (fee >= a) return bad("amount is not enough to cover the simulated fee");
   const net = a - fee;
-  const local = (net * fx.rateMicro) / 1_000_000n;
+  const local = (net * r.rateMicro) / 1_000_000n;
   return {
     simulated: true, rail: req.rail, country, amount, fee: fee.toString(), net_amount: net.toString(),
-    fx: { simulated: true, label: `Simulated FX rate, not a market rate: 1 USDT = ${formatMicro(fx.rateMicro, 2)} ${fx.currency}`, base: "USDT", quote: fx.currency, rate: formatMicro(fx.rateMicro, 6) },
-    local_amount: formatMicro(local), currency: fx.currency, expected_seconds: spec.expectedSeconds, expected: secondsText(spec.expectedSeconds),
+    fx: { simulated: false, indicative: r.source !== "sample", label: `${r.label}: 1 USDT = ${formatMicro(r.rateMicro, 2)} ${currency}`, source: r.source, last_updated: r.lastUpdated, attribution: r.attribution ? { ...r.attribution } : null, base: "USDT", quote: currency, rate: formatMicro(r.rateMicro, 6) },
+    local_amount: formatMicro(local), currency, expected_seconds: spec.expectedSeconds, expected: secondsText(spec.expectedSeconds),
   };
 }
 
@@ -184,18 +185,18 @@ export function advanceBonus(ref: PayoutRef, now: Date): number {
   return current;
 }
 
-function makeAdapter(rail: Rail, now: () => Date): PayoutAdapter {
+function makeAdapter(rail: Rail, now: () => Date, fx?: FxService): PayoutAdapter {
   const seen = new Map<string, PayoutRef>();
   const adapterName = rail === "usdt" ? "UsdtSim" : SPECS[rail].adapter;
   return {
     async quote(req) {
-      return quoteFor({ ...req, rail });
+      return quoteFor({ ...req, rail }, fx);
     },
     async initiate(req, idempotencyKey) {
       if (!idempotencyKey) return bad("idempotency key is required");
       const prior = seen.get(idempotencyKey);
       if (prior) return prior;
-      const q = quoteFor({ ...req, rail });
+      const q = quoteFor({ ...req, rail }, fx);
       const fail = rail === "usdt" ? undefined
         : req.fail ?? (req.amount === MAGIC_FAIL_TIMEOUT ? "timeout" : req.amount === MAGIC_FAIL_REJECTED ? "rejected" : undefined);
       const ref: PayoutRef = {
@@ -214,10 +215,14 @@ function makeAdapter(rail: Rail, now: () => Date): PayoutAdapter {
 }
 
 /** One adapter per rail: MobileMoneySim (mpesa, mtn_momo, airtel), BankSim, UsdtSim. All simulated. */
-export function createAdapters(now: () => Date): Record<Rail, PayoutAdapter> {
+/** The rate service the payout quotes use (fx.ts). Set once by main.ts; without it quotes use the sample table. */
+let defaultFx: FxService | undefined;
+export function usePayoutFx(fx: FxService | undefined) { defaultFx = fx; }
+
+export function createAdapters(now: () => Date, fx: FxService | undefined = defaultFx): Record<Rail, PayoutAdapter> {
   return {
-    usdt: makeAdapter("usdt", now), mpesa: makeAdapter("mpesa", now), mtn_momo: makeAdapter("mtn_momo", now),
-    airtel: makeAdapter("airtel", now), bank: makeAdapter("bank", now),
+    usdt: makeAdapter("usdt", now, fx), mpesa: makeAdapter("mpesa", now, fx), mtn_momo: makeAdapter("mtn_momo", now, fx),
+    airtel: makeAdapter("airtel", now, fx), bank: makeAdapter("bank", now, fx),
   };
 }
 export const MobileMoneySim = (rail: "mpesa" | "mtn_momo" | "airtel", now: () => Date) => makeAdapter(rail, now);
@@ -292,7 +297,7 @@ export async function processConfirmedPayouts(db: DatabaseSync, now: () => Date,
     const rail = p.rail as Rail;
     const adapter = adapters[rail];
     if (!adapter) continue; // unknown rail: left for the failure queue (no off-chain leg)
-    const ref = await adapter.initiate({ rail, amount: p.amount, fail: opts.fail?.(p) }, `offchain:${p.id}`);
+    const ref = await adapter.initiate({ rail, amount: p.amount, fail: opts.fail?.(p), milestone_id: p.milestone_id }, `offchain:${p.id}`);
     const t = now().toISOString();
     const r = db.prepare(
       `INSERT OR IGNORE INTO offchain_payouts (payout_id, milestone_id, adapter, rail, provider_ref, status, amount, fee, net_amount, local_amount,

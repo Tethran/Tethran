@@ -111,7 +111,8 @@ client wallet (WDK) ──deposit──> treasury ──createAndFund──> Mil
 | Escrow, vault, limits, receipts | On-chain on a test network | Nothing |
 | Token | Our own `TestUSDT` (open minting: it is its own faucet) | It is not Tether USDT |
 | Card, Apple Pay, Google Pay, PayPal, Cash App | Signed Stripe-format events through the real webhook handler | The checkout itself (real Stripe path built, off until keys are set) |
-| Fiat conversion and FX quotes | | Rates are placeholders |
+| Exchange rates (local-currency amounts of mobile-money and bank payouts) | Indicative market rates from ExchangeRate-API's open endpoint, cached 6 hours, locked to each milestone at creation, shown with "Indicative rate, last updated <date>" and "Rates By Exchange Rate API" | The conversion and the payout leg themselves; without the API, the last cached rates, then a sample table (labelled) |
+| x402 `/x402/fx-quote` | The x402 payment | "Sample rates": fixed placeholders. The provider's terms allow its rates only for our own end use, not through a paid or programmatic endpoint, so this endpoint never serves them |
 | Identity check (payer vs customer name) | The backend enforces it before release: a mismatch holds the release for the operator | The verification provider |
 | Mobile money (M-Pesa, MTN MoMo, Airtel) and bank payouts | The vault pays the rail's wallet on-chain | The off-chain leg to the phone or bank |
 | x402 data purchases | EIP-3009 payment settled on-chain in TestUSDT | The data served (corridor rules from country profiles, demo FX rates) |

@@ -1,5 +1,6 @@
 // Backend HTTP API (node:http, JSON). Routes are documented in docs/API.md.
 // Errors are { error, code? } with a safe message: no stack traces, URLs or key material.
+import type { FxService } from "./fx";
 import { createNotifications, type Notifications } from "./notifications";
 import { createEvidenceStore, MAX_EVIDENCE_BODY, type EvidenceStore } from "./evidence";
 import { PLATFORM_FEE_BPS } from "../../policy/src/fee";
@@ -48,6 +49,8 @@ export interface HttpDeps {
   wallets?: WalletLayer;
   phoneHashSalt?: string;
   operator?: Operator;
+  /** Indicative exchange rates (fx.ts) for the app's own screens and payout quotes only; never for a paid endpoint. */
+  fx?: FxService;
   /** Notifications per role. Created from db when not given (links under publicBaseUrl, i.e. APP_BASE_URL). */
   notifications?: Notifications;
   /** Delivery evidence store (notes, links, files on the data disk). Created from db when not given. */
@@ -124,7 +127,16 @@ export function createHttpServer(deps: HttpDeps): Server {
       // reason codes are the Policy Service's.
       settlement_plans: (db.prepare("SELECT id, proposal_json, proposal_hash, trace_id, decision, reasons, approval_id, agent_mode, at FROM settlement_plans WHERE milestone_id = ? ORDER BY id").all(id) as any[])
         .map(({ proposal_json, ...p }) => ({ ...p, reasons: JSON.parse(p.reasons), proposal: proposal_json ? JSON.parse(proposal_json) : null })),
-      payouts: db.prepare("SELECT action_index, action_id, payee_id, rail, to_address, amount, tx, status, simulated, at FROM payouts WHERE milestone_id = ? ORDER BY action_index").all(id),
+      // Each payout with its SIMULATED off-chain leg (local amount) and the indicative rate it used (milestone-locked).
+      payouts: (db.prepare(`SELECT p.id, p.action_index, p.action_id, p.payee_id, p.rail, p.to_address, p.amount, p.tx, p.status, p.simulated, p.at,
+          o.local_amount, o.currency, o.fx_rate, o.status AS leg_status
+        FROM payouts p LEFT JOIN offchain_payouts o ON o.payout_id = p.id WHERE p.milestone_id = ? ORDER BY p.action_index`).all(id) as any[])
+        .map(({ id: _pid, local_amount, currency, fx_rate, leg_status, ...p }) => {
+          if (!local_amount || !currency || currency === "USDT") return p;
+          const r = deps.fx ? deps.fx.rateFor(currency, id) : null;
+          return { ...p, offchain: { simulated: true, local_amount, currency, fx_rate, status: leg_status,
+            fx_label: r?.label ?? "Sample rate", fx_attribution: r?.attribution ?? null } };
+        }),
       receipt: db.prepare("SELECT * FROM receipts WHERE milestone_id = ?").get(id) ?? null,
     };
   };
@@ -135,7 +147,12 @@ export function createHttpServer(deps: HttpDeps): Server {
     ["GET", /^\/notifications$/, async ({ url }) => notes().list(url.searchParams.get("recipient"), Number(url.searchParams.get("limit") ?? 50))],
     ["POST", /^\/notifications\/read-all$/, async ({ body }) => notes().markAllRead(body?.recipient)],
     ["POST", /^\/notifications\/([^/]+)\/read$/, async ({ params, body }) => notes().markRead(params[1], body?.recipient)],
-    ["POST", /^\/milestones$/, async ({ body }) => treasury.createMilestone(body ?? {})],
+    ["POST", /^\/milestones$/, async ({ body }) => {
+      const created: any = await treasury.createMilestone(body ?? {});
+      // Lock today's indicative rates to the milestone, so a later rate change never alters amounts already shown.
+      if (deps.fx && created?.id) deps.fx.lock(String(created.id));
+      return created;
+    }],
     // List for the app's dashboard (local records; GET /milestones/{id} syncs one with the chain).
     ["GET", /^\/milestones$/, async ({ url }) => {
       const q = (k: string) => url.searchParams.get(k);

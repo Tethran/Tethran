@@ -160,6 +160,7 @@ async function milestoneDetail(id: string) {
     payouts: (t.payouts ?? []).map((p: any) => ({
       to: p.payee_id === EARNINGS_ID ? "Tethran earnings account" : prov.payees.find((x) => x.payee_id === p.payee_id)?.name ?? p.payee_id, amount: dollars(p.amount), rail: String(p.rail ?? "usdt"),
       platformFee: p.payee_id === EARNINGS_ID,
+      ...(p.offchain ? { local: { amount: String(p.offchain.local_amount), currency: String(p.offchain.currency), rateLabel: String(p.offchain.fx_label ?? ""), attribution: p.offchain.fx_attribution ?? null } } : {}),
       simulated: p.simulated === 1 || p.simulated === true, tx: p.tx ?? null, status: String(p.status ?? ""),
     })),
   };

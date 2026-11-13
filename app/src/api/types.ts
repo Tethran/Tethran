@@ -37,6 +37,8 @@ export interface VaultPayout {
   status: string;
   /** This line is Tethran's 5% platform fee (to the earnings account). */
   platformFee?: boolean;
+  /** A simulated mobile-money or bank leg: the local amount at the milestone's indicative rate. */
+  local?: { amount: string; currency: string; rateLabel: string; attribution: { text: string; url: string } | null };
 }
 
 export interface Contract {

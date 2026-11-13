@@ -11,6 +11,8 @@
 import { join, resolve } from "node:path";
 import { createEvidenceStore } from "./evidence";
 import { createNotifications } from "./notifications";
+import { createFxService } from "./fx";
+import { usePayoutFx } from "./payouts";
 import { runReminders } from "./invoices";
 import { safeErrorMessage as safeMsg } from "./errors";
 import { Wallet } from "ethers";
@@ -158,11 +160,19 @@ const operator = createOperator({ db, chain, treasury, policy: policyClient, now
 // due date of an unpaid invoice; each kind once per invoice. The job runs hourly and its reminders become client
 // notifications (no email for reminders).
 const notifications = createNotifications(db, { now, appBaseUrl: publicBaseUrl });
+// Indicative exchange rates for the app's own screens and payout quotes (fx.ts): ExchangeRate-API's open endpoint,
+// cached 6 hours (refresh tried hourly; a fresh cache makes no call), locked per milestone. Never served by a paid or
+// programmatic endpoint (their terms forbid it): /x402/fx-quote keeps its own "Sample rates".
+const fx = createFxService({ db, now });
+usePayoutFx(fx);
+void fx.refresh();
+setInterval(() => void fx.refresh(), 60 * 60 * 1000).unref();
 const reminderJob = () => { try { runReminders({ db, now, publicBaseUrl }, now()); notifications.sync(); } catch (e) { console.error("reminder job failed: " + safeMsg(e)); } };
 reminderJob();
 setInterval(reminderJob, 60 * 60 * 1000).unref();
 
 listen(createHttpServer({
+  fx,
   notifications,
   evidence,
   db, treasury, orchestrator, identity, chain, internalToken: process.env.INTERNAL_TOKEN ?? "", now, checkout, simulatedCheckout, publicBaseUrl, wallets, phoneHashSalt: process.env.PHONE_HASH_SALT, operator, x402,

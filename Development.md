@@ -1034,3 +1034,19 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   links into the screen; the current role (Switch role) is kept in this browser and can be set with ?as=<role>. Nav
   labels show from xl so the header fits.
 - Tests: creation per role, idempotency, the work-submitted body with the check summary, read state and visibility.
+
+### Indicative exchange rates (branch fx; lead's option 1)
+- services/backend/src/fx.ts: real indicative rates from ExchangeRate-API's open endpoint (open.er-api.com/v6/latest/USD,
+  no key, fetch). Verified it returns NGN, GHS, KES, ZAR (also UGX, TZS); the provider updates once a day. Cached 6
+  hours in the backend (fx_cache) with the provider's "last updated" time; refresh tried hourly, so a few calls a day.
+  When the API is down or slow (4 s), the last cached rates, else the previous sample table (labelled "Sample rate").
+- Rates are locked to a milestone when it is created (milestone_fx_locks), so a rate change never alters amounts
+  already shown. Payout quotes (the simulated mobile-money and bank legs) use the milestone's locked rate.
+- Labels: "Indicative rate, last updated <date>" with the provider's required attribution "Rates By Exchange Rate API"
+  (https://www.exchangerate-api.com); the rate itself is no longer marked simulated, the conversion and the payout leg
+  stay "Simulated". The milestone page shows each simulated leg's local amount with the rate label and attribution.
+- Licence: the provider's terms allow the rates only for our own end use, "not in any product or service that offers
+  programmatic or automatic access to exchange rate data", and forbid re-distribution. So the rates feed the app only;
+  /x402/fx-quote keeps its own fixed table, now labelled "Sample rates" (comment in x402.ts and fx.ts, line in API.md).
+- Tests (API mocked): success with attribution, the 6-hour cache, failure to the sample table, timeout with a stale
+  cache, the per-milestone lock, and a payout quote at the locked rate with the payout still simulated.
