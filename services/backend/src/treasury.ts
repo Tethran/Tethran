@@ -15,7 +15,7 @@
 //   treasury funds the escrow.
 import type { DatabaseSync } from "node:sqlite";
 /** Seeded demo scenarios (the saved replay proposals and the Opik dataset use the same names). */
-export const DEMO_SCENARIOS = ["clean_delivery", "disputed_delivery", "prompt_injection", "over_limit_request", "unknown_payee", "low_confidence_plan", "duplicate_send", "wrong_network", "identity_mismatch"] as const;
+export const DEMO_SCENARIOS = ["clean_delivery", "disputed_delivery", "prompt_injection", "over_limit_request", "unknown_payee", "low_confidence_plan", "duplicate_send", "wrong_network", "identity_mismatch", "criteria_met", "criteria_unmet", "criteria_silent"] as const;
 import { getAddress, isAddress, isHexString } from "ethers";
 import { assertMilestoneMatches, MilestoneMismatchError } from "../../chain/src/index";
 import type { TreasuryChain } from "./chainPort";
