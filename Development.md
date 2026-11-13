@@ -1172,3 +1172,21 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   fallback median 469 ms with one failure); Sepolia gas about 22 wei, so the treasury's 0.038 ETH and Kofi's wallet's
   0.004 ETH cover the flow many times; test USDT ample (no mint needed); a test invoice email to Resend's test inbox
   was sent on the first attempt in 1.1 s.
+
+### Milestone eabe3a4b (Brand identity, $400): live agent escalated UNKNOWN_SPLIT; settled with the labelled replay plan
+- Why the live model could not split: the agent input lists two payees for this provider (payee_amara, Amara Studio,
+  USDT; payee_kofi, Zuri Print Works, simulated M-Pesa; the earnings account is filtered out), while its contract text
+  is only `Milestone "<title>" for <amount> base units of USDT, paid to the provider's listed payees.` plus the
+  criteria. Nothing says which payee this contract pays or how to split. The prompt (rule 6) gives everything to the
+  single payee only when there is one; with two and no split it flags UNKNOWN_SPLIT with low confidence and
+  needs_human, and the Policy Service escalates (LOW_CONFIDENCE, NEEDS_HUMAN). Correct behaviour. The seeded
+  scenarios never hit it because they settle on replay plans that already carry the split.
+- Re-run without a new contract: POST /milestones/eabe3a4b/settle (platform token). Live again: escalated (plan 13,
+  same reasons). Then agent_mode "replay": the clean_delivery replay plan (a real model output from the 12 Nov eval
+  run) rebuilt for $400; the Policy Service approved it with the normal rules and co-signed; the vault paid Amara
+  Studio $340 (0x9233d8f22dc4…) and the Tethran earnings account $20 (0x095fcedf0a2d…), $40 stays as the tax reserve;
+  receipt #37. The app labels the plan "Replay". No threshold, rule or limit was changed.
+- Left as they are: the three escalated live plans (approvals 71bb7d82, 67557475, ce749d78) are still pending in the
+  operator queue; approving one later is refused by the Policy Service (ALREADY_SETTLED).
+- Not changed (needs a decision): the agent input should say who the contract pays, for example the contract's
+  provider payee as the single payee unless the contract names a split.
