@@ -1101,3 +1101,14 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
 - Tests: wallet core with a mocked AppKit (connect, account change, wrong network, declined request, missing id), the
   review and send with a mocked provider (review fields, wrong network and wrong account blocked, duplicate pending
   and already sent, declined and failed sends), backend call encoding, the mint limits, the top-up limit.
+
+### Recording tooling (feature 7) and deployment plan (feature 8) (branch tooling)
+- app/e2e/film.ts: helpers for the final film at 1920x1080: an overlay cursor that glides (eased, intermediate steps)
+  to each element before a click, with a click ripple; typing at human speed; screens held only when fully rendered
+  (no busy state or spinner, images loaded, layout settled); smooth scrolling to sections (no full-page captures);
+  waits recorded and captioned "…, sped up"; step markers (start and end seconds, 1.5 s holds on key steps) written to
+  e2e-artifacts/film/<name>-markers.json. Playwright project film-1920. The film spec itself follows the lead's shot
+  list, which has not arrived yet. e2e/cut-video.mjs takes --dir, --marks and --out.
+- The journey now covers the delivery submission with a file and the delivery check, the client's Home with the work
+  awaiting approval, the bell and notifications, and the Emails view.
+- docs/DEPLOY.md: the deployment plan (planning only, nothing deployed).

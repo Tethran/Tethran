@@ -34,6 +34,8 @@ export default defineConfig({
     { name: "tour-1440", testMatch: /tour\.spec\.ts/, use: { viewport: { width: 1440, height: 900 }, video: { mode: "on", size: { width: 1440, height: 900 } } } },
     { name: "demo-short-1440", testMatch: /demo-short\.spec\.ts/, use: { viewport: { width: 1440, height: 900 }, video: { mode: "on", size: { width: 1440, height: 900 } } } },
     { name: "journey-1440", testMatch: /journey\.spec\.ts/, use: { viewport: { width: 1440, height: 900 }, video: { mode: "on", size: { width: 1440, height: 900 } } } },
+    // The final film (e2e/film.ts tooling): a fixed 1920x1080 viewport, video at the same size, no full-page captures.
+    { name: "film-1920", testMatch: /film\.spec\.ts/, use: { viewport: { width: 1920, height: 1080 }, video: { mode: "on", size: { width: 1920, height: 1080 } } } },
   ],
   webServer: {
     command: `node node_modules/vite/bin/vite.js dev --port ${port}`,

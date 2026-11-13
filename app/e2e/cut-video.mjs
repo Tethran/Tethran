@@ -2,6 +2,7 @@
 // recorded (e2e-artifacts/demo-short-marks.json) is sped up to about one second; everything else plays at normal
 // speed. Nothing that is not a wait is removed. Needs ffmpeg on PATH.
 //   node e2e/cut-video.mjs [raw.webm]   (default: the newest .webm under e2e-artifacts/demo-short/)
+//   Film: node e2e/cut-video.mjs --dir e2e-artifacts/film-raw --marks e2e-artifacts/film/demo-markers.json --out tethran-film
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -17,8 +18,10 @@ function newestWebm(dir) {
   return out.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 }
 
-const raw = process.argv[2] ?? newestWebm("e2e-artifacts/demo-short");
-const { waits } = JSON.parse(readFileSync("e2e-artifacts/demo-short-marks.json", "utf8"));
+const arg = (k) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
+const positional = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : undefined;
+const raw = positional ?? newestWebm(arg("--dir") ?? "e2e-artifacts/demo-short");
+const { waits } = JSON.parse(readFileSync(arg("--marks") ?? "e2e-artifacts/demo-short-marks.json", "utf8"));
 const duration = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", raw]).toString().trim());
 
 // Segments over the whole video: [start, end, speed].
@@ -36,7 +39,7 @@ if (duration > at) segs.push([at, duration, 1]);
 const parts = segs.map(([s, e, k], i) => `[v${i}]trim=start=${s.toFixed(3)}:end=${e.toFixed(3)},setpts=(PTS-STARTPTS)/${k.toFixed(4)}[o${i}]`);
 const filter = `[0:v]split=${segs.length}${segs.map((_, i) => `[v${i}]`).join("")};${parts.join(";")};${segs.map((_, i) => `[o${i}]`).join("")}concat=n=${segs.length}:v=1:a=0,fps=25[out]`;
 mkdirSync("e2e-artifacts/recordings", { recursive: true });
-const out = "e2e-artifacts/recordings/tethran-demo-short.webm";
+const out = `e2e-artifacts/recordings/${arg("--out") ?? "tethran-demo-short"}.webm`;
 execFileSync("ffmpeg", ["-y", "-v", "error", "-i", raw, "-filter_complex", filter, "-map", "[out]", "-c:v", "libvpx-vp9", "-b:v", "2500k", "-deadline", "good", "-cpu-used", "4", "-row-mt", "1", out], { stdio: "inherit" });
 const final = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", out]).toString().trim());
 const waited = segs.filter(([, , k]) => k > 1).reduce((n, [s, e]) => n + (e - s), 0);

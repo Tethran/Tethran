@@ -42,6 +42,32 @@ test("the whole journey", async ({ page }) => {
     await shot(page, "journey-04-funds-locked");
   });
 
+  await step("Freelancer: submits the delivery (note, link, a text file); the AI's delivery check appears", async () => {
+    await page.goto(`/app/milestone/${milestoneId}?as=freelancer`, { waitUntil: "domcontentloaded" });
+    await settled(page);
+    await caption(page, "Freelancer: submits the delivery with a note, a link and a file");
+    await page.getByLabel("Delivery note").fill("Three logo concepts delivered; concept B refined as agreed.");
+    await page.getByLabel("Delivery link").fill("https://drive.example.com/logos");
+    await page.getByLabel("Delivery files").setInputFiles({ name: "concepts.md", mimeType: "text/markdown", buffer: Buffer.from("# Concepts\n- A\n- B (refined)\n- C\n") });
+    await page.getByTestId("submit-delivery").click();
+    await expect(page.getByTestId("delivery-check")).toBeVisible({ timeout: 5 * 60_000 });
+    await expect(page.getByTestId("evidence-list")).toContainText("concepts.md");
+    await caption(page, "The AI checks the delivery against the acceptance criteria (advisory)");
+    await shot(page, "journey-04b-delivery-check");
+  });
+
+  await step("Client: Home shows the work awaiting approval; the bell has the notification", async () => {
+    await page.goto("/app/dashboard?as=client", { waitUntil: "domcontentloaded" });
+    await settled(page);
+    await expect(page.getByTestId("client-awaiting")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("notif-count")).toBeVisible({ timeout: 60_000 });
+    await caption(page, "Client: the work waits for approval; the bell shows the notification");
+    await shot(page, "journey-04c-client-home");
+    await page.getByTestId("notif-bell").click();
+    await expect(page.getByTestId("notif-work_submitted").first()).toBeVisible({ timeout: 60_000 });
+    await shot(page, "journey-04d-notifications");
+  });
+
   await step("Client: approves the work on-chain (WDK wallet)", async () => {
     await page.goto(`/app/milestone/${milestoneId}`);
     await settled(page);
@@ -60,6 +86,16 @@ test("the whole journey", async ({ page }) => {
     await expect(page.getByTestId("fee-line")).toContainText("Platform fee 5%");
     await caption(page, "Approved by the Policy Service; the vault paid the freelancer and Tethran's 5% fee; receipt minted");
     await shot(page, "journey-06-settled");
+  });
+
+  await step("Emails: the invoice email of each new contract is listed", async () => {
+    await page.goto("/app/emails?as=freelancer", { waitUntil: "domcontentloaded" });
+    await settled(page);
+    await expect(page.getByTestId("email-list")).toBeVisible({ timeout: 60_000 });
+    await caption(page, "Emails: every invoice email, with its status (example.com addresses are never sent to)");
+    await shot(page, "journey-06b-emails");
+    await page.goBack();
+    await settled(page);
   });
 
   await step("Operator: Earnings shows the 5% fee collected", async () => {
