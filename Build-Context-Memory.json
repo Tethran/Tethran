@@ -2546,6 +2546,27 @@
         "Record the final two-sided film at 1920x1080"
       ],
       "notes": "Gate for the push: unit tests, clean reseed 12/12, short demo passed. Full journey not re-run after the Send fix."
+    },
+    {
+      "session_id": "2026-11-13-final-film",
+      "date": "2026-11-13",
+      "summary": "Pushed main at 5695018 (PUBLIC). Built the AI activity panel, the two-sided film spec and the cut script. Two film attempts failed on test-network slowness; partial records removed.",
+      "completed": [
+        "Push of main",
+        "AI activity panel and Policy signatures card",
+        "film.spec.ts (two contexts) and cut-film.mjs (dry-run verified)"
+      ],
+      "blockers": [
+        "Final film not recorded: Sepolia RPC and confirmations very slow on 13 Nov (three milestone activations took 16 minutes)"
+      ],
+      "errors_encountered": [
+        "Film attempt 1: aria-busy balance block after 90 s (RPC timeouts)",
+        "Film attempt 2: waitForURL 10 min timeout in d1 while milestones activated slowly; Resend calls timed out"
+      ],
+      "next_steps": [
+        "On lead confirmation and a healthy network: record the film once, then node e2e/cut-film.mjs"
+      ],
+      "notes": "Raw partial videos: app/e2e-artifacts/film-raw (attempt 2), scratchpad film-attempt1. Nothing pushed after 5695018."
     }
   ]
 }

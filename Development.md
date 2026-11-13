@@ -1120,3 +1120,21 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
 - Gate for this push (set by the lead): unit tests pass, a clean Sepolia reseed passed (12 scenarios, 0 problems)
   and the short demo recording passed (cut to 61 s). The full journey run failed at its last step (wrong network,
   then duplicate send) on a connection dropped while the machine slept; it was **not re-run after this fix**.
+
+### Final film tooling and the AI activity panel (not pushed)
+- Milestone page: an "AI activity" panel built only from stored records (what the agent read: the milestone, its
+  criteria, the delivery note, link and files; its per-criterion check; the payouts it proposed with the 5% fee and
+  its confidence), revealed line by line (keyed on the proposal so the 2-second refresh does not restart it); and a
+  "Policy Service: approved" card with the rules that passed and the two signatures the vault requires on every
+  transfer (agent signer and Policy Service, two of two).
+- app/e2e/film.spec.ts: the two-sided film (Kofi and Amara, one context each, both recorded at 1920x1080 on one clock;
+  holds and waits recorded per step). It warms up the balance reads first and allows slow screens 4 minutes.
+  Kofi's email is delivered@resend.dev (Resend's test inbox). d7 shows Amara's real USDT payout and Earnings; there is
+  no mobile-money step (her payee rail is USDT).
+- app/e2e/cut-film.mjs: cuts both raw videos to the exact step lengths on one timeline (holds at normal speed, waits
+  then actions sped up, last frame held if short); H.264 MP4, 30 fps; writes final-cut-markers.json.
+- Recording attempts on 13 Nov: (1) Kofi's Home never finished loading its balance (Sepolia RPC timeouts) within 90 s,
+  before step d1; (2) in d1, activating the three milestones on Sepolia took 16 minutes (normally about a minute), past
+  the 10-minute wait; two of three Resend calls also timed out. Both were network slowness. The partial records of
+  both attempts were removed from the database (backups in the scratchpad); the three draft escrow milestones of
+  attempt 2 remain on the test network, unfunded.

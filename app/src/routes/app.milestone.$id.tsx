@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/api";
 import type { MilestoneStatus } from "@/api/types";
+import { AgentActivity, PolicySignatures } from "@/components/app/AgentActivity";
 import { PageHead } from "@/components/app/AppShell";
 import { Async, EmptyBlock, LIVE, useApi } from "@/components/app/demo-state";
 import { useDemoSigner } from "@/components/app/SignChoice";
@@ -161,6 +162,11 @@ function MilestonePage() {
                   {m.deliveryCheck.error && <p className="mt-2 text-xs text-muted-foreground">The check could not finish ({m.deliveryCheck.error}); each criterion is shown as unclear.</p>}
                 </Card></div>
               )}
+              {proposal && (
+                <AgentActivity title={m.title} amount={m.amount} criteria={m.criteria} evidence={m.evidence ?? []} checks={m.deliveryCheck?.checks ?? []}
+                  proposal={proposal} modeTag={<ModeTag mode={proposal.agentMode} />} />
+              )}
+              {proposal && <PolicySignatures proposal={proposal} paidTxs={(m.payouts ?? []).map((p) => p.tx).filter((t): t is string => !!t)} />}
               {proposal && (
                 <Card className="border-agent/30">
                   <p className="flex items-center gap-2 text-sm text-agent"><Sparkles className="size-4" aria-hidden />The AI's plan <ModeTag mode={proposal.agentMode} /></p>
