@@ -917,3 +917,50 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
 ### Not done
 - The short demo recording and the full journey did not complete: the machine ran low on memory and the session
   stopped the demo services and the Playwright run (after the first screenshot). Not restarted, pending the lead.
+
+
+---
+
+## Session 017 — 2026-11-13 — Recorded runs and their fixes, product questions, Tethran demo wallet, push
+
+### Recorded runs: what failed and the fixes (only what the runs showed)
+- Contract form: Continue clicks landed before the page was interactive and were lost. The e2e helper now waits for
+  the page and clicks until the step counter moves (test-only).
+- Release in the demo platform step: refused for every milestone made in the app ("no verified identity on file"),
+  because only the seed recorded the SIMULATED identity verification. The demo signer now records it (payer = the
+  contract's client) when none is on file; it never replaces an existing record, so identity_mismatch stays held.
+- Payment from the client wallet: blocked as FEE_UNAVAILABLE because the wallet held 40 tUSDT after the seed. The seed
+  faucet now adds 2,000 tUSDT for payments made in the app (and the wallet review says INSUFFICIENT_BALANCE now).
+- Contract page navigation hung on the load event (a stalled Google Fonts request); the helper waits for the DOM.
+- Demo limit change: lowering the cap to 5 also lowered the soft limit, and restoring the cap left the soft limit at
+  5, so every later payout escalated (OVER_SOFT_LIMIT). The demo signer now puts the earlier soft limit back.
+
+### Tethran demo wallet (branch wallet, merged after all checks)
+- Each demo user (client: Demo Client Ltd; freelancer: Amara Studio, payee_amara) has one WDK wallet, now shown as
+  the Tethran wallet. POST /wallets/{role}/fund: SIMULATED card top-up, DEMO_MODE only, the treasury mints test USDT
+  1 USD = 1 tUSDT (same mint as card funding), idempotency key claimed before minting (a repeat or a simultaneous
+  submit mints once), $1 to $10,000. GET /wallets/{role}/activity: top-ups, milestone payments, vault payouts.
+- Wallet review and send refuse INSUFFICIENT_BALANCE before signing (after the duplicate checks).
+- Pay page: "Tethran wallet" (the stablecoin-deposit path, unchanged) shows the payer's balance or "not enough, add
+  funds"; card and the other simulated methods unchanged. The payer, approver and dispute voter is the wallet that is
+  the milestone's client, so the contract form's "Client pays from: my own Tethran wallet" lets the freelancer be a
+  client with the same balance payouts arrive in. Contract client signing: POST /wallets/{role}/contracts/{id}/sign.
+- Wallet screen (nav: Wallet): user switch, balance, add funds, recent activity; labelled Demo wallet / Simulated.
+- Tests: backend demoWallet.test.ts (8: balance, fund, duplicate submit, failed mint, demo-only, insufficient
+  balance, pay from wallet, payouts in activity); app wallet.test.ts (4). INTERFACES v0.11, API.md, README, DEMO.md.
+
+### Product questions answered (report only; no change)
+- The agent is not given the milestone's acceptance criteria (only title and amount), and the seed and demo run in
+  replay mode; evidence is text only. No notifications exist beyond a simulated invoice-reminder job nothing calls.
+  The invoice fee (1% + $0.30, fee payer "provider" by default) is shown but not collected on-chain, and the pay page
+  shows it added on top. A 5% freelancer-paid fee needs the settlement to route it; not added.
+
+### Checks
+- Tests: contracts 122, chain 40, policy 159, llm 61, backend 139, app 13.
+- Clean Sepolia reseed with the wallet code: nine scenarios, 0 problems.
+- Playwright: demo-short passed (raw 5.7 min, cut video 55.8 s); journey passed (8.6 min, video 505 s) with
+  "add funds" and "pay from wallet". Recordings in app/e2e-artifacts/recordings/ (git-ignored). All processes stopped.
+
+### Push
+- Lead asked to push main. Secrets scan on the final commit (no .env values, key or API-key patterns; no .env, .sqlite
+  or .demo-data file tracked). Pushed main with --force-with-lease, no tags. The remote is public (lead's call).

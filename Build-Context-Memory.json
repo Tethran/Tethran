@@ -2460,6 +2460,63 @@
         "Lead: say when to push"
       ],
       "notes": "Seeded state in .demo-data/ (Sepolia); demo:serve brings everything back including the app."
+    },
+    {
+      "session_id": "session_017",
+      "timestamp": "2026-11-13T01:22:20.033Z",
+      "ai_agent": "Executing engineer (main session)",
+      "current_phase": "Recorded runs passing; Tethran demo wallet merged; pushed",
+      "progress": {
+        "completed": [
+          "demo-short and journey recordings pass on Sepolia (journey includes add funds and pay from wallet)",
+          "Fixes from the runs: wizard clicks, simulated identity in the demo settle, seed faucet buffer, soft limit restore",
+          "Tethran demo wallet: fund (simulated card, idempotent), pay from wallet or card, activity, freelancer as client",
+          "Clean reseed: nine scenarios, 0 problems",
+          "Pushed main (no tags)"
+        ],
+        "in_progress": [],
+        "blocked": [
+          "Second chain: Base Sepolia test ETH"
+        ]
+      },
+      "last_session_summary": "Runs fixed and passing, product questions answered, demo wallet built and merged, pushed.",
+      "changes_made": [
+        "services/backend: wallet fund/activity, INSUFFICIENT_BALANCE, any user wallet can sign as client; demo signer fixes; seed faucet",
+        "app: Wallet screen and nav, Tethran wallet at checkout, Client pays from, wallet API, e2e wallet steps",
+        "docs: INTERFACES v0.11, API.md, README, DEMO.md"
+      ],
+      "file_module_map": [
+        {
+          "file": "app/src/routes/app.wallet.tsx",
+          "purpose": "Tethran demo wallet screen"
+        },
+        {
+          "file": "services/backend/test/demoWallet.test.ts",
+          "purpose": "Demo wallet tests"
+        },
+        {
+          "file": "app/src/test/wallet.test.ts",
+          "purpose": "App wallet mapping tests"
+        }
+      ],
+      "decisions_log": [
+        "Paying from the wallet reuses the stablecoin-deposit path",
+        "Wallet top-ups are DEMO_MODE only, minted by the treasury 1:1",
+        "The payer is the wallet that is the milestone's client"
+      ],
+      "known_issues": [
+        "Agent input lacks the milestone acceptance criteria",
+        "No notifications (only a simulated reminder job)",
+        "Invoice fee shown but not collected; pay page adds it on top; 5% freelancer fee not built",
+        "Full-page screenshots show the sticky header mid-page (screenshots only)"
+      ],
+      "errors_encountered": [
+        "Memory pressure stopped background runs earlier; runs now one at a time with processes stopped after each"
+      ],
+      "next_steps": [
+        "Lead decisions on acceptance criteria to the agent, notifications and the platform fee"
+      ],
+      "notes": "Recordings: app/e2e-artifacts/recordings/tethran-demo-short.webm and tethran-journey-1440.webm."
     }
   ]
 }
