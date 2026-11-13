@@ -597,7 +597,9 @@ export class EvmChainClient implements ChainClient {
    * More than one confirmation matters on public RPC endpoints: they are load-balanced, and a node that
    * is one block behind would make the next call see the old state.
    */
-  async waitConfirmed(txHash: string, timeoutMs = 300_000, pollMs = 2_000): Promise<void> {
+  // CHAIN_CONFIRM_TIMEOUT_MS (default 5 minutes) lets a slow test network take longer; it only changes how long we
+  // poll the same hash, never whether we resubmit.
+  async waitConfirmed(txHash: string, timeoutMs = Number(process.env.CHAIN_CONFIRM_TIMEOUT_MS) || 300_000, pollMs = 2_000): Promise<void> {
     await this.ready();
     const deadline = Date.now() + timeoutMs;
     for (;;) {

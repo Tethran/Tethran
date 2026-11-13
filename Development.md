@@ -1138,3 +1138,17 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   the 10-minute wait; two of three Resend calls also timed out. Both were network slowness. The partial records of
   both attempts were removed from the database (backups in the scratchpad); the three draft escrow milestones of
   attempt 2 remain on the test network, unfunded.
+
+### Tolerating a slow test network (film failures fixed; not pushed)
+- Invoice email: still sent in the background; now 15 s per attempt and up to 3 retries (1 s, 3 s, 6 s apart) for a
+  timeout, network error, 408, 429 or 5xx, always with the same idempotency key so Resend never sends twice; other
+  errors are final. A timer ends an attempt even if a fetch ignores its abort signal. The Emails view shows
+  "sending…", the pay link, and "Failed, retry" (POST /emails/{id}/retry, background again). Two new tests.
+- ChainClient.waitConfirmed: CHAIN_CONFIRM_TIMEOUT_MS (default 5 minutes, unchanged) sets how long one transaction
+  is polled; the seed passes it to the backend. It never resubmits.
+- Film: a readiness gate before recording (both balance reads within 20 s and a $1 test top-up confirmed within
+  4 minutes, retried for up to 15 minutes); every chain wait polls up to 25 minutes and logs its time; no wait on the
+  load event or networkidle (DOM ready plus the screen's own ready marker; URL waits use "commit"); the Google Fonts
+  files are fetched once before recording and served from memory (blocked if that fails), so a stalled font cannot
+  hold a page; the invoice email gets up to 2 minutes to show "sent" and never fails the film; a timestamped progress
+  line per step and per wait (console and e2e-artifacts/film/progress.log).

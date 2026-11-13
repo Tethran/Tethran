@@ -55,14 +55,23 @@ export function invoiceMessage(m: InvoiceMail) {
   return { subject, text, html };
 }
 
-export function createMailer(opts: { db: DatabaseSync; config: EmailConfig; now: () => Date; fetch?: typeof fetch; notifications?: Notifications }) {
+/** Per attempt: 15 seconds. A timeout, a network error, 408, 429 or 5xx is retried up to 3 times; other errors are final. */
+export const ATTEMPT_TIMEOUT_MS = 15_000;
+export const RETRY_DELAYS_MS = [1_000, 3_000, 6_000];
+
+export function createMailer(opts: { db: DatabaseSync; config: EmailConfig; now: () => Date; fetch?: typeof fetch; notifications?: Notifications; timeoutMs?: number; retryDelaysMs?: number[] }) {
   const { db, config } = opts;
   const doFetch = opts.fetch ?? fetch;
+  const timeoutMs = opts.timeoutMs ?? ATTEMPT_TIMEOUT_MS;
+  const delays = opts.retryDelaysMs ?? RETRY_DELAYS_MS;
   db.exec(`CREATE TABLE IF NOT EXISTS emails (
     id INTEGER PRIMARY KEY AUTOINCREMENT, idempotency_key TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, invoice_id TEXT,
     to_address TEXT NOT NULL, subject TEXT NOT NULL, body_text TEXT NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL,
     provider_message_id TEXT, error TEXT, created_at TEXT NOT NULL, sent_at TEXT
   )`);
+  for (const col of ["body_html TEXT", "attempts INTEGER NOT NULL DEFAULT 0"]) {
+    try { db.exec(`ALTER TABLE emails ADD COLUMN ${col}`); } catch { /* already there */ }
+  }
   const sentToday = () => (db.prepare("SELECT COUNT(*) AS n FROM emails WHERE status = 'sent' AND substr(sent_at, 1, 10) = ?").get(opts.now().toISOString().slice(0, 10)) as { n: number }).n;
 
   async function sendInvoice(m: InvoiceMail) {
@@ -72,20 +81,10 @@ export function createMailer(opts: { db: DatabaseSync; config: EmailConfig; now:
     const to = m.to.trim();
     const msg = invoiceMessage(m);
     const at = opts.now().toISOString();
-    const claimed = db.prepare("INSERT OR IGNORE INTO emails (idempotency_key, kind, invoice_id, to_address, subject, body_text, provider, status, created_at) VALUES (?, 'invoice', ?, ?, ?, ?, ?, 'sending', ?)")
-      .run(key, m.invoiceId, to, msg.subject, msg.text, config.provider || "outbox", at);
+    const claimed = db.prepare("INSERT OR IGNORE INTO emails (idempotency_key, kind, invoice_id, to_address, subject, body_text, body_html, provider, status, created_at) VALUES (?, 'invoice', ?, ?, ?, ?, ?, ?, 'sending', ?)")
+      .run(key, m.invoiceId, to, msg.subject, msg.text, msg.html, config.provider || "outbox", at);
     if (Number(claimed.changes) !== 1) return view(db.prepare("SELECT * FROM emails WHERE idempotency_key = ?").get(key), true);
-    const finish = (status: string, fields: { provider_message_id?: string | null; error?: string | null } = {}) => {
-      db.prepare("UPDATE emails SET status = ?, provider_message_id = ?, error = ?, sent_at = ? WHERE idempotency_key = ?")
-        .run(status, fields.provider_message_id ?? null, fields.error ?? null, status === "sent" ? opts.now().toISOString() : null, key);
-      const row = db.prepare("SELECT * FROM emails WHERE idempotency_key = ?").get(key) as any;
-      opts.notifications?.notify({
-        recipient: "freelancer", type: "invoice_email", key: `email:${row.id}`, path: `/app/invoice/${m.invoiceId}`,
-        title: status === "sent" ? `Invoice ${m.number} emailed to the client` : `Invoice ${m.number} email: ${status.replace(/_/g, " ")}`,
-        body: status === "sent" ? `The pay link was emailed (message ${row.provider_message_id}).` : `Not sent: ${row.error ?? status}. The pay link is in the Emails view.`,
-      });
-      return view(row, false);
-    };
+    const finish = (status: string, fields: { provider_message_id?: string | null; error?: string | null } = {}) => finishRow(key, m.number, status, fields, "");
     if (!EMAIL.test(to)) return finish("invalid_address", { error: "not an email address" });
     const domain = to.split("@").pop()!.toLowerCase();
     if (RESERVED.test(domain)) return finish("skipped", { error: `reserved test domain (${domain}); nothing sent` });
@@ -94,30 +93,77 @@ export function createMailer(opts: { db: DatabaseSync; config: EmailConfig; now:
       return finish("blocked", { error: "recipient is not on EMAIL_RECIPIENT_ALLOWLIST" });
     }
     if (sentToday() >= config.dailyCap) return finish("capped", { error: `daily send cap of ${config.dailyCap} reached` });
-    try {
-      const res = await doFetch(RESEND_URL, {
-        method: "POST",
-        headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json", "idempotency-key": key },
-        body: JSON.stringify({ from: config.from, to: [to], subject: msg.subject, text: msg.text, html: msg.html }),
-        signal: AbortSignal.timeout(20_000),
-      });
-      const body: any = await res.json().catch(() => ({}));
-      if (!res.ok || typeof body?.id !== "string") {
-        return finish("failed", { error: scrub(`HTTP ${res.status}: ${body?.message ?? body?.name ?? "no message"}`, config.apiKey) });
+    const r = await deliver(key, to, msg.subject, msg.text, msg.html);
+    return finish(r.status, r);
+  }
+
+  /** Sends one message: up to 1 + 3 attempts, 15 s each, all with the same idempotency key (Resend never sends twice). */
+  async function deliver(key: string, to: string, subject: string, text: string, html: string): Promise<{ status: "sent" | "failed"; provider_message_id?: string; error?: string }> {
+    let last = "";
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, delays[attempt - 1]));
+      db.prepare("UPDATE emails SET attempts = attempts + 1 WHERE idempotency_key = ?").run(key);
+      try {
+        // The abort signal ends the request; the timer ends the attempt even if a fetch ignores the signal.
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`no answer within ${timeoutMs / 1000} s`)), timeoutMs); });
+        const body: any = {};
+        const res = await Promise.race([(async () => {
+          const r = await doFetch(RESEND_URL, {
+            method: "POST",
+            headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json", "idempotency-key": key },
+            body: JSON.stringify({ from: config.from, to: [to], subject, text, html }),
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+          Object.assign(body, await r.json().catch(() => ({})));
+          return r;
+        })(), timedOut]).finally(() => clearTimeout(timer));
+        if (res.ok && typeof body?.id === "string") return { status: "sent", provider_message_id: body.id };
+        last = scrub(`HTTP ${res.status}: ${body?.message ?? body?.name ?? "no message"}`, config.apiKey);
+        if (!(res.status === 408 || res.status === 429 || res.status >= 500)) return { status: "failed", error: last };
+      } catch (e) {
+        last = scrub(String((e as Error)?.message ?? e), config.apiKey);
       }
-      return finish("sent", { provider_message_id: body.id });
-    } catch (e) {
-      return finish("failed", { error: scrub(String((e as Error)?.message ?? e), config.apiKey) });
     }
+    return { status: "failed", error: `${last} (after ${delays.length + 1} attempts)` };
+  }
+
+  function finishRow(key: string, number: string, status: string, fields: { provider_message_id?: string | null; error?: string | null }, noteSuffix: string) {
+    db.prepare("UPDATE emails SET status = ?, provider_message_id = ?, error = ?, sent_at = ? WHERE idempotency_key = ?")
+      .run(status, fields.provider_message_id ?? null, fields.error ?? null, status === "sent" ? opts.now().toISOString() : null, key);
+    const row = db.prepare("SELECT * FROM emails WHERE idempotency_key = ?").get(key) as any;
+    opts.notifications?.notify({
+      recipient: "freelancer", type: "invoice_email", key: `email:${row.id}${noteSuffix}`, path: `/app/invoice/${row.invoice_id}`,
+      title: status === "sent" ? `Invoice ${number} emailed to the client` : `Invoice ${number} email: ${status.replace(/_/g, " ")}`,
+      body: status === "sent" ? `The pay link was emailed (message ${row.provider_message_id}).` : `Not sent: ${row.error ?? status}. The pay link is in the Emails view.`,
+    });
+    return view(row, false);
+  }
+
+  /** Retry a failed email (the Emails view's "Retry"): back to "sending", delivered in the background. */
+  function retry(id: number) {
+    const row = db.prepare("SELECT * FROM emails WHERE id = ?").get(id) as any;
+    if (!row) return null;
+    if (row.status !== "failed") return view(row, true);
+    if (sentToday() >= config.dailyCap) return view(row, true);
+    db.prepare("UPDATE emails SET status = 'sending', error = NULL WHERE id = ?").run(id);
+    const number = String(row.subject).match(/Invoice (S+)/)?.[1] ?? "";
+    const html = row.body_html ?? `<pre>${esc(row.body_text)}</pre>`;
+    const attemptsBefore = Number(row.attempts ?? 0);
+    void deliver(row.idempotency_key, row.to_address, row.subject, row.body_text, html)
+      .then((r) => finishRow(row.idempotency_key, number, r.status, r, `:retry${attemptsBefore}`))
+      .catch(() => db.prepare("UPDATE emails SET status = 'failed' WHERE id = ?").run(id));
+    return view(db.prepare("SELECT * FROM emails WHERE id = ?").get(id), false);
   }
 
   function view(row: any, repeated: boolean) {
-    return { id: row.id, invoice_id: row.invoice_id, to: row.to_address, subject: row.subject, status: row.status, provider: row.provider, provider_message_id: row.provider_message_id ?? null, error: row.error ?? null, created_at: row.created_at, sent_at: row.sent_at ?? null, repeated };
+    return { id: row.id, invoice_id: row.invoice_id, to: row.to_address, subject: row.subject, status: row.status, attempts: Number(row.attempts ?? 0), provider: row.provider, provider_message_id: row.provider_message_id ?? null, error: row.error ?? null, created_at: row.created_at, sent_at: row.sent_at ?? null, repeated };
   }
 
   return {
     configured: () => emailConfigured(config),
     sendInvoice,
+    retry,
     /** The Emails view: every attempt, newest first (never the key). */
     list(limit = 100) {
       const rows = db.prepare("SELECT * FROM emails ORDER BY id DESC LIMIT ?").all(Math.min(Math.max(1, limit), 500)) as any[];

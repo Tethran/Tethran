@@ -284,6 +284,12 @@ export function createHttpServer(deps: HttpDeps): Server {
     }],
     ...contractRoutes({ db, now: deps.now, publicBaseUrl: deps.publicBaseUrl, onInvoiceCreated: emailInvoice, limitInvoices }),
     // The Emails view: every invoice email attempt (status, provider message id, time; never the key).
+    ["POST", /^\/emails\/(\d+)\/retry$/, async ({ params }) => {
+      if (!deps.mailer) throw new ApiError(404, "email is not set up", "NOT_FOUND");
+      const r = deps.mailer.retry(Number(params[1]));
+      if (!r) throw new ApiError(404, "no such email", "NOT_FOUND");
+      return r;
+    }],
     ["GET", /^\/emails$/, async () => deps.mailer ? deps.mailer.list() : { configured: false, provider: null, daily_cap: 0, sent_today: 0, items: [] }],
     ...(payoutRoutes({ db, now: deps.now }) as [string, RegExp, Handler][]),
     ...(phoneRegistryRoutes({ db, now: deps.now, salt: deps.phoneHashSalt }) as [string, RegExp, Handler][]),

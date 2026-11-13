@@ -180,6 +180,7 @@ function serviceEnv(chainKey: string, internalToken: string) {
     },
     backend: {
       ...rpcEnv, ...llmEnv, LLM_TIMEOUT_MS: "90000", CHAIN: chainKey, TREASURY_PRIVATE_KEY: env("TREASURY_PRIVATE_KEY"),
+      CHAIN_CONFIRM_TIMEOUT_MS: env("CHAIN_CONFIRM_TIMEOUT_MS") || "300000", // how long to poll one transaction (slow test network)
       AGENT_SIGNER_PRIVATE_KEY: env("AGENT_SIGNER_PRIVATE_KEY"), ARBITER_ADDRESS: wallet("ARBITER").address,
       POLICY_URL: POLICY, INTERNAL_TOKEN: internalToken, BACKEND_DATA_DIR: DATA, BACKEND_PORT: String(BACKEND_PORT),
       DEMO_MODE: "1", PLATFORM_TOKEN,

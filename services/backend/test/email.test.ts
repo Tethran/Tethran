@@ -13,7 +13,7 @@ const mail = (over: Partial<InvoiceMail> = {}): InvoiceMail => ({
 function setup(env: Record<string, string>, reply: (n: number) => Response | Promise<Response> = () => new Response(JSON.stringify({ id: "msg_1" }))) {
   const calls: { url: string; init: RequestInit }[] = [];
   const fakeFetch = (async (url: string, init: RequestInit) => { calls.push({ url, init }); return reply(calls.length); }) as unknown as typeof fetch;
-  const m = createMailer({ db: new DatabaseSync(":memory:"), config: emailConfigFromEnv(env as never), now: () => new Date("2026-11-13T10:00:00Z"), fetch: fakeFetch });
+  const m = createMailer({ db: new DatabaseSync(":memory:"), config: emailConfigFromEnv(env as never), now: () => new Date("2026-11-13T10:00:00Z"), fetch: fakeFetch, timeoutMs: 200, retryDelaysMs: [5, 5, 5] });
   return { m, calls };
 }
 const CONF = { EMAIL_PROVIDER: "resend", EMAIL_API_KEY: KEY, EMAIL_FROM: "Tethran <invoices@tethran.example.dev>" };
@@ -71,6 +71,40 @@ test("a provider error is recorded with its text, never with the key", async () 
   assert.equal(r.status, "failed");
   assert.match(r.error!, /HTTP 403: The domain is not verified/);
   assert.ok(!r.error!.includes(KEY));
+});
+
+test("timeouts and 5xx are retried (up to 3 times, same idempotency key); a 4xx is final", async () => {
+  // Two timeouts, then success: sent on the third attempt.
+  const slow = setup(CONF, (n) => n <= 2 ? new Promise<Response>(() => {}) : new Response(JSON.stringify({ id: "msg_3" })));
+  const r = await slow.m.sendInvoice(mail());
+  assert.deepEqual([r.status, r.provider_message_id, r.attempts, slow.calls.length], ["sent", "msg_3", 3, 3]);
+  assert.ok(slow.calls.every((c) => (c.init.headers as any)["idempotency-key"] === "invoice:inv-1"));
+  // 503 every time: failed after 4 attempts.
+  const down = setup(CONF, () => new Response("{}", { status: 503 }));
+  const f = await down.m.sendInvoice(mail());
+  assert.equal(f.status, "failed");
+  assert.equal(down.calls.length, 4);
+  assert.match(f.error!, /HTTP 503.*after 4 attempts/);
+  // 422: final at once.
+  const bad = setup(CONF, () => new Response(JSON.stringify({ message: "invalid to" }), { status: 422 }));
+  assert.equal((await bad.m.sendInvoice(mail())).status, "failed");
+  assert.equal(bad.calls.length, 1);
+});
+
+test("Retry: a failed email goes back to sending, then sent; a sent email is not sent again", async () => {
+  let up = false;
+  const s = setup(CONF, () => up ? new Response(JSON.stringify({ id: "msg_ok" })) : new Response("{}", { status: 503 }));
+  const first = await s.m.sendInvoice(mail());
+  assert.equal(first.status, "failed");
+  up = true;
+  const r = s.m.retry(first.id)!;
+  assert.equal(r.status, "sending");
+  for (let i = 0; i < 50 && s.m.list().items[0]!.status === "sending"; i++) await new Promise((res) => setTimeout(res, 10));
+  assert.equal(s.m.list().items[0]!.status, "sent");
+  const calls = s.calls.length;
+  assert.equal(s.m.retry(first.id)!.status, "sent");
+  assert.equal(s.calls.length, calls);
+  assert.equal(s.m.retry(999), null);
 });
 
 test("the HTML escapes names and descriptions", () => {
