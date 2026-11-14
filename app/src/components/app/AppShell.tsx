@@ -40,9 +40,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="mx-auto max-w-[1200px] px-4 py-6 md:py-10">{children}</main>
-      <nav aria-label="App" className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-full border bg-ink p-1 text-on-dark shadow-float lg:hidden">
+      <nav aria-label="App" className="fixed inset-x-3 bottom-3 z-40 flex touch-pan-x gap-1 overflow-x-auto rounded-3xl border bg-ink p-1 text-on-dark shadow-float lg:hidden">
         {NAV.map((n) => (
-          <Link key={n.to} to={n.to} className={cn("flex min-h-12 flex-col items-center justify-center rounded-full text-[0.65rem]", path.startsWith(n.to) ? "bg-lime text-lime-ink" : "text-muted-dark")}>
+          <Link key={n.to} to={n.to} className={cn("flex min-h-12 min-w-[4.25rem] shrink-0 flex-col items-center justify-center rounded-full whitespace-nowrap text-[0.65rem]", path.startsWith(n.to) ? "bg-lime text-lime-ink" : "text-muted-dark")}>
             <n.icon className="size-4" aria-hidden />{n.label}
           </Link>
         ))}
