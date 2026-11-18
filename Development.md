@@ -1230,3 +1230,13 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
 - Moved the removed simulated-versus-real scope table and detail to `docs/SCOPE.md`, and linked it once from the
   README footer. This keeps the README focused on the product while preserving the original scope information.
 - Added the existing contract-flow screenshot and a video URL placeholder; no product code or in-app labels changed.
+
+### docs/UI-UX.md: design handoff
+- A handoff another project can copy to reuse Tethran's look: palette (light and dark, OKLCH source with hex
+  conversions, where defined), typography (Bricolage Grotesque, IBM Plex Sans, JetBrains Mono; no Inter), layout and
+  density, components with file paths, motion (durations, easing; reduced motion respected), WCAG contrast (main pairs
+  pass AA; danger, success, agent and warning as text and the lime focus outline on light backgrounds do not), proposed
+  brand words (to confirm), voice samples from the app, a reuse kit with steps, and open items for the team. Every value
+  is read from the code; what the code does not define is marked NOT FOUND (for example an info colour, h5/h6, page
+  transitions, a Tailwind config file, a theme provider, and the old "Demo: signed with a test key" label, now
+  "Signed with a test key"). No product code changed.
