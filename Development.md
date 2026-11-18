@@ -1240,3 +1240,8 @@ was moved from `.gitignore` to `.git/info/exclude` (local only, not committed).
   is read from the code; what the code does not define is marked NOT FOUND (for example an info colour, h5/h6, page
   transitions, a Tailwind config file, a theme provider, and the old "Demo: signed with a test key" label, now
   "Signed with a test key"). No product code changed.
+
+### Checkpoint 2026-11-18 (branch checkpoint/2026-11-18)
+- A named restore point on main as it stands: features 1 to 8, the Render deployment with the public site and the
+  unlock link, the manual recording setup, the submission README and docs/SCOPE.md, docs/UI-UX.md, and PR #1. A branch,
+  not a tag (no tags). Open next steps are in Build-Context-Memory.json.

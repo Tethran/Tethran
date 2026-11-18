@@ -2567,6 +2567,31 @@
         "On lead confirmation and a healthy network: record the film once, then node e2e/cut-film.mjs"
       ],
       "notes": "Raw partial videos: app/e2e-artifacts/film-raw (attempt 2), scratchpad film-attempt1. Nothing pushed after 5695018."
+    },
+    {
+      "session_id": "2026-11-18-checkpoint",
+      "date": "2026-11-18",
+      "summary": "Checkpoint branch checkpoint/2026-11-18. Features 1 to 8, the Render deployment (one web service with a disk plus an hourly cron via POST /jobs/run; public site, test-key signing only through the presenter unlock link), the manual recording setup, the submission README with docs/SCOPE.md, and docs/UI-UX.md are on main.",
+      "completed": [
+        "Render deployment files (render.yaml, render-start.ts gateway, jobs endpoint)",
+        "Public site with the unlock link for test-key signing",
+        "npm run record and docs/RECORDING-RUNBOOK.md",
+        "README rewrite for submission and docs/SCOPE.md",
+        "docs/UI-UX.md design handoff",
+        "PR #1 (mobile bottom navigation) merged on GitHub"
+      ],
+      "blockers": [
+        "Final two-sided film not recorded (Sepolia slowness); manual recording planned instead",
+        "Live agent escalates UNKNOWN_SPLIT on new contracts: the agent input does not say which payee a contract pays"
+      ],
+      "errors_encountered": [],
+      "next_steps": [
+        "Decide how the agent input names the contract payee",
+        "Fix the WCAG AA failures listed in docs/UI-UX.md section 6 (status colours as text, lime focus outline)",
+        "Fill the open items in docs/UI-UX.md section 10",
+        "Add the demo video URL to the README"
+      ],
+      "notes": "Checkpoint branch, no tag (no tags rule). Tests at last run: contracts 122, chain 40, policy 171, llm 61, backend 175, app 21."
     }
   ]
 }
